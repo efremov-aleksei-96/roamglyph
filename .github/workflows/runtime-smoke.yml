@@ -66,7 +66,11 @@ jobs:
             sleep 6
 
             PID="$(adb shell pidof com.sensareth.roamglyph | tr -d '\r')"
-            test -n "$PID"
+            if [ -z "$PID" ]; then
+              echo "Roamglyph process died after launch"
+              adb logcat -d
+              exit 1
+            fi
 
             adb shell uiautomator dump /sdcard/roamglyph.xml
             adb shell cat /sdcard/roamglyph.xml > /tmp/roamglyph.xml
@@ -85,4 +89,8 @@ jobs:
             grep -q "TrackingService" /tmp/services.txt
 
             PID="$(adb shell pidof com.sensareth.roamglyph | tr -d '\r')"
-            test -n "$PID"
+            if [ -z "$PID" ]; then
+              echo "Roamglyph process died after foreground service start"
+              adb logcat -d
+              exit 1
+            fi
