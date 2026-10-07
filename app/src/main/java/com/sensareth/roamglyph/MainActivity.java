@@ -7,11 +7,14 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.Typeface;
+import android.graphics.drawable.GradientDrawable;
 import android.os.Build;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.widget.Button;
 import android.widget.FrameLayout;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import androidx.activity.result.ActivityResultLauncher;
@@ -28,6 +31,7 @@ import org.maplibre.android.camera.CameraPosition;
 import org.maplibre.android.maps.MapView;
 import org.maplibre.android.maps.MapLibreMap;
 import org.maplibre.android.maps.OnMapReadyCallback;
+import org.maplibre.android.style.layers.CircleLayer;
 import org.maplibre.android.style.layers.FillLayer;
 import org.maplibre.android.style.sources.GeoJsonSource;
 import org.maplibre.geojson.Feature;
@@ -41,23 +45,40 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Set;
 
+import static org.maplibre.android.style.layers.PropertyFactory.circleColor;
+import static org.maplibre.android.style.layers.PropertyFactory.circleOpacity;
+import static org.maplibre.android.style.layers.PropertyFactory.circleRadius;
+import static org.maplibre.android.style.layers.PropertyFactory.circleStrokeColor;
+import static org.maplibre.android.style.layers.PropertyFactory.circleStrokeWidth;
 import static org.maplibre.android.style.layers.PropertyFactory.fillColor;
 import static org.maplibre.android.style.layers.PropertyFactory.fillOpacity;
 import static org.maplibre.android.style.layers.PropertyFactory.fillOutlineColor;
 
 public class MainActivity extends AppCompatActivity implements OnMapReadyCallback {
-    private static final String SOURCE_ID = "visited-source";
-    private static final String LAYER_ID = "visited-layer";
+    private static final String VISITED_SOURCE_ID = "visited-source";
+    private static final String VISITED_LAYER_ID = "visited-layer";
+    private static final String LOCATION_SOURCE_ID = "current-location-source";
+    private static final String LOCATION_HALO_LAYER_ID = "current-location-halo";
+    private static final String LOCATION_LAYER_ID = "current-location-dot";
 
     private MapView mapView;
     private MapLibreMap map;
     private Button trackingButton;
-    private TextView status;
+    private Button locateButton;
+    private TextView stateText;
+    private TextView statsText;
+    private TextView gpsText;
+
     private final Set<String> visited = new HashSet<>();
     private VisitedStore store;
     private H3Core h3;
     private boolean tracking;
     private boolean receiverRegistered;
+    private boolean hasLocation;
+    private boolean autoCentered;
+    private double lastLat;
+    private double lastLng;
+    private float lastAccuracy;
 
     private final BroadcastReceiver trackingReceiver = new BroadcastReceiver() {
         @Override
@@ -66,27 +87,26 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     TrackingService.EXTRA_TRACKING,
                     store.isTrackingActive()
             );
-            updateButtonText();
-            refreshVisitedFromStore();
 
-            Float accuracy = intent.hasExtra(TrackingService.EXTRA_ACCURACY)
-                    ? intent.getFloatExtra(TrackingService.EXTRA_ACCURACY, 0f)
-                    : null;
             boolean accepted = intent.getBooleanExtra(TrackingService.EXTRA_ACCEPTED, true);
-            updateStatus(accuracy, accepted);
-
-            if (accepted
-                    && map != null
-                    && intent.hasExtra(TrackingService.EXTRA_LAT)
+            if (intent.hasExtra(TrackingService.EXTRA_LAT)
                     && intent.hasExtra(TrackingService.EXTRA_LNG)) {
-                double lat = intent.getDoubleExtra(TrackingService.EXTRA_LAT, 0.0);
-                double lng = intent.getDoubleExtra(TrackingService.EXTRA_LNG, 0.0);
-                map.animateCamera(
-                        org.maplibre.android.camera.CameraUpdateFactory.newLatLng(
-                                new org.maplibre.android.geometry.LatLng(lat, lng)
-                        )
-                );
+                hasLocation = true;
+                lastLat = intent.getDoubleExtra(TrackingService.EXTRA_LAT, 0.0);
+                lastLng = intent.getDoubleExtra(TrackingService.EXTRA_LNG, 0.0);
+                lastAccuracy = intent.getFloatExtra(TrackingService.EXTRA_ACCURACY, 0f);
+                renderCurrentLocation();
+                locateButton.setEnabled(true);
+                locateButton.setAlpha(1f);
+
+                if (!autoCentered) {
+                    centerOnCurrentLocation(true);
+                    autoCentered = true;
+                }
             }
+
+            refreshVisitedFromStore();
+            updateUi(accepted);
         }
     };
 
@@ -94,22 +114,14 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             registerForActivityResult(
                     new ActivityResultContracts.RequestMultiplePermissions(),
                     result -> {
-                        boolean granted =
-                                ContextCompat.checkSelfPermission(
-                                        this,
-                                        Manifest.permission.ACCESS_FINE_LOCATION
-                                ) == PackageManager.PERMISSION_GRANTED
-                                || ContextCompat.checkSelfPermission(
-                                        this,
-                                        Manifest.permission.ACCESS_COARSE_LOCATION
-                                ) == PackageManager.PERMISSION_GRANTED;
-
+                        boolean granted = hasLocationPermission();
                         if (granted) {
                             startTracking();
                         } else {
                             tracking = false;
-                            updateButtonText();
-                            status.setText("Нужен доступ к геопозиции");
+                            store.setTrackingActive(false);
+                            updateUi(false);
+                            gpsText.setText("Разреши доступ к геопозиции");
                         }
                     }
             );
@@ -128,6 +140,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         store = new VisitedStore(this);
         tracking = store.isTrackingActive();
         visited.addAll(store.load());
+        loadStoredLocation();
 
         FrameLayout root = new FrameLayout(this);
 
@@ -142,34 +155,74 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 )
         );
 
-        status = new TextView(this);
-        status.setTextColor(Color.WHITE);
-        status.setBackgroundColor(0xCC202124);
-        status.setPadding(24, 16, 24, 16);
-        status.setTextSize(16f);
+        LinearLayout statusCard = new LinearLayout(this);
+        statusCard.setOrientation(LinearLayout.VERTICAL);
+        statusCard.setPadding(dp(16), dp(12), dp(16), dp(12));
+        GradientDrawable cardBackground = new GradientDrawable();
+        cardBackground.setColor(0xE6202124);
+        cardBackground.setCornerRadius(dp(14));
+        statusCard.setBackground(cardBackground);
+        statusCard.setElevation(dp(6));
+
+        stateText = new TextView(this);
+        stateText.setTextColor(Color.WHITE);
+        stateText.setTextSize(16f);
+        stateText.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+
+        statsText = new TextView(this);
+        statsText.setTextColor(0xFFE8EAED);
+        statsText.setTextSize(14f);
+        statsText.setPadding(0, dp(3), 0, 0);
+
+        gpsText = new TextView(this);
+        gpsText.setTextColor(0xFFBDC1C6);
+        gpsText.setTextSize(13f);
+        gpsText.setPadding(0, dp(2), 0, 0);
+
+        statusCard.addView(stateText);
+        statusCard.addView(statsText);
+        statusCard.addView(gpsText);
+
         FrameLayout.LayoutParams statusLp = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT,
                 FrameLayout.LayoutParams.WRAP_CONTENT
         );
         statusLp.gravity = Gravity.TOP | Gravity.START;
-        statusLp.setMargins(24, 42, 24, 0);
-        root.addView(status, statusLp);
+        statusLp.setMargins(dp(16), dp(52), dp(16), 0);
+        root.addView(statusCard, statusLp);
 
         trackingButton = new Button(this);
         trackingButton.setId(R.id.tracking_button);
-        trackingButton.setContentDescription("Roamglyph tracking toggle");
+        trackingButton.setAllCaps(false);
+        trackingButton.setTextSize(15f);
+        trackingButton.setMinHeight(dp(48));
+        trackingButton.setPadding(dp(18), 0, dp(18), 0);
+        trackingButton.setContentDescription("Включить или остановить исследование");
         trackingButton.setOnClickListener(v -> toggleTracking());
         FrameLayout.LayoutParams buttonLp = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT,
-                FrameLayout.LayoutParams.WRAP_CONTENT
+                dp(52)
         );
         buttonLp.gravity = Gravity.BOTTOM | Gravity.CENTER_HORIZONTAL;
-        buttonLp.setMargins(24, 24, 24, 48);
+        buttonLp.setMargins(dp(16), 0, dp(16), dp(32));
         root.addView(trackingButton, buttonLp);
 
+        locateButton = new Button(this);
+        locateButton.setAllCaps(false);
+        locateButton.setText("◎");
+        locateButton.setTextSize(26f);
+        locateButton.setPadding(0, 0, 0, dp(2));
+        locateButton.setContentDescription("Показать моё местоположение");
+        locateButton.setOnClickListener(v -> centerOnCurrentLocation(true));
+        locateButton.setEnabled(hasLocation);
+        locateButton.setAlpha(hasLocation ? 1f : 0.5f);
+        FrameLayout.LayoutParams locateLp = new FrameLayout.LayoutParams(dp(56), dp(56));
+        locateLp.gravity = Gravity.BOTTOM | Gravity.END;
+        locateLp.setMargins(0, 0, dp(16), dp(104));
+        root.addView(locateButton, locateLp);
+
         setContentView(root);
-        updateButtonText();
-        updateStatus(null, true);
+        updateUi(true);
     }
 
     @Override
@@ -178,35 +231,68 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         String style = "{\"version\":8,\"sources\":{\"osm\":{\"type\":\"raster\",\"tiles\":[\"https://tile.openstreetmap.org/{z}/{x}/{y}.png\"],\"tileSize\":256,\"attribution\":\"© OpenStreetMap contributors\"}},\"layers\":[{\"id\":\"osm\",\"type\":\"raster\",\"source\":\"osm\"}]}";
 
         map.setStyle(new org.maplibre.android.maps.Style.Builder().fromJson(style), s -> {
-            s.addSource(
-                    new GeoJsonSource(
-                            SOURCE_ID,
-                            FeatureCollection.fromFeatures(new Feature[]{})
-                    )
-            );
-            s.addLayer(
-                    new FillLayer(LAYER_ID, SOURCE_ID).withProperties(
-                            fillColor("#4CAF50"),
-                            fillOpacity(0.48f),
-                            fillOutlineColor("#2E7D32")
-                    )
-            );
+            s.addSource(new GeoJsonSource(
+                    VISITED_SOURCE_ID,
+                    FeatureCollection.fromFeatures(new Feature[]{})
+            ));
+            s.addLayer(new FillLayer(VISITED_LAYER_ID, VISITED_SOURCE_ID).withProperties(
+                    fillColor("#34A853"),
+                    fillOpacity(0.58f),
+                    fillOutlineColor("#137333")
+            ));
+
+            s.addSource(new GeoJsonSource(
+                    LOCATION_SOURCE_ID,
+                    FeatureCollection.fromFeatures(new Feature[]{})
+            ));
+            s.addLayer(new CircleLayer(LOCATION_HALO_LAYER_ID, LOCATION_SOURCE_ID).withProperties(
+                    circleColor("#4285F4"),
+                    circleRadius(16f),
+                    circleOpacity(0.22f)
+            ));
+            s.addLayer(new CircleLayer(LOCATION_LAYER_ID, LOCATION_SOURCE_ID).withProperties(
+                    circleColor("#1A73E8"),
+                    circleRadius(7f),
+                    circleStrokeColor("#FFFFFF"),
+                    circleStrokeWidth(3f)
+            ));
 
             renderVisited();
-            map.setCameraPosition(
-                    new CameraPosition.Builder()
-                            .target(new org.maplibre.android.geometry.LatLng(40.1872, 44.5152))
-                            .zoom(13.0)
-                            .build()
-            );
+            renderCurrentLocation();
+
+            if (hasLocation) {
+                map.setCameraPosition(
+                        new CameraPosition.Builder()
+                                .target(new org.maplibre.android.geometry.LatLng(lastLat, lastLng))
+                                .zoom(17.5)
+                                .build()
+                );
+                autoCentered = true;
+            } else {
+                map.setCameraPosition(
+                        new CameraPosition.Builder()
+                                .target(new org.maplibre.android.geometry.LatLng(40.1872, 44.5152))
+                                .zoom(13.0)
+                                .build()
+                );
+            }
         });
+    }
+
+    private void loadStoredLocation() {
+        if (!store.hasLastLocation()) return;
+        hasLocation = true;
+        lastLat = store.getLastLatitude();
+        lastLng = store.getLastLongitude();
+        lastAccuracy = store.getLastAccuracy();
     }
 
     private void toggleTracking() {
         if (h3 == null) {
-            status.setText("Ошибка запуска H3. Эта сборка не может исследовать карту.");
+            gpsText.setText("H3 не запустился: исследование клеток недоступно");
             return;
         }
+
         if (tracking) {
             stopTracking();
         } else {
@@ -215,28 +301,26 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     }
 
     private void ensurePermissionsThenStart() {
-        boolean fine = ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED;
-        boolean coarse = ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.ACCESS_COARSE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED;
         boolean notificationGranted = Build.VERSION.SDK_INT < 33
                 || ContextCompat.checkSelfPermission(
                         this,
                         Manifest.permission.POST_NOTIFICATIONS
                 ) == PackageManager.PERMISSION_GRANTED;
 
-        if ((fine || coarse) && notificationGranted) {
+        if (hasLocationPermission() && notificationGranted) {
             startTracking();
             return;
         }
 
         List<String> permissions = new ArrayList<>();
-        if (!fine) permissions.add(Manifest.permission.ACCESS_FINE_LOCATION);
-        if (!coarse) permissions.add(Manifest.permission.ACCESS_COARSE_LOCATION);
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+            permissions.add(Manifest.permission.ACCESS_FINE_LOCATION);
+        }
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
+                != PackageManager.PERMISSION_GRANTED) {
+            permissions.add(Manifest.permission.ACCESS_COARSE_LOCATION);
+        }
         if (Build.VERSION.SDK_INT >= 33 && !notificationGranted) {
             permissions.add(Manifest.permission.POST_NOTIFICATIONS);
         }
@@ -249,8 +333,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
         tracking = true;
         store.setTrackingActive(true);
-        updateButtonText();
-        status.setText("GPS: запуск фонового исследования…");
+        updateUi(true);
+        gpsText.setText("Запускаю GPS…");
 
         Intent service = new Intent(this, TrackingService.class)
                 .setAction(TrackingService.ACTION_START);
@@ -260,21 +344,42 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private void stopTracking() {
         tracking = false;
         store.setTrackingActive(false);
-        updateButtonText();
-        updateStatus(null, true);
+        updateUi(true);
 
         Intent service = new Intent(this, TrackingService.class)
                 .setAction(TrackingService.ACTION_STOP);
         startService(service);
     }
 
-    private void updateButtonText() {
-        if (tracking) {
-            trackingButton.setText("Остановить исследование");
-        } else if (visited.isEmpty()) {
-            trackingButton.setText("Начать исследование");
+    private void updateUi(boolean accepted) {
+        stateText.setText(tracking ? "Исследование включено" : "Исследование остановлено");
+        stateText.setTextColor(tracking ? 0xFF81C995 : Color.WHITE);
+
+        double approxAreaM2 = visited.size() * 43.87;
+        String area = approxAreaM2 >= 1_000_000
+                ? String.format(Locale.getDefault(), "%.2f км²", approxAreaM2 / 1_000_000.0)
+                : String.format(Locale.getDefault(), "%,.0f м²", approxAreaM2);
+        statsText.setText(String.format(
+                Locale.getDefault(),
+                "%d клеток • ≈%s",
+                visited.size(),
+                area
+        ));
+
+        if (hasLocation) {
+            String gps = "GPS ±" + Math.round(lastAccuracy) + " м";
+            if (!accepted) gps += " • точка слишком неточная";
+            gpsText.setText(gps);
         } else {
-            trackingButton.setText("Продолжить исследование");
+            gpsText.setText(tracking ? "Ожидание GPS…" : "Позиция ещё не определена");
+        }
+
+        if (tracking) {
+            trackingButton.setText("■  Остановить");
+        } else if (visited.isEmpty()) {
+            trackingButton.setText("▶  Начать исследование");
+        } else {
+            trackingButton.setText("▶  Продолжить");
         }
     }
 
@@ -282,38 +387,12 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         visited.clear();
         visited.addAll(store.load());
         renderVisited();
-        updateButtonText();
-    }
-
-    private void updateStatus(Float accuracy, boolean accepted) {
-        double approxAreaM2 = visited.size() * 43.87;
-        String area = approxAreaM2 >= 1_000_000
-                ? String.format(
-                        Locale.getDefault(),
-                        "%.2f км²",
-                        approxAreaM2 / 1_000_000.0
-                )
-                : String.format(Locale.getDefault(), "%.0f м²", approxAreaM2);
-
-        StringBuilder text = new StringBuilder()
-                .append("Исследовано: ")
-                .append(visited.size())
-                .append(" клеток • ≈")
-                .append(area)
-                .append(tracking ? " • запись включена" : " • остановлено");
-
-        if (accuracy != null) {
-            text.append(" • GPS ±").append(Math.round(accuracy)).append(" м");
-            if (!accepted) text.append(" • точка пропущена");
-        }
-
-        status.setText(text.toString());
     }
 
     private void renderVisited() {
         if (h3 == null || map == null || map.getStyle() == null) return;
 
-        GeoJsonSource source = map.getStyle().getSourceAs(SOURCE_ID);
+        GeoJsonSource source = map.getStyle().getSourceAs(VISITED_SOURCE_ID);
         if (source == null) return;
 
         List<Feature> features = new ArrayList<>();
@@ -334,6 +413,34 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         source.setGeoJson(FeatureCollection.fromFeatures(features));
     }
 
+    private void renderCurrentLocation() {
+        if (!hasLocation || map == null || map.getStyle() == null) return;
+
+        GeoJsonSource source = map.getStyle().getSourceAs(LOCATION_SOURCE_ID);
+        if (source == null) return;
+
+        source.setGeoJson(Feature.fromGeometry(Point.fromLngLat(lastLng, lastLat)));
+    }
+
+    private void centerOnCurrentLocation(boolean zoomIn) {
+        if (!hasLocation) {
+            gpsText.setText("Позиция ещё не определена");
+            return;
+        }
+        if (map == null) return;
+
+        double zoom = map.getCameraPosition() == null ? 17.5 : map.getCameraPosition().zoom;
+        if (zoomIn && zoom < 17.0) zoom = 17.5;
+
+        CameraPosition position = new CameraPosition.Builder()
+                .target(new org.maplibre.android.geometry.LatLng(lastLat, lastLng))
+                .zoom(zoom)
+                .build();
+        map.animateCamera(
+                org.maplibre.android.camera.CameraUpdateFactory.newCameraPosition(position)
+        );
+    }
+
     private boolean hasLocationPermission() {
         return ContextCompat.checkSelfPermission(
                 this,
@@ -343,6 +450,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                         this,
                         Manifest.permission.ACCESS_COARSE_LOCATION
                 ) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private int dp(int value) {
+        return Math.round(value * getResources().getDisplayMetrics().density);
     }
 
     @Override
@@ -361,8 +472,12 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         }
 
         tracking = store.isTrackingActive();
+        loadStoredLocation();
         refreshVisitedFromStore();
-        updateStatus(null, true);
+        renderCurrentLocation();
+        locateButton.setEnabled(hasLocation);
+        locateButton.setAlpha(hasLocation ? 1f : 0.5f);
+        updateUi(true);
 
         if (tracking && hasLocationPermission()) {
             Intent service = new Intent(this, TrackingService.class)
@@ -376,8 +491,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         super.onResume();
         mapView.onResume();
         tracking = store.isTrackingActive();
+        loadStoredLocation();
         refreshVisitedFromStore();
-        updateStatus(null, true);
+        renderCurrentLocation();
+        updateUi(true);
     }
 
     @Override

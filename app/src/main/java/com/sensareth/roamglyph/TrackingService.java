@@ -133,6 +133,8 @@ public final class TrackingService extends Service {
     }
 
     private void handleLocation(Location location) {
+        store.saveLastLocation(location);
+
         if (location.hasAccuracy() && location.getAccuracy() > MAX_ACCEPTED_ACCURACY_M) {
             broadcastState(location, false);
             return;
