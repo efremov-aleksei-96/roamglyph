@@ -56,7 +56,7 @@ jobs:
           disable-animations: true
           emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
           script: |
-            set -euxo pipefail
+            set -eu
             adb logcat -c
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell pm grant com.sensareth.roamglyph android.permission.ACCESS_FINE_LOCATION
