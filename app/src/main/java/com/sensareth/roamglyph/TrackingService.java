@@ -61,8 +61,8 @@ public final class TrackingService extends Service {
         store = new VisitedStore(this);
         try {
             h3 = H3Core.newSystemInstance();
-        } catch (Exception e) {
-            throw new RuntimeException(e);
+        } catch (Throwable error) {
+            h3 = null;
         }
         createNotificationChannel();
     }
@@ -73,6 +73,13 @@ public final class TrackingService extends Service {
 
         if (ACTION_STOP.equals(action)) {
             stopExploration();
+            return START_NOT_STICKY;
+        }
+
+        if (h3 == null) {
+            store.setTrackingActive(false);
+            broadcastState(null, false);
+            stopSelf();
             return START_NOT_STICKY;
         }
 
