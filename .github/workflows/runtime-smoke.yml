@@ -66,4 +66,8 @@ jobs:
             adb shell uiautomator dump /sdcard/roamglyph.xml
             adb shell cat /sdcard/roamglyph.xml > /tmp/roamglyph.xml
             ! grep -q "Ошибка запуска H3" /tmp/roamglyph.xml || (echo "H3 failed to initialize on Android"; adb logcat -d; exit 1)
-            adb shell pidof com.sensareth.roamglyph | grep -q . || (echo "Roamglyph process died during runtime smoke"; adb logcat -d; exit 1)
+            python3 -c 'import re,subprocess; s=open("/tmp/roamglyph.xml", encoding="utf-8").read(); m=re.search(r"text=\"(?:Начать|Продолжить) исследование\"[^>]*bounds=\"\\[(\\d+),(\\d+)\\]\\[(\\d+),(\\d+)\\]\"", s); assert m, "exploration button not found"; x=(int(m.group(1))+int(m.group(3)))//2; y=(int(m.group(2))+int(m.group(4)))//2; subprocess.check_call(["adb","shell","input","tap",str(x),str(y)])'
+            sleep 5
+            adb shell dumpsys activity services com.sensareth.roamglyph | grep -q TrackingService || (echo "TrackingService is not running after UI start"; adb logcat -d; exit 1)
+            adb shell pidof com.sensareth.roamglyph | grep -q . || (echo "Roamglyph process died after starting tracking"; adb logcat -d; exit 1)
+            ! adb logcat -d -v brief | grep -E "FATAL EXCEPTION:|Process: com\.sensareth\.roamglyph" || (echo "Fatal app exception detected"; adb logcat -d; exit 1)
