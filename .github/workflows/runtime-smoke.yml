@@ -1,0 +1,88 @@
+name: Android Runtime Smoke
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  launch-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android 36 platform
+        shell: bash
+        run: |
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)"
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-36"
+
+      - name: Set up Gradle 9.6.0
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.6.0'
+
+      - name: Build debug APK
+        run: gradle --no-daemon :app:assembleDebug
+
+      - name: Enable KVM
+        run: |
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules
+          sudo udevadm trigger --name-match=kvm
+
+      - name: Launch app and foreground tracker
+        uses: reactivecircus/android-emulator-runner@v2.38.0
+        with:
+          api-level: 35
+          target: google_apis
+          arch: x86_64
+          profile: pixel_7_pro
+          disable-animations: true
+          emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
+          script: |
+            set -euxo pipefail
+            adb logcat -c
+            adb install -r app/build/outputs/apk/debug/app-debug.apk
+            adb shell pm grant com.sensareth.roamglyph android.permission.ACCESS_FINE_LOCATION
+            adb shell pm grant com.sensareth.roamglyph android.permission.POST_NOTIFICATIONS || true
+
+            adb shell am start -W -n com.sensareth.roamglyph/.MainActivity
+            sleep 6
+
+            PID="$(adb shell pidof com.sensareth.roamglyph | tr -d '\r')"
+            test -n "$PID"
+
+            adb shell uiautomator dump /sdcard/roamglyph.xml
+            adb shell cat /sdcard/roamglyph.xml > /tmp/roamglyph.xml
+            if grep -q "Ошибка запуска H3" /tmp/roamglyph.xml; then
+              echo "H3 failed to initialize on Android"
+              adb logcat -d
+              exit 1
+            fi
+
+            adb shell am start-foreground-service \
+              -a com.sensareth.roamglyph.action.START \
+              -n com.sensareth.roamglyph/.TrackingService
+            sleep 4
+
+            adb shell dumpsys activity services com.sensareth.roamglyph | tee /tmp/services.txt
+            grep -q "TrackingService" /tmp/services.txt
+
+            PID="$(adb shell pidof com.sensareth.roamglyph | tr -d '\r')"
+            test -n "$PID"
