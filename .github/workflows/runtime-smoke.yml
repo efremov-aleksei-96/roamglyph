@@ -67,9 +67,5 @@ jobs:
             adb shell cat /sdcard/roamglyph.xml > /tmp/roamglyph.xml
             grep -q "Roamglyph" /tmp/roamglyph.xml || true
             adb logcat -d -v brief > /tmp/roamglyph-logcat.txt
-            if grep -A 20 -E "FATAL EXCEPTION:.*|Process: com\.sensareth\.roamglyph" /tmp/roamglyph-logcat.txt | grep -q "com.sensareth.roamglyph"; then
-              echo "Fatal Roamglyph exception detected"
-              grep -A 40 -B 5 -E "FATAL EXCEPTION:|Process: com\.sensareth\.roamglyph" /tmp/roamglyph-logcat.txt || true
-              exit 1
-            fi
+            ! grep -q "FATAL EXCEPTION.*com.sensareth.roamglyph" /tmp/roamglyph-logcat.txt || (echo "Fatal Roamglyph exception detected"; exit 1)
             echo "x86_64 smoke verifies Activity/MapLibre launch. H3 Android native artifacts target ARM/ARM64 and are exercised on physical ARM64 devices."
