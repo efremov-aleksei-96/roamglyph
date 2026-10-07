@@ -60,7 +60,7 @@ public final class TrackingService extends Service {
         fused = LocationServices.getFusedLocationProviderClient(this);
         store = new VisitedStore(this);
         try {
-            h3 = H3Core.newInstance();
+            h3 = H3Core.newSystemInstance();
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
