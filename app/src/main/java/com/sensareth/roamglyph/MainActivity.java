@@ -120,7 +120,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         MapLibre.getInstance(this);
 
         try {
-            h3 = H3Core.newInstance();
+            h3 = H3Core.newSystemInstance();
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
