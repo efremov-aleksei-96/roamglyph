@@ -156,6 +156,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         root.addView(status, statusLp);
 
         trackingButton = new Button(this);
+        trackingButton.setId(R.id.tracking_button);
+        trackingButton.setContentDescription("Roamglyph tracking toggle");
         trackingButton.setOnClickListener(v -> toggleTracking());
         FrameLayout.LayoutParams buttonLp = new FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.WRAP_CONTENT,
