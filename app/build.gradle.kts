@@ -11,12 +11,27 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
+    signingConfigs {
+        create("stableDebug") {
+            storeFile = file("roamglyph-debug.keystore")
+            storePassword = "android"
+            keyAlias = "roamglyphdebug"
+            keyPassword = "android"
+        }
+    }
+
     defaultConfig {
         applicationId = "com.sensareth.roamglyph"
         minSdk = 29
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.3.0"
+        versionCode = 5
+        versionName = "0.4.0"
+    }
+
+    buildTypes {
+        getByName("debug") {
+            signingConfig = signingConfigs.getByName("stableDebug")
+        }
     }
 }
 
