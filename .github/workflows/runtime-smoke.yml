@@ -66,7 +66,7 @@ jobs:
             adb shell uiautomator dump /sdcard/roamglyph.xml
             adb shell cat /sdcard/roamglyph.xml > /tmp/roamglyph.xml
             ! grep -q "Ошибка запуска H3" /tmp/roamglyph.xml || (echo "H3 failed to initialize on Android"; adb logcat -d; exit 1)
-            python3 -c 'import re,subprocess,xml.etree.ElementTree as ET; root=ET.parse("/tmp/roamglyph.xml").getroot(); app=[n for n in root.iter() if n.attrib.get("package")=="com.sensareth.roamglyph" and n.attrib.get("clickable")=="true"]; buttons=[n for n in app if "Button" in n.attrib.get("class","")]; nodes=buttons or app; assert nodes, "no clickable Roamglyph control found"; b=nodes[-1].attrib["bounds"]; x1,y1,x2,y2=map(int,re.findall(r"\\d+",b)); subprocess.check_call(["adb","shell","input","tap",str((x1+x2)//2),str((y1+y2)//2)])'
+            python3 -c 'import re,subprocess,xml.etree.ElementTree as ET; root=ET.parse("/tmp/roamglyph.xml").getroot(); app=[n for n in root.iter() if n.attrib.get("package")=="com.sensareth.roamglyph" and n.attrib.get("clickable")=="true"]; buttons=[n for n in app if "Button" in n.attrib.get("class","")]; nodes=buttons or app; assert nodes, "no clickable Roamglyph control found"; b=nodes[-1].attrib["bounds"]; x1,y1,x2,y2=map(int,re.findall(r"\d+",b)); subprocess.check_call(["adb","shell","input","tap",str((x1+x2)//2),str((y1+y2)//2)])'
             sleep 5
             adb shell dumpsys activity services com.sensareth.roamglyph | grep -q TrackingService || (echo "TrackingService is not running after UI start"; adb logcat -d; exit 1)
             adb shell pidof com.sensareth.roamglyph | grep -q . || (echo "Roamglyph process died after starting tracking"; adb logcat -d; exit 1)
