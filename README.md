@@ -38,3 +38,7 @@ The MVP tracks while the Activity is active. Reliable courier-style tracking wit
 ## Exploration geometry
 
 At H3 resolution 13, one average cell is roughly 43.9 m². The center cell plus its six immediate neighbors is roughly 307 m², close to the area of a circle with a radius of about 9.9 m.
+
+## Getting the APK
+
+After a successful GitHub Actions run, download the `roamglyph-debug-apk` artifact from the run page and install `app-debug.apk` on Android.
