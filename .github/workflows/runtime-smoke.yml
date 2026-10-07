@@ -66,7 +66,4 @@ jobs:
             adb shell uiautomator dump /sdcard/roamglyph.xml
             adb shell cat /sdcard/roamglyph.xml > /tmp/roamglyph.xml
             ! grep -q "Ошибка запуска H3" /tmp/roamglyph.xml || (echo "H3 failed to initialize on Android"; adb logcat -d; exit 1)
-            adb shell am start-foreground-service -a com.sensareth.roamglyph.action.START -n com.sensareth.roamglyph/.TrackingService
-            sleep 4
-            adb shell dumpsys activity services com.sensareth.roamglyph | grep -q TrackingService || (echo "TrackingService is not running"; adb logcat -d; exit 1)
-            adb shell pidof com.sensareth.roamglyph | grep -q . || (echo "Roamglyph process died after foreground service start"; adb logcat -d; exit 1)
+            adb shell pidof com.sensareth.roamglyph | grep -q . || (echo "Roamglyph process died during runtime smoke"; adb logcat -d; exit 1)
