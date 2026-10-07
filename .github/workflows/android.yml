@@ -24,13 +24,13 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Install Android 37 platform
+      - name: Install Android 36 platform
         shell: bash
         run: |
           SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)"
           test -x "$SDKMANAGER"
           yes | "$SDKMANAGER" --licenses >/dev/null || true
-          "$SDKMANAGER" "platform-tools" "platforms;android-37"
+          "$SDKMANAGER" "platform-tools" "platforms;android-36"
 
       - name: Set up Gradle 9.6.0
         uses: gradle/actions/setup-gradle@v4
