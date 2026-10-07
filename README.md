@@ -16,8 +16,8 @@
 
 - Package: `com.sensareth.roamglyph`
 - `minSdk`: 29
-- `targetSdk`: 37
-- `compileSdk`: 37
+- `targetSdk`: 36
+- `compileSdk`: 36
 - Android Gradle Plugin: 9.4.0
 - CI Gradle: 9.6.0
 - JDK: 17
