@@ -56,41 +56,17 @@ jobs:
           disable-animations: true
           emulator-options: -no-snapshot-load -no-snapshot-save -no-window -gpu swiftshader_indirect -noaudio -no-boot-anim -camera-back none -camera-front none
           script: |
-            set -eu
             adb logcat -c
             adb install -r app/build/outputs/apk/debug/app-debug.apk
             adb shell pm grant com.sensareth.roamglyph android.permission.ACCESS_FINE_LOCATION
             adb shell pm grant com.sensareth.roamglyph android.permission.POST_NOTIFICATIONS || true
-
             adb shell am start -W -n com.sensareth.roamglyph/.MainActivity
             sleep 6
-
-            PID="$(adb shell pidof com.sensareth.roamglyph | tr -d '\r')"
-            if [ -z "$PID" ]; then
-              echo "Roamglyph process died after launch"
-              adb logcat -d
-              exit 1
-            fi
-
+            adb shell pidof com.sensareth.roamglyph | grep -q . || (echo "Roamglyph process died after launch"; adb logcat -d; exit 1)
             adb shell uiautomator dump /sdcard/roamglyph.xml
             adb shell cat /sdcard/roamglyph.xml > /tmp/roamglyph.xml
-            if grep -q "Ошибка запуска H3" /tmp/roamglyph.xml; then
-              echo "H3 failed to initialize on Android"
-              adb logcat -d
-              exit 1
-            fi
-
-            adb shell am start-foreground-service \
-              -a com.sensareth.roamglyph.action.START \
-              -n com.sensareth.roamglyph/.TrackingService
+            ! grep -q "Ошибка запуска H3" /tmp/roamglyph.xml || (echo "H3 failed to initialize on Android"; adb logcat -d; exit 1)
+            adb shell am start-foreground-service -a com.sensareth.roamglyph.action.START -n com.sensareth.roamglyph/.TrackingService
             sleep 4
-
-            adb shell dumpsys activity services com.sensareth.roamglyph | tee /tmp/services.txt
-            grep -q "TrackingService" /tmp/services.txt
-
-            PID="$(adb shell pidof com.sensareth.roamglyph | tr -d '\r')"
-            if [ -z "$PID" ]; then
-              echo "Roamglyph process died after foreground service start"
-              adb logcat -d
-              exit 1
-            fi
+            adb shell dumpsys activity services com.sensareth.roamglyph | grep -q TrackingService || (echo "TrackingService is not running"; adb logcat -d; exit 1)
+            adb shell pidof com.sensareth.roamglyph | grep -q . || (echo "Roamglyph process died after foreground service start"; adb logcat -d; exit 1)
