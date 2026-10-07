@@ -121,8 +121,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
         try {
             h3 = H3Core.newSystemInstance();
-        } catch (Exception e) {
-            throw new RuntimeException(e);
+        } catch (Throwable error) {
+            h3 = null;
         }
 
         store = new VisitedStore(this);
@@ -201,6 +201,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     }
 
     private void toggleTracking() {
+        if (h3 == null) {
+            status.setText("Ошибка запуска H3. Эта сборка не может исследовать карту.");
+            return;
+        }
         if (tracking) {
             stopTracking();
         } else {
@@ -305,7 +309,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     }
 
     private void renderVisited() {
-        if (map == null || map.getStyle() == null) return;
+        if (h3 == null || map == null || map.getStyle() == null) return;
 
         GeoJsonSource source = map.getStyle().getSourceAs(SOURCE_ID);
         if (source == null) return;
