@@ -761,12 +761,21 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             refreshVisitedFromStore();
             updateUi(true);
 
-            int message = invalid > 0
-                    ? R.string.import_success_with_invalid
-                    : R.string.import_success;
-            String rendered = invalid > 0
-                    ? getString(message, added, merged.size(), invalid)
-                    : getString(message, added, merged.size());
+            String rendered;
+            if (invalid > 0) {
+                rendered = getString(
+                        R.string.import_success_with_invalid,
+                        added,
+                        merged.size(),
+                        invalid
+                );
+            } else {
+                rendered = getString(
+                        R.string.import_success,
+                        added,
+                        merged.size()
+                );
+            }
 
             Toast.makeText(this, rendered, Toast.LENGTH_LONG).show();
         } catch (Exception error) {
