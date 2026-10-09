@@ -998,7 +998,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         tracking = store.isTrackingActive();
         locationEnabled = isSystemLocationEnabled();
         loadStoredLocation();
-        refreshVisitedFromStore();
+        refreshVisitedFromDatabase();
         renderCurrentLocation();
         setLocateAvailable(hasLocation);
         updateUi(true);
@@ -1018,7 +1018,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         tracking = store.isTrackingActive();
         locationEnabled = isSystemLocationEnabled();
         loadStoredLocation();
-        refreshVisitedFromStore();
+        refreshVisitedFromDatabase();
         renderCurrentLocation();
         setLocateAvailable(hasLocation);
         updateUi(true);
