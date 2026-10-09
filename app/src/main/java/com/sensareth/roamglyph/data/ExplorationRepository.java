@@ -208,7 +208,8 @@ public final class ExplorationRepository {
                     rejectionReason,
                     dao.countVisitedCells(),
                     0,
-                    0.0
+                    0.0,
+                    java.util.Collections.emptyList()
             );
         }
 
@@ -231,14 +232,18 @@ public final class ExplorationRepository {
         }
 
         final int[] newCellsHolder = new int[]{0};
+        final List<String> newCellIds = new ArrayList<>();
         final double finalDistanceDeltaM = distanceDeltaM;
 
         database.runInTransaction(() -> {
             dao.insertGpsPoint(point);
             long[] rows = dao.insertVisitedCells(cellEntities);
             int inserted = 0;
-            for (long row : rows) {
-                if (row != -1L) inserted++;
+            for (int i = 0; i < rows.length; i++) {
+                if (rows[i] != -1L) {
+                    inserted++;
+                    newCellIds.add(cellEntities.get(i).h3);
+                }
             }
             newCellsHolder[0] = inserted;
             dao.incrementSessionStats(
@@ -254,7 +259,8 @@ public final class ExplorationRepository {
                 null,
                 dao.countVisitedCells(),
                 newCellsHolder[0],
-                distanceDeltaM
+                distanceDeltaM,
+                newCellIds
         );
     }
 }

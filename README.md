@@ -15,6 +15,8 @@ history persistence, and legacy cell export/import have been tested on a physica
 Android device. The current development branch adds Room/SQLite sessions, timestamped
 GPS points, first-seen cell metadata, and full portable backups; these changes still
 require physical-device regression testing before the first public 0.5.0 release.
+The current development branch also adds adaptive Fog of War; these changes still
+require physical-device regression testing before the first public 0.5.0 release.
 Offline vector-map packages, richer statistics, and discoverable POIs remain future
 work.
 
@@ -34,6 +36,12 @@ work.
 - GPS teleport rejection in addition to the ±35 m accuracy filter.
 - Portable streaming JSON backup/restore for cells, sessions, and GPS points.
 - Backward-compatible import of legacy 0.4.x cell-only JSON exports.
+- Adaptive Fog of War with exact res-13 reveal geometry at normal street zoom.
+- Coarser H3 overview rendering only when zooming out, bounded to the visible
+  viewport for predictable performance.
+- Persistent Fog of War on/off switch.
+- Incremental on-screen H3 updates while tracking instead of reloading the entire
+  visited-cell table for each newly explored cell.
 - Smooth manual recentering without forced camera-follow while browsing.
 - No account, ads, analytics, Firebase, or mandatory backend.
 

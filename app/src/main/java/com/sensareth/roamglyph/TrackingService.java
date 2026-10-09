@@ -44,6 +44,7 @@ public final class TrackingService extends Service implements LocationListener {
     public static final String EXTRA_LOCATION_ENABLED = "location_enabled";
     public static final String EXTRA_CELLS_CHANGED = "cells_changed";
     public static final String EXTRA_REJECTION_REASON = "rejection_reason";
+    public static final String EXTRA_NEW_CELLS = "new_cells";
 
     private static final long UPDATE_INTERVAL_MS = 2_000L;
     private static final float MIN_DISTANCE_M = 4f;
@@ -200,7 +201,8 @@ public final class TrackingService extends Service implements LocationListener {
                 location,
                 result.accepted,
                 result.newCells > 0,
-                result.rejectionReason
+                result.rejectionReason,
+                result.newCellIds
         );
     }
 
@@ -236,12 +238,35 @@ public final class TrackingService extends Service implements LocationListener {
             boolean cellsChanged,
             @Nullable String rejectionReason
     ) {
+        broadcastState(
+                location,
+                accepted,
+                cellsChanged,
+                rejectionReason,
+                java.util.Collections.emptyList()
+        );
+    }
+
+    private void broadcastState(
+            @Nullable Location location,
+            boolean accepted,
+            boolean cellsChanged,
+            @Nullable String rejectionReason,
+            @NonNull java.util.List<String> newCellIds
+    ) {
         Intent update = new Intent(ACTION_STATE_CHANGED);
         update.setPackage(getPackageName());
         update.putExtra(EXTRA_TRACKING, state.isTrackingActive());
         update.putExtra(EXTRA_ACCEPTED, accepted);
         update.putExtra(EXTRA_LOCATION_ENABLED, isLocationEnabled());
         update.putExtra(EXTRA_CELLS_CHANGED, cellsChanged);
+
+        if (!newCellIds.isEmpty()) {
+            update.putStringArrayListExtra(
+                    EXTRA_NEW_CELLS,
+                    new java.util.ArrayList<>(newCellIds)
+            );
+        }
 
         if (rejectionReason != null) {
             update.putExtra(EXTRA_REJECTION_REASON, rejectionReason);

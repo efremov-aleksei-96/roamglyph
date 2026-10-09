@@ -34,6 +34,8 @@ import androidx.core.content.ContextCompat;
 
 import com.sensareth.roamglyph.data.BackupManager;
 import com.sensareth.roamglyph.data.ExplorationRepository;
+import com.sensareth.roamglyph.map.ExplorationCoverageIndex;
+import com.sensareth.roamglyph.map.ViewportOverlayBuilder;
 import com.uber.h3core.H3Core;
 import com.uber.h3core.util.LatLng;
 
@@ -41,6 +43,8 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import org.maplibre.android.MapLibre;
 import org.maplibre.android.camera.CameraPosition;
+import org.maplibre.android.geometry.LatLngBounds;
+import org.maplibre.android.geometry.VisibleRegion;
 import org.maplibre.android.maps.MapLibreMap;
 import org.maplibre.android.maps.MapView;
 import org.maplibre.android.maps.OnMapReadyCallback;
@@ -70,6 +74,7 @@ import java.util.Set;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.maplibre.android.style.layers.PropertyFactory.circleColor;
 import static org.maplibre.android.style.layers.PropertyFactory.circleOpacity;
@@ -89,6 +94,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private static final String PRIVACY_URL =
             "https://github.com/efremov-aleksei-96/roamglyph/blob/main/PRIVACY.md";
 
+    private static final String FOG_SOURCE_ID = "roamglyph-fog-source";
+    private static final String FOG_LAYER_ID = "roamglyph-fog-layer";
     private static final String VISITED_SOURCE_ID = "roamglyph-visited-source";
     private static final String VISITED_LAYER_ID = "roamglyph-visited-layer";
     private static final String LOCATION_SOURCE_ID = "roamglyph-current-location-source";
@@ -105,9 +112,12 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     private final Set<String> visited = new HashSet<>();
     private final AtomicBoolean refreshPending = new AtomicBoolean(false);
+    private final AtomicLong overlayGeneration = new AtomicLong(0L);
+    private final ExplorationCoverageIndex coverageIndex = new ExplorationCoverageIndex();
     private VisitedStore store;
     private ExplorationRepository repository;
     private ExecutorService dataExecutor;
+    private ExecutorService overlayExecutor;
     private H3Core h3;
     private LocationManager locationManager;
 
@@ -151,10 +161,27 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 }
             }
 
-            updateUi(accepted);
             if (intent.getBooleanExtra(TrackingService.EXTRA_CELLS_CHANGED, false)) {
-                refreshVisitedFromDatabase();
+                ArrayList<String> newCells =
+                        intent.getStringArrayListExtra(TrackingService.EXTRA_NEW_CELLS);
+
+                if (newCells != null && !newCells.isEmpty()) {
+                    boolean changed = visited.addAll(newCells);
+                    if (changed) {
+                        store.setVisitedCountCache(visited.size());
+                        if (overlayExecutor != null) {
+                            ArrayList<String> overlayCells = new ArrayList<>(newCells);
+                            overlayExecutor.execute(
+                                    () -> coverageIndex.addAll(h3, overlayCells)
+                            );
+                        }
+                        scheduleViewportOverlay();
+                    }
+                } else {
+                    refreshVisitedFromDatabase();
+                }
             }
+            updateUi(accepted);
         }
     };
 
@@ -227,6 +254,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         store = new VisitedStore(this);
         repository = new ExplorationRepository(this);
         dataExecutor = Executors.newSingleThreadExecutor();
+        overlayExecutor = Executors.newSingleThreadExecutor();
         locationManager = getSystemService(LocationManager.class);
         locationEnabled = isSystemLocationEnabled();
         tracking = store.isTrackingActive();
@@ -353,13 +381,23 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
         map.setStyle(new Style.Builder().fromUri(MAP_STYLE_URI), style -> {
             style.addSource(new GeoJsonSource(
+                    FOG_SOURCE_ID,
+                    FeatureCollection.fromFeatures(new Feature[]{})
+            ));
+            style.addLayer(new FillLayer(FOG_LAYER_ID, FOG_SOURCE_ID).withProperties(
+                    fillColor("#111418"),
+                    fillOpacity(0.58f),
+                    fillOutlineColor("#111418")
+            ));
+
+            style.addSource(new GeoJsonSource(
                     VISITED_SOURCE_ID,
                     FeatureCollection.fromFeatures(new Feature[]{})
             ));
             style.addLayer(new FillLayer(VISITED_LAYER_ID, VISITED_SOURCE_ID).withProperties(
                     fillColor("#1B5E20"),
-                    fillOpacity(0.64f),
-                    fillOutlineColor("#0D3B12")
+                    fillOpacity(0.12f),
+                    fillOutlineColor("#176A20")
             ));
 
             style.addSource(new GeoJsonSource(
@@ -384,7 +422,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     circleStrokeWidth(3f)
             ));
 
-            renderVisited();
             renderCurrentLocation();
 
             if (hasLocation) {
@@ -403,6 +440,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                                 .build()
                 );
             }
+
+            map.addOnCameraIdleListener(this::scheduleViewportOverlay);
+            scheduleViewportOverlay();
         });
     }
 
@@ -624,9 +664,15 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         PopupMenu popup = new PopupMenu(this, anchor);
         popup.getMenu().add(0, 1, 0, R.string.menu_export_history);
         popup.getMenu().add(0, 2, 1, R.string.menu_import_history);
-        popup.getMenu().add(0, 3, 2, R.string.menu_refresh_location);
-        popup.getMenu().add(0, 4, 3, R.string.menu_source_code);
-        popup.getMenu().add(0, 5, 4, R.string.menu_privacy);
+        popup.getMenu().add(
+                0,
+                6,
+                2,
+                store.isFogEnabled() ? R.string.menu_fog_on : R.string.menu_fog_off
+        );
+        popup.getMenu().add(0, 3, 3, R.string.menu_refresh_location);
+        popup.getMenu().add(0, 4, 4, R.string.menu_source_code);
+        popup.getMenu().add(0, 5, 5, R.string.menu_privacy);
 
         popup.setOnMenuItemClickListener(item -> {
             if (item.getItemId() == 1) {
@@ -655,6 +701,15 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                             "application/octet-stream"
                     });
                 }
+                return true;
+            }
+            if (item.getItemId() == 6) {
+                boolean enabled = !store.isFogEnabled();
+                store.setFogEnabled(enabled);
+                if (!enabled) {
+                    clearFogLayer();
+                }
+                scheduleViewportOverlay();
                 return true;
             }
             if (item.getItemId() == 3) {
@@ -821,7 +876,14 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     if (!stored.equals(visited)) {
                         visited.clear();
                         visited.addAll(stored);
-                        renderVisited();
+
+                        Set<String> coverageSnapshot = new HashSet<>(stored);
+                        if (overlayExecutor != null) {
+                            overlayExecutor.execute(
+                                    () -> coverageIndex.replaceAll(coverageSnapshot)
+                            );
+                        }
+                        scheduleViewportOverlay();
                     }
                     updateUi(true);
                 });
@@ -831,34 +893,77 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         });
     }
 
-    private void renderVisited() {
-        if (h3 == null || map == null || map.getStyle() == null) return;
-
-        GeoJsonSource source = map.getStyle().getSourceAs(VISITED_SOURCE_ID);
-        if (source == null) return;
-
-        List<Feature> features = new ArrayList<>();
-
-        for (String cell : visited) {
-            try {
-                List<LatLng> boundary = h3.cellToBoundary(cell);
-                List<Point> ring = new ArrayList<>();
-
-                for (LatLng p : boundary) {
-                    ring.add(Point.fromLngLat(p.lng, p.lat));
-                }
-
-                if (!ring.isEmpty()) ring.add(ring.get(0));
-
-                List<List<Point>> rings = new ArrayList<>();
-                rings.add(ring);
-                features.add(Feature.fromGeometry(Polygon.fromLngLats(rings)));
-            } catch (Throwable ignored) {
-                // Invalid imported cells are ignored instead of crashing map rendering.
-            }
+    private void scheduleViewportOverlay() {
+        if (h3 == null
+                || map == null
+                || map.getStyle() == null
+                || overlayExecutor == null) {
+            return;
         }
 
-        source.setGeoJson(FeatureCollection.fromFeatures(features));
+        CameraPosition camera = map.getCameraPosition();
+        if (camera == null) return;
+
+        VisibleRegion visibleRegion = map.getProjection().getVisibleRegion();
+        LatLngBounds bounds = visibleRegion.latLngBounds;
+        double zoom = camera.zoom;
+
+        long generation = overlayGeneration.incrementAndGet();
+        boolean fogEnabled = store.isFogEnabled();
+
+        double north = bounds.getLatNorth();
+        double east = bounds.getLonEast();
+        double south = bounds.getLatSouth();
+        double west = bounds.getLonWest();
+
+        overlayExecutor.execute(() -> {
+            ViewportOverlayBuilder.Result result;
+            try {
+                result = ViewportOverlayBuilder.build(
+                        h3,
+                        coverageIndex,
+                        north,
+                        east,
+                        south,
+                        west,
+                        zoom
+                );
+            } catch (Throwable error) {
+                return;
+            }
+
+            runOnUiThread(() -> {
+                if (generation != overlayGeneration.get()
+                        || isDestroyed()
+                        || map == null
+                        || map.getStyle() == null) {
+                    return;
+                }
+
+                GeoJsonSource fogSource = map.getStyle().getSourceAs(FOG_SOURCE_ID);
+                GeoJsonSource visitedSource =
+                        map.getStyle().getSourceAs(VISITED_SOURCE_ID);
+
+                if (fogSource != null) {
+                    fogSource.setGeoJson(
+                            fogEnabled
+                                    ? result.fog
+                                    : FeatureCollection.fromFeatures(new Feature[]{})
+                    );
+                }
+                if (visitedSource != null) {
+                    visitedSource.setGeoJson(result.explored);
+                }
+            });
+        });
+    }
+
+    private void clearFogLayer() {
+        if (map == null || map.getStyle() == null) return;
+        GeoJsonSource source = map.getStyle().getSourceAs(FOG_SOURCE_ID);
+        if (source != null) {
+            source.setGeoJson(FeatureCollection.fromFeatures(new Feature[]{}));
+        }
     }
 
     private void renderCurrentLocation() {
@@ -1010,6 +1115,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         mapView.onDestroy();
         if (dataExecutor != null) {
             dataExecutor.shutdown();
+        }
+        if (overlayExecutor != null) {
+            overlayExecutor.shutdownNow();
         }
         super.onDestroy();
     }

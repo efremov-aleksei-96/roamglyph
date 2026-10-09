@@ -7,6 +7,8 @@
     <string name="menu_export_history">Export backup</string>
     <string name="menu_import_history">Import backup</string>
     <string name="menu_refresh_location">Refresh location</string>
+    <string name="menu_fog_on">Fog of War: On</string>
+    <string name="menu_fog_off">Fog of War: Off</string>
     <string name="menu_source_code">Source code</string>
     <string name="menu_privacy">Privacy</string>
 

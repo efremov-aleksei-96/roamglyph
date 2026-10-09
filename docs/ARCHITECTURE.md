@@ -30,13 +30,26 @@ current cell + gridDisk(1)
         v
 Room visited_cells
         |
-        +--> MapLibre explored-cell overlay
+        +--> adaptive H3 coverage index
+        |        |
+        |        +--> viewport fog cells
+        |        +--> viewport explored cells
+        |
+        +--> MapLibre Fog of War overlay
         +--> portable backup v2
 ```
 
 The foreground service performs tracking while exploration is explicitly active.
 Database/H3 work is serialized off the UI thread. The Activity renders map/UI state
-and reloads changed cells asynchronously.
+and reloads the complete explored set only at lifecycle/restore boundaries. During
+active tracking, newly inserted H3 IDs are broadcast incrementally to the visible
+coverage index.
+
+Fog rendering is also serialized on a dedicated worker. At street-level zoom it
+uses the authoritative resolution-13 cells directly. When zooming out, explored
+cells are aggregated to H3 parents and cached lazily by resolution. Only cells in a
+padded visible viewport are converted to GeoJSON, with a hard candidate-cell limit
+to prevent pathological rendering cost.
 
 ## Storage model
 
