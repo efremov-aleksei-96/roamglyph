@@ -18,6 +18,7 @@ public final class VisitedStore {
     private static final String KEY_ACTIVE_SESSION_ID = "active_session_id";
     private static final String KEY_VISITED_COUNT_CACHE = "visited_count_cache";
     private static final String KEY_FOG_ENABLED = "fog_enabled";
+    private static final String KEY_DISCOVERIES_ENABLED = "discoveries_enabled";
     private static final String KEY_HAS_LOCATION = "has_location";
     private static final String KEY_LAT = "last_lat";
     private static final String KEY_LNG = "last_lng";
@@ -80,6 +81,14 @@ public final class VisitedStore {
 
     public void setFogEnabled(boolean enabled) {
         prefs.edit().putBoolean(KEY_FOG_ENABLED, enabled).apply();
+    }
+
+    public boolean isDiscoveriesEnabled() {
+        return prefs.getBoolean(KEY_DISCOVERIES_ENABLED, true);
+    }
+
+    public void setDiscoveriesEnabled(boolean enabled) {
+        prefs.edit().putBoolean(KEY_DISCOVERIES_ENABLED, enabled).apply();
     }
 
     public void saveLastLocation(Location location) {
