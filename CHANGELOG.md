@@ -10,7 +10,13 @@
   OpenFreeMap vector styling rendered by MapLibre.
 - Changed all in-app and notification text to English.
 - Made location recentering slower and smoother.
-- Increased contrast of explored cells.
+- Added a real Fog of War overlay: unexplored map cells are darkened while explored
+  territory remains visible.
+- Fog rendering uses exact H3 resolution 13 at street-level zoom and progressively
+  coarser parent cells only when zooming out.
+- Added a persistent Fog of War on/off switch.
+- Added viewport-only fog rendering, viewport padding, and incremental cell updates
+  so normal panning does not rebuild the complete exploration history.
 - Correctly reports when Android location services are disabled.
 
 ### Data and portability
