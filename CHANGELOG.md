@@ -13,6 +13,16 @@
 - Increased contrast of explored cells.
 - Correctly reports when Android location services are disabled.
 
+### Data and portability
+
+- Replaced the cell `SharedPreferences StringSet` with a Room/SQLite data model.
+- Added persistent exploration sessions and timestamped GPS-point history.
+- Added first-seen timestamps for newly discovered H3 cells.
+- Added a high-speed GPS teleport filter while preserving ordinary cycling.
+- Added streaming portable backup format v2 containing cells, sessions, and GPS
+  points, while retaining import support for version-1 cell-only exports.
+- Added idempotent migration of existing pre-Room cells into the database.
+
 ### Security and distribution
 
 - Removed the publicly committed debug signing key from the repository head.

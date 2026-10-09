@@ -11,9 +11,12 @@ Roamglyph-operated server.
 Current development version: **0.5.0**
 
 This is still an early project. The core GPS exploration flow, background tracking,
-history persistence, and history export/import have been tested on a physical
-Android device. Large-history storage, offline vector-map packages, sessions,
-statistics, and discoverable POIs remain future work.
+history persistence, and legacy cell export/import have been tested on a physical
+Android device. The current development branch adds Room/SQLite sessions, timestamped
+GPS points, first-seen cell metadata, and full portable backups; these changes still
+require physical-device regression testing before the first public 0.5.0 release.
+Offline vector-map packages, richer statistics, and discoverable POIs remain future
+work.
 
 ## Current features
 
@@ -26,8 +29,11 @@ statistics, and discoverable POIs remain future work.
 - Each accepted fix reveals the current H3 cell plus its immediate neighbours,
   approximating a roughly 10 m exploration radius.
 - GPS fixes worse than ±35 m are ignored for exploration.
-- Explored cells persist locally.
-- Portable JSON export/import with merge semantics.
+- Room/SQLite storage for explored cells, exploration sessions, and GPS points.
+- First-seen timestamps for newly explored cells.
+- GPS teleport rejection in addition to the ±35 m accuracy filter.
+- Portable streaming JSON backup/restore for cells, sessions, and GPS points.
+- Backward-compatible import of legacy 0.4.x cell-only JSON exports.
 - Smooth manual recentering without forced camera-follow while browsing.
 - No account, ads, analytics, Firebase, or mandatory backend.
 

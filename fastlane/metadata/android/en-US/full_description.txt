@@ -9,8 +9,9 @@ Current features:
 • OpenStreetMap-based vector map rendered with MapLibre
 • background exploration with an explicit persistent notification
 • GPS accuracy filtering
-• local persistent history
-• portable JSON export and import
+• local Room/SQLite history with sessions and timestamped GPS points
+• portable full JSON backup and restore
+• backward-compatible import of older cell-only backups
 • no account, advertisements, analytics, Firebase, or Google Play Services
 
 Roamglyph is local-first. Your exploration history is stored on your device and is

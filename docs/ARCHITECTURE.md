@@ -10,20 +10,77 @@ replaced without invalidating exploration history.
 ```text
 Android LocationManager
         |
-accuracy filter (<= 35 m)
+        v
+raw GPS point
         |
+        +--> local Room gps_points
+        |
+accuracy + teleport filter
+        |
+        v
+accepted point
+        |
+        +--> session distance / point statistics
+        |
+        v
 H3 resolution 13
         |
 current cell + gridDisk(1)
         |
-VisitedStore
+        v
+Room visited_cells
         |
         +--> MapLibre explored-cell overlay
-        +--> portable JSON export/import
+        +--> portable backup v2
 ```
 
 The foreground service performs tracking while exploration is explicitly active.
-The Activity renders map/UI state and does not need to remain visible.
+Database/H3 work is serialized off the UI thread. The Activity renders map/UI state
+and reloads changed cells asynchronously.
+
+## Storage model
+
+### `visited_cells`
+
+- H3 cell ID (primary key)
+- first-seen timestamp when known
+- provenance/source
+
+Legacy cells from versions before the Room migration are preserved with an unknown
+first-seen timestamp because that information did not previously exist.
+
+### `sessions`
+
+- stable UUID
+- start/end timestamps
+- accumulated distance
+- accepted-point count
+- newly discovered cell count
+- provenance/source
+
+An active session UUID is retained in lightweight app state so an Android service
+restart can continue the same session.
+
+### `gps_points`
+
+- stable UUID
+- parent session UUID
+- timestamp
+- latitude/longitude
+- accuracy
+- optional speed/altitude/provider
+- accepted/rejected state
+- accepted H3 cell
+- rejection reason
+
+Raw points are kept locally so routes and statistics can be reconstructed without
+depending on a server.
+
+## Migration from the prototype
+
+The old `visited_h3` SharedPreferences StringSet is treated as a one-time migration
+source. Migration uses conflict-ignore inserts, so it is idempotent across crashes
+or retries. The legacy set is removed only after the Room copy succeeds.
 
 ## Map stack
 
@@ -42,16 +99,12 @@ OpenStreetMap data
 The default provider is deliberately replaceable.
 
 Future offline support should use local vector packages, with PMTiles currently the
-preferred candidate, without changing the exploration data or export format.
+preferred candidate, without changing the exploration database or backup format.
 
-## Planned storage evolution
+## Backup model
 
-`VisitedStore` currently retains the early SharedPreferences history format.
-Before large-scale public use it should migrate to SQLite/Room with at least:
+Version 2 backups are streaming JSON and contain all three core data sets: cells,
+sessions, and GPS points. Import validates the complete file before restore and uses
+stable IDs plus conflict-ignore inserts so repeated restoration is safe.
 
-- sessions;
-- timestamped raw/filtered GPS points;
-- unique visited H3 cells with first-seen timestamps;
-- discovered POIs.
-
-The existing H3-only JSON remains a valid migration source.
+See `docs/BACKUP_FORMAT.md`.
