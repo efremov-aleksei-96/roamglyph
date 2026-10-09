@@ -630,15 +630,31 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
         popup.setOnMenuItemClickListener(item -> {
             if (item.getItemId() == 1) {
-                launchHistoryExport();
+                if (tracking) {
+                    Toast.makeText(
+                            this,
+                            R.string.backup_requires_paused,
+                            Toast.LENGTH_LONG
+                    ).show();
+                } else {
+                    launchHistoryExport();
+                }
                 return true;
             }
             if (item.getItemId() == 2) {
-                importHistoryLauncher.launch(new String[]{
-                        "application/json",
-                        "text/plain",
-                        "application/octet-stream"
-                });
+                if (tracking) {
+                    Toast.makeText(
+                            this,
+                            R.string.backup_requires_paused,
+                            Toast.LENGTH_LONG
+                    ).show();
+                } else {
+                    importHistoryLauncher.launch(new String[]{
+                            "application/json",
+                            "text/plain",
+                            "application/octet-stream"
+                    });
+                }
                 return true;
             }
             if (item.getItemId() == 3) {
