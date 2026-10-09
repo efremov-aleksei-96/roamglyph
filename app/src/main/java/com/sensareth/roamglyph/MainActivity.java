@@ -34,6 +34,7 @@ import androidx.core.content.ContextCompat;
 
 import com.sensareth.roamglyph.data.BackupManager;
 import com.sensareth.roamglyph.data.ExplorationRepository;
+import com.sensareth.roamglyph.map.ExplorationCoverageIndex;
 import com.sensareth.roamglyph.map.ViewportOverlayBuilder;
 import com.uber.h3core.H3Core;
 import com.uber.h3core.util.LatLng;
@@ -112,6 +113,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private final Set<String> visited = new HashSet<>();
     private final AtomicBoolean refreshPending = new AtomicBoolean(false);
     private final AtomicLong overlayGeneration = new AtomicLong(0L);
+    private final ExplorationCoverageIndex coverageIndex = new ExplorationCoverageIndex();
     private VisitedStore store;
     private ExplorationRepository repository;
     private ExecutorService dataExecutor;
@@ -857,6 +859,13 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     if (!stored.equals(visited)) {
                         visited.clear();
                         visited.addAll(stored);
+
+                        Set<String> coverageSnapshot = new HashSet<>(stored);
+                        if (overlayExecutor != null) {
+                            overlayExecutor.execute(
+                                    () -> coverageIndex.replaceAll(coverageSnapshot)
+                            );
+                        }
                         scheduleViewportOverlay();
                     }
                     updateUi(true);
@@ -883,7 +892,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         double zoom = camera.zoom;
 
         long generation = overlayGeneration.incrementAndGet();
-        Set<String> visitedSnapshot = new HashSet<>(visited);
         boolean fogEnabled = store.isFogEnabled();
 
         double north = bounds.getLatNorth();
@@ -896,7 +904,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             try {
                 result = ViewportOverlayBuilder.build(
                         h3,
-                        visitedSnapshot,
+                        coverageIndex,
                         north,
                         east,
                         south,
