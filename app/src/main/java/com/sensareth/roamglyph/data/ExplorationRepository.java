@@ -51,6 +51,31 @@ public final class ExplorationRepository {
         return dao.countGpsPoints();
     }
 
+    public int countDiscoveries() {
+        return dao.countDiscoveries();
+    }
+
+    public List<DiscoveryEntity> loadDiscoveries() {
+        return dao.loadDiscoveries();
+    }
+
+    public Set<String> loadDiscoveryIds() {
+        return new HashSet<>(dao.loadDiscoveryIds());
+    }
+
+    public List<DiscoveryEntity> loadDiscoveriesPage(int limit, int offset) {
+        return dao.loadDiscoveriesPage(limit, offset);
+    }
+
+    public boolean insertDiscovery(@NonNull DiscoveryEntity discovery) {
+        return dao.insertDiscovery(discovery) != -1L;
+    }
+
+    public int importDiscoveries(List<DiscoveryEntity> discoveries) {
+        if (discoveries.isEmpty()) return 0;
+        return countInserted(dao.insertDiscoveries(discoveries));
+    }
+
     public int countSessions() {
         return dao.countSessions();
     }
