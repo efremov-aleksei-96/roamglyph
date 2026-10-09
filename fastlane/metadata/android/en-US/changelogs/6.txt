@@ -1,0 +1,4 @@
+FLOSS foundation release: removes Google Play Services, uses Android LocationManager,
+switches to an OpenFreeMap vector basemap, adds English UI, smoother recentering,
+location-disabled status, secure release-signing infrastructure, privacy/licensing
+docs, and F-Droid-ready metadata.

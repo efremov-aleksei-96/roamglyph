@@ -1,0 +1,8 @@
+Roamglyph
+Copyright 2026 Roamglyph contributors
+
+Roamglyph uses OpenStreetMap-derived map data.
+Map data © OpenStreetMap contributors.
+
+The default online basemap is served by OpenFreeMap and rendered by MapLibre.
+See THIRD_PARTY_NOTICES.md for dependency and attribution details.
