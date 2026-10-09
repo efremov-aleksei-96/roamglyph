@@ -16,19 +16,31 @@ import java.util.List;
 import java.util.Set;
 
 public final class ViewportOverlayBuilder {
-    public static final double MIN_FOG_ZOOM = 14.5;
     public static final int MAX_VIEWPORT_CELLS = 8_000;
     private static final int SOURCE_RESOLUTION = 13;
-    private static final int MIN_RENDER_RESOLUTION = 8;
+    private static final int MIN_RENDER_RESOLUTION = 3;
+    private static final double VIEWPORT_PADDING_FRACTION = 0.18;
 
     private ViewportOverlayBuilder() {
     }
 
+    /**
+     * Uses exact res-13 cells at normal street-level zoom and progressively coarser
+     * parents only when zooming out. This preserves honest reveal geometry close up
+     * while keeping the overlay bounded at city/region scales.
+     */
     public static int resolutionForZoom(double zoom) {
-        if (zoom >= 19.0) return 13;
-        if (zoom >= 18.0) return 12;
-        if (zoom >= 16.5) return 11;
-        if (zoom >= MIN_FOG_ZOOM) return 10;
+        if (zoom >= 17.0) return 13;
+        if (zoom >= 15.5) return 12;
+        if (zoom >= 14.0) return 11;
+        if (zoom >= 12.5) return 10;
+        if (zoom >= 11.0) return 9;
+        if (zoom >= 9.5) return 8;
+        if (zoom >= 8.0) return 7;
+        if (zoom >= 6.5) return 6;
+        if (zoom >= 5.0) return 5;
+        if (zoom >= 3.5) return 4;
+        if (zoom >= 2.5) return 3;
         return -1;
     }
 
@@ -47,11 +59,12 @@ public final class ViewportOverlayBuilder {
             return Result.empty();
         }
 
+        Bounds padded = paddedBounds(north, east, south, west);
         List<LatLng> viewport = new ArrayList<>(4);
-        viewport.add(new LatLng(north, west));
-        viewport.add(new LatLng(south, west));
-        viewport.add(new LatLng(south, east));
-        viewport.add(new LatLng(north, east));
+        viewport.add(new LatLng(padded.north, padded.west));
+        viewport.add(new LatLng(padded.south, padded.west));
+        viewport.add(new LatLng(padded.south, padded.east));
+        viewport.add(new LatLng(padded.north, padded.east));
 
         List<String> candidateCells;
         while (true) {
@@ -73,20 +86,11 @@ public final class ViewportOverlayBuilder {
             return Result.empty();
         }
 
-        Set<String> exploredAtResolution = new HashSet<>();
-        if (resolution == SOURCE_RESOLUTION) {
-            exploredAtResolution.addAll(visitedResolution13);
-        } else {
-            for (String cell : visitedResolution13) {
-                try {
-                    exploredAtResolution.add(
-                            h3.cellToParentAddress(cell, resolution)
-                    );
-                } catch (RuntimeException ignored) {
-                    // Malformed legacy/imported cells should not break map rendering.
-                }
-            }
-        }
+        Set<String> exploredAtResolution = exploredAtResolution(
+                h3,
+                visitedResolution13,
+                resolution
+        );
 
         List<Feature> explored = new ArrayList<>();
         List<Feature> fog = new ArrayList<>();
@@ -107,6 +111,50 @@ public final class ViewportOverlayBuilder {
                 FeatureCollection.fromFeatures(fog.toArray(new Feature[0])),
                 resolution,
                 candidateCells.size()
+        );
+    }
+
+    @NonNull
+    private static Set<String> exploredAtResolution(
+            @NonNull H3Core h3,
+            @NonNull Set<String> visitedResolution13,
+            int resolution
+    ) {
+        Set<String> explored = new HashSet<>();
+
+        if (resolution == SOURCE_RESOLUTION) {
+            explored.addAll(visitedResolution13);
+            return explored;
+        }
+
+        for (String cell : visitedResolution13) {
+            try {
+                explored.add(h3.cellToParentAddress(cell, resolution));
+            } catch (RuntimeException ignored) {
+                // Malformed legacy/imported cells must not break rendering.
+            }
+        }
+
+        return explored;
+    }
+
+    private static Bounds paddedBounds(
+            double north,
+            double east,
+            double south,
+            double west
+    ) {
+        double latitudeSpan = north - south;
+        double longitudeSpan = east - west;
+
+        double latitudePadding = latitudeSpan * VIEWPORT_PADDING_FRACTION;
+        double longitudePadding = longitudeSpan * VIEWPORT_PADDING_FRACTION;
+
+        return new Bounds(
+                Math.min(89.999999, north + latitudePadding),
+                Math.min(180.0, east + longitudePadding),
+                Math.max(-89.999999, south - latitudePadding),
+                Math.max(-180.0, west - longitudePadding)
         );
     }
 
@@ -146,6 +194,20 @@ public final class ViewportOverlayBuilder {
             return Feature.fromGeometry(Polygon.fromLngLats(rings));
         } catch (RuntimeException ignored) {
             return null;
+        }
+    }
+
+    private static final class Bounds {
+        final double north;
+        final double east;
+        final double south;
+        final double west;
+
+        Bounds(double north, double east, double south, double west) {
+            this.north = north;
+            this.east = east;
+            this.south = south;
+            this.west = west;
         }
     }
 
