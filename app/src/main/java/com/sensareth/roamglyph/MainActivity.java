@@ -32,6 +32,7 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 
+import com.sensareth.roamglyph.data.ExplorationRepository;
 import com.uber.h3core.H3Core;
 import com.uber.h3core.util.LatLng;
 
@@ -65,6 +66,9 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 import static org.maplibre.android.style.layers.PropertyFactory.circleColor;
 import static org.maplibre.android.style.layers.PropertyFactory.circleOpacity;
@@ -101,7 +105,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private TextView gpsText;
 
     private final Set<String> visited = new HashSet<>();
+    private final AtomicBoolean refreshPending = new AtomicBoolean(false);
     private VisitedStore store;
+    private ExplorationRepository repository;
+    private ExecutorService dataExecutor;
     private H3Core h3;
     private LocationManager locationManager;
 
@@ -145,8 +152,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 }
             }
 
-            refreshVisitedFromStore();
             updateUi(accepted);
+            if (intent.getBooleanExtra(TrackingService.EXTRA_CELLS_CHANGED, false)) {
+                refreshVisitedFromDatabase();
+            }
         }
     };
 
@@ -217,10 +226,11 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         }
 
         store = new VisitedStore(this);
+        repository = new ExplorationRepository(this);
+        dataExecutor = Executors.newSingleThreadExecutor();
         locationManager = getSystemService(LocationManager.class);
         locationEnabled = isSystemLocationEnabled();
         tracking = store.isTrackingActive();
-        visited.addAll(store.load());
         loadStoredLocation();
 
         FrameLayout root = new FrameLayout(this);
@@ -334,6 +344,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             gpsText.setText(R.string.location_permission_prompt);
             requestLocationPermission(false);
         }
+
+        refreshVisitedFromDatabase();
     }
 
     @Override
@@ -665,39 +677,44 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     }
 
     private void writeHistory(Uri uri) {
-        try {
-            List<String> cells = new ArrayList<>(store.load());
-            Collections.sort(cells);
+        dataExecutor.execute(() -> {
+            try {
+                repository.migrateLegacyCellsIfNeeded(store);
+                List<String> cells = new ArrayList<>(repository.loadVisitedCellIds());
+                Collections.sort(cells);
 
-            JSONObject root = new JSONObject();
-            root.put("format", HISTORY_FORMAT);
-            root.put("version", HISTORY_VERSION);
-            root.put("h3_resolution", H3_RESOLUTION);
-            root.put("cell_count", cells.size());
-            root.put("exported_at_ms", System.currentTimeMillis());
+                JSONObject root = new JSONObject();
+                root.put("format", HISTORY_FORMAT);
+                root.put("version", HISTORY_VERSION);
+                root.put("h3_resolution", H3_RESOLUTION);
+                root.put("cell_count", cells.size());
+                root.put("exported_at_ms", System.currentTimeMillis());
 
-            JSONArray array = new JSONArray();
-            for (String cell : cells) array.put(cell);
-            root.put("cells", array);
+                JSONArray array = new JSONArray();
+                for (String cell : cells) array.put(cell);
+                root.put("cells", array);
 
-            try (OutputStream output = getContentResolver().openOutputStream(uri)) {
-                if (output == null) throw new IllegalStateException("No output stream");
-                try (OutputStreamWriter writer = new OutputStreamWriter(
-                        output,
-                        StandardCharsets.UTF_8
-                )) {
-                    writer.write(root.toString(2));
+                try (OutputStream output = getContentResolver().openOutputStream(uri)) {
+                    if (output == null) throw new IllegalStateException("No output stream");
+                    try (OutputStreamWriter writer = new OutputStreamWriter(
+                            output,
+                            StandardCharsets.UTF_8
+                    )) {
+                        writer.write(root.toString(2));
+                    }
                 }
-            }
 
-            Toast.makeText(
-                    this,
-                    getString(R.string.export_success, cells.size()),
-                    Toast.LENGTH_LONG
-            ).show();
-        } catch (Exception error) {
-            Toast.makeText(this, R.string.export_failed, Toast.LENGTH_LONG).show();
-        }
+                runOnUiThread(() -> Toast.makeText(
+                        this,
+                        getString(R.string.export_success, cells.size()),
+                        Toast.LENGTH_LONG
+                ).show());
+            } catch (Exception error) {
+                runOnUiThread(() ->
+                        Toast.makeText(this, R.string.export_failed, Toast.LENGTH_LONG).show()
+                );
+            }
+        });
     }
 
     private void readHistory(Uri uri) {
@@ -706,81 +723,92 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             return;
         }
 
-        try {
-            StringBuilder text = new StringBuilder();
+        dataExecutor.execute(() -> {
+            try {
+                StringBuilder text = new StringBuilder();
 
-            try (InputStream input = getContentResolver().openInputStream(uri)) {
-                if (input == null) throw new IllegalStateException("No input stream");
-                try (BufferedReader reader = new BufferedReader(
-                        new InputStreamReader(input, StandardCharsets.UTF_8)
-                )) {
-                    char[] buffer = new char[4096];
-                    int read;
-                    while ((read = reader.read(buffer)) != -1) {
-                        text.append(buffer, 0, read);
-                        if (text.length() > 50_000_000) {
-                            throw new IllegalArgumentException("History file is too large");
+                try (InputStream input = getContentResolver().openInputStream(uri)) {
+                    if (input == null) throw new IllegalStateException("No input stream");
+                    try (BufferedReader reader = new BufferedReader(
+                            new InputStreamReader(input, StandardCharsets.UTF_8)
+                    )) {
+                        char[] buffer = new char[4096];
+                        int read;
+                        while ((read = reader.read(buffer)) != -1) {
+                            text.append(buffer, 0, read);
+                            if (text.length() > 50_000_000) {
+                                throw new IllegalArgumentException("History file is too large");
+                            }
                         }
                     }
                 }
-            }
 
-            JSONObject root = new JSONObject(text.toString());
+                JSONObject root = new JSONObject(text.toString());
 
-            if (!HISTORY_FORMAT.equals(root.optString("format"))) {
-                throw new IllegalArgumentException("Unknown history format");
-            }
-            if (root.optInt("version", -1) != HISTORY_VERSION) {
-                throw new IllegalArgumentException("Unsupported history version");
-            }
-            if (root.optInt("h3_resolution", -1) != H3_RESOLUTION) {
-                throw new IllegalArgumentException("Unsupported H3 resolution");
-            }
-
-            JSONArray cells = root.getJSONArray("cells");
-            Set<String> merged = store.load();
-            int added = 0;
-            int invalid = 0;
-
-            for (int i = 0; i < cells.length(); i++) {
-                String cell = cells.optString(i, "").trim();
-                if (cell.isEmpty()) {
-                    invalid++;
-                    continue;
+                if (!HISTORY_FORMAT.equals(root.optString("format"))) {
+                    throw new IllegalArgumentException("Unknown history format");
+                }
+                if (root.optInt("version", -1) != HISTORY_VERSION) {
+                    throw new IllegalArgumentException("Unsupported history version");
+                }
+                if (root.optInt("h3_resolution", -1) != H3_RESOLUTION) {
+                    throw new IllegalArgumentException("Unsupported H3 resolution");
                 }
 
-                try {
-                    h3.cellToBoundary(cell);
-                    if (merged.add(cell)) added++;
-                } catch (Throwable error) {
-                    invalid++;
+                JSONArray cells = root.getJSONArray("cells");
+                Set<String> validCells = new HashSet<>();
+                int invalid = 0;
+
+                for (int i = 0; i < cells.length(); i++) {
+                    String cell = cells.optString(i, "").trim();
+                    if (cell.isEmpty()) {
+                        invalid++;
+                        continue;
+                    }
+
+                    try {
+                        synchronized (h3) {
+                            h3.cellToBoundary(cell);
+                        }
+                        validCells.add(cell);
+                    } catch (Throwable error) {
+                        invalid++;
+                    }
                 }
-            }
 
-            store.save(merged);
-            refreshVisitedFromStore();
-            updateUi(true);
+                repository.migrateLegacyCellsIfNeeded(store);
+                int added = repository.importCells(validCells, null, "import-v1");
+                int total = repository.countVisitedCells();
+                store.setVisitedCountCache(total);
+                int invalidCount = invalid;
 
-            String rendered;
-            if (invalid > 0) {
-                rendered = getString(
-                        R.string.import_success_with_invalid,
-                        added,
-                        merged.size(),
-                        invalid
+                runOnUiThread(() -> {
+                    refreshVisitedFromDatabase();
+
+                    String rendered;
+                    if (invalidCount > 0) {
+                        rendered = getString(
+                                R.string.import_success_with_invalid,
+                                added,
+                                total,
+                                invalidCount
+                        );
+                    } else {
+                        rendered = getString(
+                                R.string.import_success,
+                                added,
+                                total
+                        );
+                    }
+
+                    Toast.makeText(this, rendered, Toast.LENGTH_LONG).show();
+                });
+            } catch (Exception error) {
+                runOnUiThread(() ->
+                        Toast.makeText(this, R.string.import_failed, Toast.LENGTH_LONG).show()
                 );
-            } else {
-                rendered = getString(
-                        R.string.import_success,
-                        added,
-                        merged.size()
-                );
             }
-
-            Toast.makeText(this, rendered, Toast.LENGTH_LONG).show();
-        } catch (Exception error) {
-            Toast.makeText(this, R.string.import_failed, Toast.LENGTH_LONG).show();
-        }
+        });
     }
 
     private void updateUi(boolean accepted) {
@@ -823,13 +851,29 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         }
     }
 
-    private void refreshVisitedFromStore() {
-        Set<String> stored = store.load();
-        if (stored.equals(visited)) return;
+    private void refreshVisitedFromDatabase() {
+        if (dataExecutor == null || !refreshPending.compareAndSet(false, true)) return;
 
-        visited.clear();
-        visited.addAll(stored);
-        renderVisited();
+        dataExecutor.execute(() -> {
+            try {
+                repository.migrateLegacyCellsIfNeeded(store);
+                Set<String> stored = repository.loadVisitedCellIds();
+                store.setVisitedCountCache(stored.size());
+
+                runOnUiThread(() -> {
+                    refreshPending.set(false);
+                    if (isDestroyed()) return;
+                    if (!stored.equals(visited)) {
+                        visited.clear();
+                        visited.addAll(stored);
+                        renderVisited();
+                    }
+                    updateUi(true);
+                });
+            } catch (RuntimeException error) {
+                refreshPending.set(false);
+            }
+        });
     }
 
     private void renderVisited() {
@@ -1009,6 +1053,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     @Override
     protected void onDestroy() {
         mapView.onDestroy();
+        if (dataExecutor != null) {
+            dataExecutor.shutdown();
+        }
         super.onDestroy();
     }
 
