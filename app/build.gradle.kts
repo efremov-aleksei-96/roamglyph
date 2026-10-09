@@ -45,6 +45,12 @@ android {
         targetSdk = 36
         versionCode = 6
         versionName = "0.5.0"
+
+        javaCompileOptions {
+            annotationProcessorOptions {
+                arguments["room.incremental"] = "true"
+            }
+        }
     }
 
     signingConfigs {
@@ -73,4 +79,8 @@ dependencies {
     implementation("com.uber:h3-android:4.5.0")
     implementation("androidx.appcompat:appcompat:1.8.0")
     implementation("androidx.core:core-ktx:1.18.0")
+    implementation("androidx.room:room-runtime:2.8.5")
+    annotationProcessor("androidx.room:room-compiler:2.8.5")
+
+    testImplementation("junit:junit:4.13.2")
 }
