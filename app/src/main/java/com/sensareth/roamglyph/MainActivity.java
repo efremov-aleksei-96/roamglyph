@@ -366,9 +366,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     FeatureCollection.fromFeatures(new Feature[]{})
             ));
             style.addLayer(new FillLayer(FOG_LAYER_ID, FOG_SOURCE_ID).withProperties(
-                    fillColor("#101214"),
-                    fillOpacity(0.70f),
-                    fillOutlineColor("#101214")
+                    fillColor("#111418"),
+                    fillOpacity(0.58f),
+                    fillOutlineColor("#111418")
             ));
 
             style.addSource(new GeoJsonSource(
@@ -377,8 +377,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             ));
             style.addLayer(new FillLayer(VISITED_LAYER_ID, VISITED_SOURCE_ID).withProperties(
                     fillColor("#1B5E20"),
-                    fillOpacity(0.30f),
-                    fillOutlineColor("#0D3B12")
+                    fillOpacity(0.12f),
+                    fillOutlineColor("#176A20")
             ));
 
             style.addSource(new GeoJsonSource(
@@ -645,9 +645,15 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         PopupMenu popup = new PopupMenu(this, anchor);
         popup.getMenu().add(0, 1, 0, R.string.menu_export_history);
         popup.getMenu().add(0, 2, 1, R.string.menu_import_history);
-        popup.getMenu().add(0, 3, 2, R.string.menu_refresh_location);
-        popup.getMenu().add(0, 4, 3, R.string.menu_source_code);
-        popup.getMenu().add(0, 5, 4, R.string.menu_privacy);
+        popup.getMenu().add(
+                0,
+                6,
+                2,
+                store.isFogEnabled() ? R.string.menu_fog_on : R.string.menu_fog_off
+        );
+        popup.getMenu().add(0, 3, 3, R.string.menu_refresh_location);
+        popup.getMenu().add(0, 4, 4, R.string.menu_source_code);
+        popup.getMenu().add(0, 5, 5, R.string.menu_privacy);
 
         popup.setOnMenuItemClickListener(item -> {
             if (item.getItemId() == 1) {
@@ -676,6 +682,15 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                             "application/octet-stream"
                     });
                 }
+                return true;
+            }
+            if (item.getItemId() == 6) {
+                boolean enabled = !store.isFogEnabled();
+                store.setFogEnabled(enabled);
+                if (!enabled) {
+                    clearFogLayer();
+                }
+                scheduleViewportOverlay();
                 return true;
             }
             if (item.getItemId() == 3) {
@@ -869,6 +884,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
         long generation = overlayGeneration.incrementAndGet();
         Set<String> visitedSnapshot = new HashSet<>(visited);
+        boolean fogEnabled = store.isFogEnabled();
 
         double north = bounds.getLatNorth();
         double east = bounds.getLonEast();
@@ -904,13 +920,25 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                         map.getStyle().getSourceAs(VISITED_SOURCE_ID);
 
                 if (fogSource != null) {
-                    fogSource.setGeoJson(result.fog);
+                    fogSource.setGeoJson(
+                            fogEnabled
+                                    ? result.fog
+                                    : FeatureCollection.fromFeatures(new Feature[]{})
+                    );
                 }
                 if (visitedSource != null) {
                     visitedSource.setGeoJson(result.explored);
                 }
             });
         });
+    }
+
+    private void clearFogLayer() {
+        if (map == null || map.getStyle() == null) return;
+        GeoJsonSource source = map.getStyle().getSourceAs(FOG_SOURCE_ID);
+        if (source != null) {
+            source.setGeoJson(FeatureCollection.fromFeatures(new Feature[]{}));
+        }
     }
 
     private void renderCurrentLocation() {
