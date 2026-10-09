@@ -51,6 +51,48 @@ public final class ExplorationRepository {
         return dao.countGpsPoints();
     }
 
+    public int countSessions() {
+        return dao.countSessions();
+    }
+
+    public List<VisitedCellEntity> loadVisitedCellsPage(int limit, int offset) {
+        return dao.loadVisitedCellsPage(limit, offset);
+    }
+
+    public List<SessionEntity> loadSessionsPage(int limit, int offset) {
+        return dao.loadSessionsPage(limit, offset);
+    }
+
+    public List<GpsPointEntity> loadGpsPointsPage(int limit, int offset) {
+        return dao.loadGpsPointsPage(limit, offset);
+    }
+
+    public int importVisitedCells(List<VisitedCellEntity> cells) {
+        if (cells.isEmpty()) return 0;
+        long[] rows = dao.insertVisitedCells(cells);
+        return countInserted(rows);
+    }
+
+    public int importSessions(List<SessionEntity> sessions) {
+        if (sessions.isEmpty()) return 0;
+        long[] rows = dao.insertSessions(sessions);
+        return countInserted(rows);
+    }
+
+    public long importGpsPoints(List<GpsPointEntity> points) {
+        if (points.isEmpty()) return 0L;
+        long[] rows = dao.insertGpsPoints(points);
+        return countInserted(rows);
+    }
+
+    private static int countInserted(long[] rows) {
+        int inserted = 0;
+        for (long row : rows) {
+            if (row != -1L) inserted++;
+        }
+        return inserted;
+    }
+
     public int importLegacyCells(Set<String> cells) {
         return importCells(cells, null, "legacy-v1");
     }
@@ -67,12 +109,7 @@ public final class ExplorationRepository {
             entities.add(new VisitedCellEntity(cell, firstSeenAtMs, source));
         }
 
-        long[] rows = dao.insertVisitedCells(entities);
-        int inserted = 0;
-        for (long row : rows) {
-            if (row != -1L) inserted++;
-        }
-        return inserted;
+        return countInserted(dao.insertVisitedCells(entities));
     }
 
     public int migrateLegacyCellsIfNeeded(@NonNull VisitedStore state) {
