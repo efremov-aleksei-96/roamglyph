@@ -11,7 +11,6 @@ import org.maplibre.geojson.Point;
 import org.maplibre.geojson.Polygon;
 
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
@@ -47,7 +46,7 @@ public final class ViewportOverlayBuilder {
     @NonNull
     public static Result build(
             @NonNull H3Core h3,
-            @NonNull Set<String> visitedResolution13,
+            @NonNull ExplorationCoverageIndex coverage,
             double north,
             double east,
             double south,
@@ -86,11 +85,8 @@ public final class ViewportOverlayBuilder {
             return Result.empty();
         }
 
-        Set<String> exploredAtResolution = exploredAtResolution(
-                h3,
-                visitedResolution13,
-                resolution
-        );
+        Set<String> exploredAtResolution =
+                coverage.cellsAtResolution(h3, resolution);
 
         List<Feature> explored = new ArrayList<>();
         List<Feature> fog = new ArrayList<>();
@@ -112,30 +108,6 @@ public final class ViewportOverlayBuilder {
                 resolution,
                 candidateCells.size()
         );
-    }
-
-    @NonNull
-    private static Set<String> exploredAtResolution(
-            @NonNull H3Core h3,
-            @NonNull Set<String> visitedResolution13,
-            int resolution
-    ) {
-        Set<String> explored = new HashSet<>();
-
-        if (resolution == SOURCE_RESOLUTION) {
-            explored.addAll(visitedResolution13);
-            return explored;
-        }
-
-        for (String cell : visitedResolution13) {
-            try {
-                explored.add(h3.cellToParentAddress(cell, resolution));
-            } catch (RuntimeException ignored) {
-                // Malformed legacy/imported cells must not break rendering.
-            }
-        }
-
-        return explored;
     }
 
     private static Bounds paddedBounds(
