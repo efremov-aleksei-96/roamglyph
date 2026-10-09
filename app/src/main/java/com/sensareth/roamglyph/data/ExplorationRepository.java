@@ -3,6 +3,8 @@ package com.sensareth.roamglyph.data;
 import android.content.Context;
 import android.location.Location;
 
+import com.sensareth.roamglyph.VisitedStore;
+
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 
@@ -50,11 +52,19 @@ public final class ExplorationRepository {
     }
 
     public int importLegacyCells(Set<String> cells) {
+        return importCells(cells, null, "legacy-v1");
+    }
+
+    public int importCells(
+            Set<String> cells,
+            @Nullable Long firstSeenAtMs,
+            @NonNull String source
+    ) {
         if (cells.isEmpty()) return 0;
 
         List<VisitedCellEntity> entities = new ArrayList<>(cells.size());
         for (String cell : cells) {
-            entities.add(new VisitedCellEntity(cell, null, "legacy-v1"));
+            entities.add(new VisitedCellEntity(cell, firstSeenAtMs, source));
         }
 
         long[] rows = dao.insertVisitedCells(entities);
@@ -63,6 +73,24 @@ public final class ExplorationRepository {
             if (row != -1L) inserted++;
         }
         return inserted;
+    }
+
+    public int migrateLegacyCellsIfNeeded(@NonNull VisitedStore state) {
+        synchronized (ExplorationRepository.class) {
+            if (state.isLegacyCellMigrationComplete()) {
+                int count = dao.countVisitedCells();
+                state.setVisitedCountCache(count);
+                return 0;
+            }
+
+            Set<String> legacy = state.loadLegacyCells();
+            int inserted = importLegacyCells(legacy);
+            int count = dao.countVisitedCells();
+
+            state.setVisitedCountCache(count);
+            state.markLegacyCellMigrationComplete();
+            return inserted;
+        }
     }
 
     @NonNull
