@@ -1,0 +1,95 @@
+name: Signed Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Verify tag matches versionName
+        shell: bash
+        run: |
+          VERSION_NAME="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n1)"
+          test -n "$VERSION_NAME"
+          test "$GITHUB_REF_NAME" = "v$VERSION_NAME" || {
+            echo "Tag $GITHUB_REF_NAME does not match app version v$VERSION_NAME"
+            exit 1
+          }
+
+      - name: Verify signing secrets
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ROAMGLYPH_KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.ROAMGLYPH_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ROAMGLYPH_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ROAMGLYPH_KEY_PASSWORD }}
+        shell: bash
+        run: |
+          for name in KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            test -n "${!name}" || {
+              echo "Missing release signing secret: $name"
+              exit 1
+            }
+          done
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install Android 36 platform
+        shell: bash
+        run: |
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" -type f -name sdkmanager | sort -V | tail -n 1)"
+          test -x "$SDKMANAGER"
+          yes | "$SDKMANAGER" --licenses >/dev/null || true
+          "$SDKMANAGER" "platform-tools" "platforms;android-36"
+
+      - name: Set up Gradle 9.6.0
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '9.6.0'
+
+      - name: Decode release keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ROAMGLYPH_KEYSTORE_BASE64 }}
+        shell: bash
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/roamglyph-release.jks"
+
+      - name: Build signed release
+        env:
+          ROAMGLYPH_REQUIRE_KEYSTORE: "true"
+          ROAMGLYPH_KEYSTORE: ${{ runner.temp }}/roamglyph-release.jks
+          ROAMGLYPH_KEYSTORE_PASSWORD: ${{ secrets.ROAMGLYPH_KEYSTORE_PASSWORD }}
+          ROAMGLYPH_KEY_ALIAS: ${{ secrets.ROAMGLYPH_KEY_ALIAS }}
+          ROAMGLYPH_KEY_PASSWORD: ${{ secrets.ROAMGLYPH_KEY_PASSWORD }}
+        run: gradle --no-daemon :app:assembleRelease
+
+      - name: Verify APK and checksum
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk "dist/roamglyph-${GITHUB_REF_NAME#v}.apk"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n1)"
+          test -x "$APKSIGNER"
+          "$APKSIGNER" verify --verbose "dist/roamglyph-${GITHUB_REF_NAME#v}.apk"
+          (cd dist && sha256sum *.apk > SHA256SUMS.txt)
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes --title "Roamglyph $GITHUB_REF_NAME"

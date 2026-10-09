@@ -1,6 +1,7 @@
 package com.sensareth.roamglyph;
 
 import android.Manifest;
+import android.app.AlertDialog;
 import android.content.BroadcastReceiver;
 import android.content.Context;
 import android.content.Intent;
@@ -10,9 +11,12 @@ import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.os.Looper;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
@@ -28,9 +32,6 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 
-import com.google.android.gms.location.FusedLocationProviderClient;
-import com.google.android.gms.location.LocationServices;
-import com.google.android.gms.location.Priority;
 import com.uber.h3core.H3Core;
 import com.uber.h3core.util.LatLng;
 
@@ -38,9 +39,10 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import org.maplibre.android.MapLibre;
 import org.maplibre.android.camera.CameraPosition;
-import org.maplibre.android.maps.MapView;
 import org.maplibre.android.maps.MapLibreMap;
+import org.maplibre.android.maps.MapView;
 import org.maplibre.android.maps.OnMapReadyCallback;
+import org.maplibre.android.maps.Style;
 import org.maplibre.android.style.layers.CircleLayer;
 import org.maplibre.android.style.layers.FillLayer;
 import org.maplibre.android.style.sources.GeoJsonSource;
@@ -77,12 +79,18 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private static final int H3_RESOLUTION = 13;
     private static final String HISTORY_FORMAT = "roamglyph-history";
     private static final int HISTORY_VERSION = 1;
+    private static final String MAP_STYLE_URI = "https://tiles.openfreemap.org/styles/liberty";
+    private static final long CAMERA_ANIMATION_MS = 1200L;
+    private static final String SOURCE_URL =
+            "https://github.com/efremov-aleksei-96/roamglyph";
+    private static final String PRIVACY_URL =
+            "https://github.com/efremov-aleksei-96/roamglyph/blob/main/PRIVACY.md";
 
-    private static final String VISITED_SOURCE_ID = "visited-source";
-    private static final String VISITED_LAYER_ID = "visited-layer";
-    private static final String LOCATION_SOURCE_ID = "current-location-source";
-    private static final String LOCATION_HALO_LAYER_ID = "current-location-halo";
-    private static final String LOCATION_LAYER_ID = "current-location-dot";
+    private static final String VISITED_SOURCE_ID = "roamglyph-visited-source";
+    private static final String VISITED_LAYER_ID = "roamglyph-visited-layer";
+    private static final String LOCATION_SOURCE_ID = "roamglyph-current-location-source";
+    private static final String LOCATION_HALO_LAYER_ID = "roamglyph-current-location-halo";
+    private static final String LOCATION_LAYER_ID = "roamglyph-current-location-dot";
 
     private MapView mapView;
     private MapLibreMap map;
@@ -95,11 +103,13 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private final Set<String> visited = new HashSet<>();
     private VisitedStore store;
     private H3Core h3;
-    private FusedLocationProviderClient fused;
+    private LocationManager locationManager;
 
     private boolean tracking;
-    private boolean receiverRegistered;
+    private boolean trackingReceiverRegistered;
+    private boolean providerReceiverRegistered;
     private boolean hasLocation;
+    private boolean locationEnabled;
     private boolean autoCentered;
     private boolean pendingStartAfterLocationPermission;
 
@@ -114,7 +124,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     TrackingService.EXTRA_TRACKING,
                     store.isTrackingActive()
             );
-
+            locationEnabled = intent.getBooleanExtra(
+                    TrackingService.EXTRA_LOCATION_ENABLED,
+                    isSystemLocationEnabled()
+            );
             boolean accepted = intent.getBooleanExtra(TrackingService.EXTRA_ACCEPTED, true);
 
             if (intent.hasExtra(TrackingService.EXTRA_LAT)
@@ -137,12 +150,26 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         }
     };
 
+    private final BroadcastReceiver providerReceiver = new BroadcastReceiver() {
+        @Override
+        public void onReceive(Context context, Intent intent) {
+            boolean wasEnabled = locationEnabled;
+            locationEnabled = isSystemLocationEnabled();
+            updateUi(true);
+
+            if (!wasEnabled && locationEnabled && hasLocationPermission()) {
+                requestCurrentLocation(false);
+            }
+        }
+    };
+
     private final ActivityResultLauncher<String[]> locationPermissionLauncher =
             registerForActivityResult(
                     new ActivityResultContracts.RequestMultiplePermissions(),
                     result -> {
                         boolean granted = hasLocationPermission();
                         if (granted) {
+                            locationEnabled = isSystemLocationEnabled();
                             requestCurrentLocation(true);
                             if (pendingStartAfterLocationPermission) {
                                 pendingStartAfterLocationPermission = false;
@@ -150,7 +177,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                             }
                         } else {
                             pendingStartAfterLocationPermission = false;
-                            gpsText.setText("Геопозиция не разрешена");
+                            gpsText.setText(R.string.location_permission_required);
                             setLocateAvailable(false);
                         }
                     }
@@ -190,7 +217,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         }
 
         store = new VisitedStore(this);
-        fused = LocationServices.getFusedLocationProviderClient(this);
+        locationManager = getSystemService(LocationManager.class);
+        locationEnabled = isSystemLocationEnabled();
         tracking = store.isTrackingActive();
         visited.addAll(store.load());
         loadStoredLocation();
@@ -250,7 +278,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         menuButton.setText("⋮");
         menuButton.setTextSize(28f);
         menuButton.setPadding(0, 0, 0, dp(5));
-        menuButton.setContentDescription("Меню");
+        menuButton.setContentDescription(getString(R.string.menu_description));
         menuButton.setOnClickListener(this::showDataMenu);
 
         FrameLayout.LayoutParams menuLp = new FrameLayout.LayoutParams(dp(48), dp(48));
@@ -264,7 +292,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         trackingButton.setTextSize(15f);
         trackingButton.setMinHeight(dp(48));
         trackingButton.setPadding(dp(18), 0, dp(18), 0);
-        trackingButton.setContentDescription("Включить или остановить исследование");
+        trackingButton.setContentDescription(getString(R.string.tracking_button_description));
         trackingButton.setOnClickListener(v -> toggleTracking());
 
         FrameLayout.LayoutParams buttonLp = new FrameLayout.LayoutParams(
@@ -280,9 +308,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         locateButton.setText("◎");
         locateButton.setTextSize(26f);
         locateButton.setPadding(0, 0, 0, dp(2));
-        locateButton.setContentDescription("Показать моё местоположение");
+        locateButton.setContentDescription(getString(R.string.locate_button_description));
         locateButton.setOnClickListener(v -> {
-            if (hasLocation) {
+            if (hasLocation && locationEnabled) {
                 centerOnCurrentLocation(true);
             } else if (hasLocationPermission()) {
                 requestCurrentLocation(true);
@@ -303,7 +331,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         if (hasLocationPermission()) {
             requestCurrentLocation(!hasLocation);
         } else {
-            gpsText.setText("Разреши геопозицию, чтобы показать себя на карте");
+            gpsText.setText(R.string.location_permission_prompt);
             requestLocationPermission(false);
         }
     }
@@ -312,29 +340,33 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     public void onMapReady(@NonNull MapLibreMap mapLibreMap) {
         map = mapLibreMap;
 
-        String style = "{\"version\":8,\"sources\":{\"osm\":{\"type\":\"raster\",\"tiles\":[\"https://tile.openstreetmap.org/{z}/{x}/{y}.png\"],\"tileSize\":256,\"attribution\":\"© OpenStreetMap contributors\"}},\"layers\":[{\"id\":\"osm\",\"type\":\"raster\",\"source\":\"osm\"}]}";
-
-        map.setStyle(new org.maplibre.android.maps.Style.Builder().fromJson(style), s -> {
-            s.addSource(new GeoJsonSource(
+        map.setStyle(new Style.Builder().fromUri(MAP_STYLE_URI), style -> {
+            style.addSource(new GeoJsonSource(
                     VISITED_SOURCE_ID,
                     FeatureCollection.fromFeatures(new Feature[]{})
             ));
-            s.addLayer(new FillLayer(VISITED_LAYER_ID, VISITED_SOURCE_ID).withProperties(
-                    fillColor("#34A853"),
-                    fillOpacity(0.58f),
-                    fillOutlineColor("#137333")
+            style.addLayer(new FillLayer(VISITED_LAYER_ID, VISITED_SOURCE_ID).withProperties(
+                    fillColor("#1B5E20"),
+                    fillOpacity(0.64f),
+                    fillOutlineColor("#0D3B12")
             ));
 
-            s.addSource(new GeoJsonSource(
+            style.addSource(new GeoJsonSource(
                     LOCATION_SOURCE_ID,
                     FeatureCollection.fromFeatures(new Feature[]{})
             ));
-            s.addLayer(new CircleLayer(LOCATION_HALO_LAYER_ID, LOCATION_SOURCE_ID).withProperties(
+            style.addLayer(new CircleLayer(
+                    LOCATION_HALO_LAYER_ID,
+                    LOCATION_SOURCE_ID
+            ).withProperties(
                     circleColor("#4285F4"),
                     circleRadius(16f),
                     circleOpacity(0.22f)
             ));
-            s.addLayer(new CircleLayer(LOCATION_LAYER_ID, LOCATION_SOURCE_ID).withProperties(
+            style.addLayer(new CircleLayer(
+                    LOCATION_LAYER_ID,
+                    LOCATION_SOURCE_ID
+            ).withProperties(
                     circleColor("#1A73E8"),
                     circleRadius(7f),
                     circleStrokeColor("#FFFFFF"),
@@ -372,37 +404,126 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     }
 
     private void requestCurrentLocation(boolean centerWhenReady) {
-        if (!hasLocationPermission()) return;
+        if (!hasLocationPermission()) {
+            gpsText.setText(R.string.location_permission_required);
+            return;
+        }
 
-        gpsText.setText("Определяю местоположение…");
+        locationEnabled = isSystemLocationEnabled();
+        if (!locationEnabled) {
+            gpsText.setText(R.string.location_disabled);
+            return;
+        }
+
+        String provider = preferredCurrentProvider();
+        if (provider == null) {
+            gpsText.setText(R.string.location_no_provider);
+            return;
+        }
+
+        gpsText.setText(R.string.location_finding);
 
         try {
-            fused.getLastLocation().addOnSuccessListener(this, location -> {
-                if (location != null && !hasLocation) {
-                    acceptCurrentLocation(location, centerWhenReady);
-                }
-            });
+            Location cached = bestLastKnownLocation();
+            if (cached != null && !hasLocation) {
+                acceptCurrentLocation(cached, centerWhenReady);
+            }
 
-            fused.getCurrentLocation(Priority.PRIORITY_HIGH_ACCURACY, null)
-                    .addOnSuccessListener(this, location -> {
-                        if (location != null) {
-                            acceptCurrentLocation(location, centerWhenReady);
-                        } else if (!hasLocation) {
-                            gpsText.setText("Не удалось получить GPS. Нажми ◎ ещё раз");
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                locationManager.getCurrentLocation(
+                        provider,
+                        null,
+                        ContextCompat.getMainExecutor(this),
+                        location -> {
+                            if (location != null) {
+                                acceptCurrentLocation(location, centerWhenReady);
+                            } else if (!hasLocation) {
+                                gpsText.setText(R.string.location_unavailable);
+                            }
                         }
-                    })
-                    .addOnFailureListener(this, error -> {
-                        if (!hasLocation) {
-                            gpsText.setText("Ошибка GPS. Нажми ◎ для повтора");
+                );
+            } else {
+                @SuppressWarnings("deprecation")
+                LocationListener oneShot = new LocationListener() {
+                    @Override
+                    public void onLocationChanged(@NonNull Location location) {
+                        try {
+                            locationManager.removeUpdates(this);
+                        } catch (SecurityException ignored) {
                         }
-                    });
+                        acceptCurrentLocation(location, centerWhenReady);
+                    }
+
+                    @Override
+                    @SuppressWarnings("deprecation")
+                    public void onStatusChanged(String name, int status, Bundle extras) {
+                    }
+
+                    @Override
+                    public void onProviderEnabled(@NonNull String name) {
+                    }
+
+                    @Override
+                    public void onProviderDisabled(@NonNull String name) {
+                    }
+                };
+                locationManager.requestSingleUpdate(
+                        provider,
+                        oneShot,
+                        Looper.getMainLooper()
+                );
+            }
         } catch (SecurityException error) {
-            gpsText.setText("Нет разрешения на геопозицию");
+            gpsText.setText(R.string.location_permission_required);
+        } catch (RuntimeException error) {
+            if (!hasLocation) {
+                gpsText.setText(R.string.location_error);
+            }
         }
+    }
+
+    private Location bestLastKnownLocation() {
+        Location best = null;
+        String[] providers = new String[]{
+                LocationManager.GPS_PROVIDER,
+                LocationManager.NETWORK_PROVIDER,
+                LocationManager.PASSIVE_PROVIDER
+        };
+
+        for (String provider : providers) {
+            try {
+                if (LocationManager.GPS_PROVIDER.equals(provider)
+                        && !hasFineLocationPermission()) {
+                    continue;
+                }
+                Location candidate = locationManager.getLastKnownLocation(provider);
+                if (candidate == null) continue;
+                if (best == null || candidate.getTime() > best.getTime()) {
+                    best = candidate;
+                }
+            } catch (SecurityException | IllegalArgumentException ignored) {
+            }
+        }
+        return best;
+    }
+
+    private String preferredCurrentProvider() {
+        try {
+            if (hasFineLocationPermission()
+                    && locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                return LocationManager.GPS_PROVIDER;
+            }
+            if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                return LocationManager.NETWORK_PROVIDER;
+            }
+        } catch (RuntimeException ignored) {
+        }
+        return null;
     }
 
     private void acceptCurrentLocation(Location location, boolean centerWhenReady) {
         hasLocation = true;
+        locationEnabled = true;
         lastLat = location.getLatitude();
         lastLng = location.getLongitude();
         lastAccuracy = location.hasAccuracy() ? location.getAccuracy() : 0f;
@@ -429,7 +550,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     private void toggleTracking() {
         if (h3 == null) {
-            gpsText.setText("H3 не запустился: исследование клеток недоступно");
+            gpsText.setText(R.string.h3_unavailable);
             return;
         }
 
@@ -440,6 +561,12 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
         if (!hasLocationPermission()) {
             requestLocationPermission(true);
+            return;
+        }
+
+        locationEnabled = isSystemLocationEnabled();
+        if (!locationEnabled) {
+            gpsText.setText(R.string.location_disabled);
             return;
         }
 
@@ -465,7 +592,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         tracking = true;
         store.setTrackingActive(true);
         updateUi(true);
-        gpsText.setText("Запускаю фоновое исследование…");
+        gpsText.setText(R.string.location_starting);
 
         Intent service = new Intent(this, TrackingService.class)
                 .setAction(TrackingService.ACTION_START);
@@ -484,9 +611,11 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     private void showDataMenu(View anchor) {
         PopupMenu popup = new PopupMenu(this, anchor);
-        popup.getMenu().add(0, 1, 0, "Экспорт истории");
-        popup.getMenu().add(0, 2, 1, "Импорт истории");
-        popup.getMenu().add(0, 3, 2, "Обновить местоположение");
+        popup.getMenu().add(0, 1, 0, R.string.menu_export_history);
+        popup.getMenu().add(0, 2, 1, R.string.menu_import_history);
+        popup.getMenu().add(0, 3, 2, R.string.menu_refresh_location);
+        popup.getMenu().add(0, 4, 3, R.string.menu_source_code);
+        popup.getMenu().add(0, 5, 4, R.string.menu_privacy);
 
         popup.setOnMenuItemClickListener(item -> {
             if (item.getItemId() == 1) {
@@ -502,17 +631,32 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 return true;
             }
             if (item.getItemId() == 3) {
-                if (hasLocationPermission()) {
-                    requestCurrentLocation(true);
-                } else {
-                    requestLocationPermission(false);
-                }
+                requestCurrentLocation(true);
+                return true;
+            }
+            if (item.getItemId() == 4) {
+                openUrl(SOURCE_URL);
+                return true;
+            }
+            if (item.getItemId() == 5) {
+                openUrl(PRIVACY_URL);
                 return true;
             }
             return false;
         });
 
         popup.show();
+    }
+
+    private void openUrl(String url) {
+        try {
+            startActivity(new Intent(Intent.ACTION_VIEW, Uri.parse(url)));
+        } catch (RuntimeException error) {
+            new AlertDialog.Builder(this)
+                    .setMessage(url)
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show();
+        }
     }
 
     private void launchHistoryExport() {
@@ -536,47 +680,47 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             for (String cell : cells) array.put(cell);
             root.put("cells", array);
 
-            try (OutputStream output = getContentResolver().openOutputStream(uri);
-                 OutputStreamWriter writer = new OutputStreamWriter(
-                         output,
-                         StandardCharsets.UTF_8
-                 )) {
-                writer.write(root.toString(2));
+            try (OutputStream output = getContentResolver().openOutputStream(uri)) {
+                if (output == null) throw new IllegalStateException("No output stream");
+                try (OutputStreamWriter writer = new OutputStreamWriter(
+                        output,
+                        StandardCharsets.UTF_8
+                )) {
+                    writer.write(root.toString(2));
+                }
             }
 
             Toast.makeText(
                     this,
-                    "Экспортировано: " + cells.size() + " клеток",
+                    getString(R.string.export_success, cells.size()),
                     Toast.LENGTH_LONG
             ).show();
         } catch (Exception error) {
-            Toast.makeText(
-                    this,
-                    "Не удалось экспортировать историю",
-                    Toast.LENGTH_LONG
-            ).show();
+            Toast.makeText(this, R.string.export_failed, Toast.LENGTH_LONG).show();
         }
     }
 
     private void readHistory(Uri uri) {
         if (h3 == null) {
-            Toast.makeText(this, "H3 недоступен: импорт невозможен", Toast.LENGTH_LONG).show();
+            Toast.makeText(this, R.string.import_h3_unavailable, Toast.LENGTH_LONG).show();
             return;
         }
 
         try {
             StringBuilder text = new StringBuilder();
 
-            try (InputStream input = getContentResolver().openInputStream(uri);
-                 BufferedReader reader = new BufferedReader(
-                         new InputStreamReader(input, StandardCharsets.UTF_8)
-                 )) {
-                char[] buffer = new char[4096];
-                int read;
-                while ((read = reader.read(buffer)) != -1) {
-                    text.append(buffer, 0, read);
-                    if (text.length() > 50_000_000) {
-                        throw new IllegalArgumentException("History file is too large");
+            try (InputStream input = getContentResolver().openInputStream(uri)) {
+                if (input == null) throw new IllegalStateException("No input stream");
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(input, StandardCharsets.UTF_8)
+                )) {
+                    char[] buffer = new char[4096];
+                    int read;
+                    while ((read = reader.read(buffer)) != -1) {
+                        text.append(buffer, 0, read);
+                        if (text.length() > 50_000_000) {
+                            throw new IllegalArgumentException("History file is too large");
+                        }
                     }
                 }
             }
@@ -585,6 +729,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
             if (!HISTORY_FORMAT.equals(root.optString("format"))) {
                 throw new IllegalArgumentException("Unknown history format");
+            }
+            if (root.optInt("version", -1) != HISTORY_VERSION) {
+                throw new IllegalArgumentException("Unsupported history version");
             }
             if (root.optInt("h3_resolution", -1) != H3_RESOLUTION) {
                 throw new IllegalArgumentException("Unsupported H3 resolution");
@@ -614,57 +761,65 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             refreshVisitedFromStore();
             updateUi(true);
 
-            String message = "Импортировано: " + added + " новых клеток • всего " + merged.size();
-            if (invalid > 0) message += " • пропущено " + invalid;
+            int message = invalid > 0
+                    ? R.string.import_success_with_invalid
+                    : R.string.import_success;
+            String rendered = invalid > 0
+                    ? getString(message, added, merged.size(), invalid)
+                    : getString(message, added, merged.size());
 
-            Toast.makeText(this, message, Toast.LENGTH_LONG).show();
+            Toast.makeText(this, rendered, Toast.LENGTH_LONG).show();
         } catch (Exception error) {
-            Toast.makeText(
-                    this,
-                    "Не удалось импортировать историю: файл повреждён или не Roamglyph",
-                    Toast.LENGTH_LONG
-            ).show();
+            Toast.makeText(this, R.string.import_failed, Toast.LENGTH_LONG).show();
         }
     }
 
     private void updateUi(boolean accepted) {
-        stateText.setText(tracking ? "Исследование включено" : "Исследование остановлено");
+        stateText.setText(tracking ? R.string.state_active : R.string.state_paused);
         stateText.setTextColor(tracking ? 0xFF81C995 : Color.WHITE);
 
-        double approxAreaM2 = visited.size() * 43.87;
+        int count = visited.size();
+        double approxAreaM2 = count * 43.87;
         String area = approxAreaM2 >= 1_000_000
-                ? String.format(Locale.getDefault(), "%.2f км²", approxAreaM2 / 1_000_000.0)
-                : String.format(Locale.getDefault(), "%,.0f м²", approxAreaM2);
+                ? String.format(Locale.getDefault(), "%.2f km²", approxAreaM2 / 1_000_000.0)
+                : String.format(Locale.getDefault(), "%,.0f m²", approxAreaM2);
 
         statsText.setText(String.format(
                 Locale.getDefault(),
-                "%d клеток • ≈%s",
-                visited.size(),
+                "%,d cells · ≈%s",
+                count,
                 area
         ));
 
-        if (hasLocation) {
-            String gps = "GPS ±" + Math.round(lastAccuracy) + " м";
-            if (!accepted) gps += " • точка слишком неточная";
+        if (!hasLocationPermission()) {
+            gpsText.setText(R.string.location_permission_required);
+        } else if (!locationEnabled) {
+            gpsText.setText(R.string.location_disabled);
+        } else if (hasLocation) {
+            String gps = "GPS ±" + Math.round(lastAccuracy) + " m";
+            if (!accepted) gps += " · low accuracy";
             gpsText.setText(gps);
-        } else if (hasLocationPermission()) {
-            gpsText.setText("Определяю местоположение…");
+        } else if (tracking) {
+            gpsText.setText(R.string.location_waiting);
         } else {
-            gpsText.setText("Нужен доступ к геопозиции");
+            gpsText.setText(R.string.location_finding);
         }
 
         if (tracking) {
-            trackingButton.setText("■  Остановить");
+            trackingButton.setText(R.string.action_stop);
         } else if (visited.isEmpty()) {
-            trackingButton.setText("▶  Начать исследование");
+            trackingButton.setText(R.string.action_start);
         } else {
-            trackingButton.setText("▶  Продолжить");
+            trackingButton.setText(R.string.action_continue);
         }
     }
 
     private void refreshVisitedFromStore() {
+        Set<String> stored = store.load();
+        if (stored.equals(visited)) return;
+
         visited.clear();
-        visited.addAll(store.load());
+        visited.addAll(stored);
         renderVisited();
     }
 
@@ -691,7 +846,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 rings.add(ring);
                 features.add(Feature.fromGeometry(Polygon.fromLngLats(rings)));
             } catch (Throwable ignored) {
-                // Skip malformed imported cells instead of crashing the map.
+                // Invalid imported cells are ignored instead of crashing map rendering.
             }
         }
 
@@ -709,7 +864,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     private void centerOnCurrentLocation(boolean zoomIn) {
         if (!hasLocation) {
-            gpsText.setText("Позиция ещё не определена");
+            gpsText.setText(R.string.location_not_determined);
             return;
         }
         if (map == null) return;
@@ -726,7 +881,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 .build();
 
         map.animateCamera(
-                org.maplibre.android.camera.CameraUpdateFactory.newCameraPosition(position)
+                org.maplibre.android.camera.CameraUpdateFactory.newCameraPosition(position),
+                (int) CAMERA_ANIMATION_MS
         );
     }
 
@@ -737,14 +893,22 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     }
 
     private boolean hasLocationPermission() {
-        return ContextCompat.checkSelfPermission(
-                this,
-                Manifest.permission.ACCESS_FINE_LOCATION
-        ) == PackageManager.PERMISSION_GRANTED
+        return hasFineLocationPermission()
                 || ContextCompat.checkSelfPermission(
                         this,
                         Manifest.permission.ACCESS_COARSE_LOCATION
                 ) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private boolean hasFineLocationPermission() {
+        return ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private boolean isSystemLocationEnabled() {
+        return locationManager != null && locationManager.isLocationEnabled();
     }
 
     private int dp(int value) {
@@ -756,24 +920,37 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         super.onStart();
         mapView.onStart();
 
-        if (!receiverRegistered) {
+        if (!trackingReceiverRegistered) {
             ContextCompat.registerReceiver(
                     this,
                     trackingReceiver,
                     new IntentFilter(TrackingService.ACTION_STATE_CHANGED),
                     ContextCompat.RECEIVER_NOT_EXPORTED
             );
-            receiverRegistered = true;
+            trackingReceiverRegistered = true;
+        }
+
+        if (!providerReceiverRegistered) {
+            IntentFilter filter = new IntentFilter(LocationManager.PROVIDERS_CHANGED_ACTION);
+            filter.addAction(LocationManager.MODE_CHANGED_ACTION);
+            ContextCompat.registerReceiver(
+                    this,
+                    providerReceiver,
+                    filter,
+                    ContextCompat.RECEIVER_NOT_EXPORTED
+            );
+            providerReceiverRegistered = true;
         }
 
         tracking = store.isTrackingActive();
+        locationEnabled = isSystemLocationEnabled();
         loadStoredLocation();
         refreshVisitedFromStore();
         renderCurrentLocation();
         setLocateAvailable(hasLocation);
         updateUi(true);
 
-        if (tracking && hasLocationPermission()) {
+        if (tracking && hasLocationPermission() && locationEnabled) {
             Intent service = new Intent(this, TrackingService.class)
                     .setAction(TrackingService.ACTION_START);
             ContextCompat.startForegroundService(this, service);
@@ -786,6 +963,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         mapView.onResume();
 
         tracking = store.isTrackingActive();
+        locationEnabled = isSystemLocationEnabled();
         loadStoredLocation();
         refreshVisitedFromStore();
         renderCurrentLocation();
@@ -801,9 +979,13 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     @Override
     protected void onStop() {
-        if (receiverRegistered) {
+        if (trackingReceiverRegistered) {
             unregisterReceiver(trackingReceiver);
-            receiverRegistered = false;
+            trackingReceiverRegistered = false;
+        }
+        if (providerReceiverRegistered) {
+            unregisterReceiver(providerReceiver);
+            providerReceiverRegistered = false;
         }
         mapView.onStop();
         super.onStop();

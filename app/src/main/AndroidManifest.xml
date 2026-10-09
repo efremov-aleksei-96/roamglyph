@@ -6,9 +6,17 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_LOCATION" />
 
+    <uses-feature
+        android:name="android.hardware.location.gps"
+        android:required="false" />
+
     <application
-        android:allowBackup="true"
-        android:label="Roamglyph"
+        android:allowBackup="false"
+        android:icon="@drawable/ic_roamglyph"
+        android:roundIcon="@drawable/ic_roamglyph"
+        android:label="@string/app_name"
+        android:supportsRtl="true"
+        android:usesCleartextTraffic="false"
         android:theme="@style/Theme.Roamglyph">
 
         <service

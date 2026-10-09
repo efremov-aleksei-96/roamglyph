@@ -8,3 +8,10 @@
 .externalNativeBuild/
 .cxx/
 app/build/
+
+# Signing keys and local release credentials must never be committed.
+*.jks
+*.keystore
+*.p12
+*.pfx
+keystore.properties
