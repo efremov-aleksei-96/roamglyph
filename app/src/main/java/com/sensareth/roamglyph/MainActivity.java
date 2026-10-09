@@ -32,6 +32,7 @@ import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 
+import com.sensareth.roamglyph.data.BackupManager;
 import com.sensareth.roamglyph.data.ExplorationRepository;
 import com.uber.h3core.H3Core;
 import com.uber.h3core.util.LatLng;
@@ -81,8 +82,6 @@ import static org.maplibre.android.style.layers.PropertyFactory.fillOutlineColor
 
 public class MainActivity extends AppCompatActivity implements OnMapReadyCallback {
     private static final int H3_RESOLUTION = 13;
-    private static final String HISTORY_FORMAT = "roamglyph-history";
-    private static final int HISTORY_VERSION = 1;
     private static final String MAP_STYLE_URI = "https://tiles.openfreemap.org/styles/liberty";
     private static final long CAMERA_ANIMATION_MS = 1200L;
     private static final String SOURCE_URL =
@@ -673,40 +672,26 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     private void launchHistoryExport() {
         String stamp = new SimpleDateFormat("yyyyMMdd-HHmm", Locale.US).format(new Date());
-        exportHistoryLauncher.launch("roamglyph-history-" + stamp + ".json");
+        exportHistoryLauncher.launch("roamglyph-backup-" + stamp + ".json");
     }
 
     private void writeHistory(Uri uri) {
         dataExecutor.execute(() -> {
             try {
                 repository.migrateLegacyCellsIfNeeded(store);
-                List<String> cells = new ArrayList<>(repository.loadVisitedCellIds());
-                Collections.sort(cells);
 
-                JSONObject root = new JSONObject();
-                root.put("format", HISTORY_FORMAT);
-                root.put("version", HISTORY_VERSION);
-                root.put("h3_resolution", H3_RESOLUTION);
-                root.put("cell_count", cells.size());
-                root.put("exported_at_ms", System.currentTimeMillis());
-
-                JSONArray array = new JSONArray();
-                for (String cell : cells) array.put(cell);
-                root.put("cells", array);
+                int cells = repository.countVisitedCells();
+                int sessions = repository.countSessions();
+                long points = repository.countGpsPoints();
 
                 try (OutputStream output = getContentResolver().openOutputStream(uri)) {
                     if (output == null) throw new IllegalStateException("No output stream");
-                    try (OutputStreamWriter writer = new OutputStreamWriter(
-                            output,
-                            StandardCharsets.UTF_8
-                    )) {
-                        writer.write(root.toString(2));
-                    }
+                    BackupManager.exportBackup(output, repository);
                 }
 
                 runOnUiThread(() -> Toast.makeText(
                         this,
-                        getString(R.string.export_success, cells.size()),
+                        getString(R.string.backup_export_success, cells, sessions, points),
                         Toast.LENGTH_LONG
                 ).show());
             } catch (Exception error) {
@@ -724,89 +709,43 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         }
 
         dataExecutor.execute(() -> {
+            java.io.File temp = null;
             try {
-                StringBuilder text = new StringBuilder();
+                repository.migrateLegacyCellsIfNeeded(store);
 
                 try (InputStream input = getContentResolver().openInputStream(uri)) {
                     if (input == null) throw new IllegalStateException("No input stream");
-                    try (BufferedReader reader = new BufferedReader(
-                            new InputStreamReader(input, StandardCharsets.UTF_8)
-                    )) {
-                        char[] buffer = new char[4096];
-                        int read;
-                        while ((read = reader.read(buffer)) != -1) {
-                            text.append(buffer, 0, read);
-                            if (text.length() > 50_000_000) {
-                                throw new IllegalArgumentException("History file is too large");
-                            }
-                        }
-                    }
+                    temp = BackupManager.copyToPrivateTemp(input, getCacheDir());
                 }
 
-                JSONObject root = new JSONObject(text.toString());
+                BackupManager.ImportResult result =
+                        BackupManager.importBackup(temp, repository, h3);
 
-                if (!HISTORY_FORMAT.equals(root.optString("format"))) {
-                    throw new IllegalArgumentException("Unknown history format");
-                }
-                if (root.optInt("version", -1) != HISTORY_VERSION) {
-                    throw new IllegalArgumentException("Unsupported history version");
-                }
-                if (root.optInt("h3_resolution", -1) != H3_RESOLUTION) {
-                    throw new IllegalArgumentException("Unsupported H3 resolution");
-                }
-
-                JSONArray cells = root.getJSONArray("cells");
-                Set<String> validCells = new HashSet<>();
-                int invalid = 0;
-
-                for (int i = 0; i < cells.length(); i++) {
-                    String cell = cells.optString(i, "").trim();
-                    if (cell.isEmpty()) {
-                        invalid++;
-                        continue;
-                    }
-
-                    try {
-                        synchronized (h3) {
-                            h3.cellToBoundary(cell);
-                        }
-                        validCells.add(cell);
-                    } catch (Throwable error) {
-                        invalid++;
-                    }
-                }
-
-                repository.migrateLegacyCellsIfNeeded(store);
-                int added = repository.importCells(validCells, null, "import-v1");
-                int total = repository.countVisitedCells();
-                store.setVisitedCountCache(total);
-                int invalidCount = invalid;
+                store.setVisitedCountCache(result.totalCells);
 
                 runOnUiThread(() -> {
                     refreshVisitedFromDatabase();
-
-                    String rendered;
-                    if (invalidCount > 0) {
-                        rendered = getString(
-                                R.string.import_success_with_invalid,
-                                added,
-                                total,
-                                invalidCount
-                        );
-                    } else {
-                        rendered = getString(
-                                R.string.import_success,
-                                added,
-                                total
-                        );
-                    }
-
-                    Toast.makeText(this, rendered, Toast.LENGTH_LONG).show();
+                    Toast.makeText(
+                            this,
+                            getString(
+                                    R.string.backup_import_success,
+                                    result.newCells,
+                                    result.newSessions,
+                                    result.newGpsPoints,
+                                    result.totalCells
+                            ),
+                            Toast.LENGTH_LONG
+                    ).show();
                 });
             } catch (Exception error) {
                 runOnUiThread(() ->
                         Toast.makeText(this, R.string.import_failed, Toast.LENGTH_LONG).show()
                 );
+            } finally {
+                if (temp != null) {
+                    //noinspection ResultOfMethodCallIgnored
+                    temp.delete();
+                }
             }
         });
     }
