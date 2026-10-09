@@ -1,0 +1,37 @@
+Categories:
+  - Navigation
+License: Apache-2.0
+SourceCode: https://github.com/efremov-aleksei-96/roamglyph
+IssueTracker: https://github.com/efremov-aleksei-96/roamglyph/issues
+Changelog: https://github.com/efremov-aleksei-96/roamglyph/blob/main/CHANGELOG.md
+
+AutoName: Roamglyph
+
+RepoType: git
+Repo: https://github.com/efremov-aleksei-96/roamglyph.git
+
+Builds:
+  - versionName: 0.5.0
+    versionCode: 6
+    commit: 14b36efaf336677416f6f7e17fe977855980cb94
+    gradle:
+      - yes
+
+MaintainerNotes: |-
+  This is the pre-release 0.5.0 source-build recipe used to validate F-Droid
+  compatibility before the public release tag.
+
+  The runtime deliberately excludes Google Play Services, Firebase, advertising,
+  and analytics SDKs.
+
+  com.uber:h3-android is Apache-2.0 FLOSS published through Maven Central. Its AAR
+  contains native Android libraries. Reviewers should verify that dependency
+  against the trusted-Maven/prebuilt-FLOSS policy rather than adding scanignore.
+
+  The default online basemap uses the FLOSS OpenFreeMap service and MapLibre.
+  Exploration history is local and does not depend on that service.
+
+AutoUpdateMode: Version
+UpdateCheckMode: Tags
+CurrentVersion: 0.5.0
+CurrentVersionCode: 6
