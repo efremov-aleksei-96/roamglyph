@@ -180,6 +180,11 @@ public final class BackupManager {
         }
 
         Set<String> sessionIds = new HashSet<>();
+        Set<String> pointSessionIds = new HashSet<>();
+        boolean sawVisitedCells = false;
+        boolean sawSessions = false;
+        boolean sawGpsPoints = false;
+        boolean sawLegacyCells = false;
 
         try (JsonReader reader = newReader(file)) {
             reader.beginObject();
@@ -189,6 +194,7 @@ public final class BackupManager {
                 if (BACKUP_FORMAT.equals(header.format)) {
                     switch (name) {
                         case "visited_cells":
+                            sawVisitedCells = true;
                             reader.beginArray();
                             while (reader.hasNext()) {
                                 VisitedCellEntity cell = readVisitedCell(reader, null);
@@ -197,6 +203,7 @@ public final class BackupManager {
                             reader.endArray();
                             break;
                         case "sessions":
+                            sawSessions = true;
                             reader.beginArray();
                             while (reader.hasNext()) {
                                 SessionEntity session = readSession(reader, false);
@@ -207,9 +214,11 @@ public final class BackupManager {
                             reader.endArray();
                             break;
                         case "gps_points":
+                            sawGpsPoints = true;
                             reader.beginArray();
                             while (reader.hasNext()) {
                                 GpsPointEntity point = readGpsPoint(reader);
+                                pointSessionIds.add(point.sessionId);
                                 if (point.acceptedForExploration && point.h3 != null) {
                                     validateCell(h3, point.h3);
                                 }
@@ -220,6 +229,7 @@ public final class BackupManager {
                             reader.skipValue();
                     }
                 } else if ("cells".equals(name)) {
+                    sawLegacyCells = true;
                     reader.beginArray();
                     while (reader.hasNext()) {
                         validateCell(h3, reader.nextString());
@@ -232,6 +242,17 @@ public final class BackupManager {
             reader.endObject();
         } catch (IllegalStateException | NumberFormatException error) {
             throw new IOException("Malformed Roamglyph backup", error);
+        }
+
+        if (BACKUP_FORMAT.equals(header.format)) {
+            if (!sawVisitedCells || !sawSessions || !sawGpsPoints) {
+                throw new IOException("Incomplete Roamglyph backup");
+            }
+            if (!sessionIds.containsAll(pointSessionIds)) {
+                throw new IOException("GPS point references a missing session");
+            }
+        } else if (!sawLegacyCells) {
+            throw new IOException("Incomplete legacy Roamglyph history");
         }
 
         return header;
