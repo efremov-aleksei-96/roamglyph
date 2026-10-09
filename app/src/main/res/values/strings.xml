@@ -9,6 +9,8 @@
     <string name="menu_refresh_location">Refresh location</string>
     <string name="menu_fog_on">Fog of War: On</string>
     <string name="menu_fog_off">Fog of War: Off</string>
+    <string name="menu_discoveries_on">Discoveries: On</string>
+    <string name="menu_discoveries_off">Discoveries: Off</string>
     <string name="menu_source_code">Source code</string>
     <string name="menu_privacy">Privacy</string>
 
@@ -30,12 +32,15 @@
     <string name="location_not_determined">Position not determined yet</string>
     <string name="h3_unavailable">H3 failed to initialize: exploration is unavailable</string>
 
-    <string name="backup_export_success">Backup exported: %1$d cells · %2$d sessions · %3$d GPS points</string>
-    <string name="backup_import_success">Restored: +%1$d cells · +%2$d sessions · +%3$d GPS points · %4$d cells total</string>
+    <string name="backup_export_success">Backup exported: %1$d cells · %2$d sessions · %3$d GPS points · %4$d discoveries</string>
+    <string name="backup_import_success">Restored: +%1$d cells · +%2$d sessions · +%3$d GPS points · +%4$d discoveries · %5$d cells total</string>
     <string name="backup_requires_paused">Stop exploration before exporting or restoring a backup</string>
     <string name="export_failed">Could not export backup</string>
     <string name="import_h3_unavailable">H3 unavailable: import is not possible</string>
     <string name="import_failed">Could not import backup: the file is damaged or unsupported</string>
+    <string name="discovery_hint_title">Undiscovered place</string>
+    <string name="discovery_hint_message">Explore this area to reveal the place.</string>
+    <string name="discovery_opened_label">Discovered</string>
 
     <string name="notification_channel_name">Map exploration</string>
     <string name="notification_channel_description">Background GPS exploration for Roamglyph</string>
