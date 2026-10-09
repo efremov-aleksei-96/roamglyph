@@ -161,10 +161,27 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 }
             }
 
-            updateUi(accepted);
             if (intent.getBooleanExtra(TrackingService.EXTRA_CELLS_CHANGED, false)) {
-                refreshVisitedFromDatabase();
+                ArrayList<String> newCells =
+                        intent.getStringArrayListExtra(TrackingService.EXTRA_NEW_CELLS);
+
+                if (newCells != null && !newCells.isEmpty()) {
+                    boolean changed = visited.addAll(newCells);
+                    if (changed) {
+                        store.setVisitedCountCache(visited.size());
+                        if (overlayExecutor != null) {
+                            ArrayList<String> overlayCells = new ArrayList<>(newCells);
+                            overlayExecutor.execute(
+                                    () -> coverageIndex.addAll(h3, overlayCells)
+                            );
+                        }
+                        scheduleViewportOverlay();
+                    }
+                } else {
+                    refreshVisitedFromDatabase();
+                }
             }
+            updateUi(accepted);
         }
     };
 
