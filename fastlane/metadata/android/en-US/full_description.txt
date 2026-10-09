@@ -1,0 +1,23 @@
+Roamglyph turns real-world movement into a persistent exploration map.
+
+Start exploration, walk or ride, and nearby H3 cells become permanently explored.
+Tracking can continue through an Android foreground location service while the
+screen is off.
+
+Current features:
+• fine-grained H3 exploration cells
+• OpenStreetMap-based vector map rendered with MapLibre
+• background exploration with an explicit persistent notification
+• GPS accuracy filtering
+• local persistent history
+• portable JSON export and import
+• no account, advertisements, analytics, Firebase, or Google Play Services
+
+Roamglyph is local-first. Your exploration history is stored on your device and is
+not uploaded to a Roamglyph server. Android cloud backup is disabled; use the
+explicit export feature for a portable backup.
+
+The default basemap is online and provided by OpenFreeMap. Offline vector-map
+packages are planned for a future release.
+
+Roamglyph is free and open-source software licensed under Apache-2.0.

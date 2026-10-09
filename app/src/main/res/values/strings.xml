@@ -1,0 +1,42 @@
+<resources>
+    <string name="app_name">Roamglyph</string>
+    <string name="menu_description">Menu</string>
+    <string name="tracking_button_description">Start or stop exploration</string>
+    <string name="locate_button_description">Show my location</string>
+
+    <string name="menu_export_history">Export history</string>
+    <string name="menu_import_history">Import history</string>
+    <string name="menu_refresh_location">Refresh location</string>
+    <string name="menu_source_code">Source code</string>
+    <string name="menu_privacy">Privacy</string>
+
+    <string name="state_active">Exploration active</string>
+    <string name="state_paused">Exploration paused</string>
+    <string name="action_start">▶ Start exploration</string>
+    <string name="action_continue">▶ Continue exploration</string>
+    <string name="action_stop">■ Stop exploration</string>
+
+    <string name="location_permission_prompt">Location permission is required to show your position</string>
+    <string name="location_permission_required">Location permission required</string>
+    <string name="location_disabled">Location disabled</string>
+    <string name="location_finding">Finding location…</string>
+    <string name="location_waiting">Waiting for GPS…</string>
+    <string name="location_unavailable">Location unavailable. Tap ◎ to retry</string>
+    <string name="location_error">Location error. Tap ◎ to retry</string>
+    <string name="location_starting">Starting background exploration…</string>
+    <string name="location_no_provider">No location provider available</string>
+    <string name="location_not_determined">Position not determined yet</string>
+    <string name="h3_unavailable">H3 failed to initialize: exploration is unavailable</string>
+
+    <string name="export_success">Exported %1$d cells</string>
+    <string name="export_failed">Could not export history</string>
+    <string name="import_h3_unavailable">H3 unavailable: import is not possible</string>
+    <string name="import_success">Imported %1$d new cells · %2$d total</string>
+    <string name="import_success_with_invalid">Imported %1$d new cells · %2$d total · skipped %3$d invalid</string>
+    <string name="import_failed">Could not import history: the file is damaged or not a Roamglyph backup</string>
+
+    <string name="notification_channel_name">Map exploration</string>
+    <string name="notification_channel_description">Background GPS exploration for Roamglyph</string>
+    <string name="notification_title">Roamglyph is exploring</string>
+    <string name="notification_stop">Stop</string>
+</resources>

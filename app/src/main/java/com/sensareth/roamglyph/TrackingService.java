@@ -10,6 +10,9 @@ import android.content.Intent;
 import android.content.pm.PackageManager;
 import android.content.pm.ServiceInfo;
 import android.location.Location;
+import android.location.LocationListener;
+import android.location.LocationManager;
+import android.os.Bundle;
 import android.os.IBinder;
 import android.os.Looper;
 
@@ -19,19 +22,13 @@ import androidx.core.app.NotificationCompat;
 import androidx.core.app.ServiceCompat;
 import androidx.core.content.ContextCompat;
 
-import com.google.android.gms.location.FusedLocationProviderClient;
-import com.google.android.gms.location.LocationCallback;
-import com.google.android.gms.location.LocationRequest;
-import com.google.android.gms.location.LocationResult;
-import com.google.android.gms.location.LocationServices;
-import com.google.android.gms.location.Priority;
 import com.uber.h3core.H3Core;
 
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
 
-public final class TrackingService extends Service {
+public final class TrackingService extends Service implements LocationListener {
     public static final String ACTION_START = "com.sensareth.roamglyph.action.START";
     public static final String ACTION_STOP = "com.sensareth.roamglyph.action.STOP";
     public static final String ACTION_STATE_CHANGED = "com.sensareth.roamglyph.action.STATE_CHANGED";
@@ -40,16 +37,16 @@ public final class TrackingService extends Service {
     public static final String EXTRA_ACCURACY = "accuracy";
     public static final String EXTRA_ACCEPTED = "accepted";
     public static final String EXTRA_TRACKING = "tracking";
+    public static final String EXTRA_LOCATION_ENABLED = "location_enabled";
 
     private static final int H3_RESOLUTION = 13;
-    private static final long UPDATE_INTERVAL_MS = 2000L;
+    private static final long UPDATE_INTERVAL_MS = 2_000L;
     private static final float MIN_DISTANCE_M = 4f;
     private static final float MAX_ACCEPTED_ACCURACY_M = 35f;
     private static final int NOTIFICATION_ID = 1001;
     private static final String CHANNEL_ID = "exploration";
 
-    private FusedLocationProviderClient fused;
-    private LocationCallback callback;
+    private LocationManager locationManager;
     private VisitedStore store;
     private H3Core h3;
     private boolean updatesStarted;
@@ -57,7 +54,7 @@ public final class TrackingService extends Service {
     @Override
     public void onCreate() {
         super.onCreate();
-        fused = LocationServices.getFusedLocationProviderClient(this);
+        locationManager = getSystemService(LocationManager.class);
         store = new VisitedStore(this);
         try {
             h3 = H3Core.newSystemInstance();
@@ -76,7 +73,7 @@ public final class TrackingService extends Service {
             return START_NOT_STICKY;
         }
 
-        if (h3 == null) {
+        if (h3 == null || !hasLocationPermission()) {
             store.setTrackingActive(false);
             broadcastState(null, false);
             stopSelf();
@@ -103,36 +100,48 @@ public final class TrackingService extends Service {
     private void startLocationUpdates() {
         if (updatesStarted) return;
 
-        boolean fine = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
-                == PackageManager.PERMISSION_GRANTED;
-        boolean coarse = ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_COARSE_LOCATION)
-                == PackageManager.PERMISSION_GRANTED;
-        if (!fine && !coarse) {
+        if (!isLocationEnabled()) {
+            broadcastState(null, false);
+            return;
+        }
+
+        boolean registered = false;
+        try {
+            if (hasFineLocationPermission()
+                    && locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
+                locationManager.requestLocationUpdates(
+                        LocationManager.GPS_PROVIDER,
+                        UPDATE_INTERVAL_MS,
+                        MIN_DISTANCE_M,
+                        this,
+                        Looper.getMainLooper()
+                );
+                registered = true;
+            }
+
+            if (locationManager.isProviderEnabled(LocationManager.NETWORK_PROVIDER)) {
+                locationManager.requestLocationUpdates(
+                        LocationManager.NETWORK_PROVIDER,
+                        UPDATE_INTERVAL_MS,
+                        MIN_DISTANCE_M,
+                        this,
+                        Looper.getMainLooper()
+                );
+                registered = true;
+            }
+        } catch (SecurityException error) {
             stopExploration();
             return;
         }
 
-        LocationRequest request = new LocationRequest.Builder(
-                Priority.PRIORITY_HIGH_ACCURACY,
-                UPDATE_INTERVAL_MS
-        )
-                .setMinUpdateIntervalMillis(1000L)
-                .setMinUpdateDistanceMeters(MIN_DISTANCE_M)
-                .build();
-
-        callback = new LocationCallback() {
-            @Override
-            public void onLocationResult(@NonNull LocationResult result) {
-                Location location = result.getLastLocation();
-                if (location != null) handleLocation(location);
-            }
-        };
-
-        fused.requestLocationUpdates(request, callback, Looper.getMainLooper());
-        updatesStarted = true;
+        updatesStarted = registered;
+        if (!registered) {
+            broadcastState(null, false);
+        }
     }
 
-    private void handleLocation(Location location) {
+    @Override
+    public void onLocationChanged(@NonNull Location location) {
         store.saveLastLocation(location);
 
         if (location.hasAccuracy() && location.getAccuracy() > MAX_ACCEPTED_ACCURACY_M) {
@@ -158,23 +167,46 @@ public final class TrackingService extends Service {
         broadcastState(location, true);
     }
 
+    @Override
+    public void onProviderEnabled(@NonNull String provider) {
+        if (!updatesStarted && hasLocationPermission()) {
+            startLocationUpdates();
+        }
+        broadcastState(null, true);
+    }
+
+    @Override
+    public void onProviderDisabled(@NonNull String provider) {
+        if (!isLocationEnabled()) {
+            updatesStarted = false;
+        }
+        broadcastState(null, false);
+    }
+
+    @Override
+    @SuppressWarnings("deprecation")
+    public void onStatusChanged(String provider, int status, Bundle extras) {
+        // Required for compatibility with older Android LocationListener APIs.
+    }
+
     private void broadcastState(@Nullable Location location, boolean accepted) {
         Intent update = new Intent(ACTION_STATE_CHANGED);
         update.setPackage(getPackageName());
         update.putExtra(EXTRA_TRACKING, store.isTrackingActive());
         update.putExtra(EXTRA_ACCEPTED, accepted);
+        update.putExtra(EXTRA_LOCATION_ENABLED, isLocationEnabled());
         if (location != null) {
             update.putExtra(EXTRA_LAT, location.getLatitude());
             update.putExtra(EXTRA_LNG, location.getLongitude());
-            update.putExtra(EXTRA_ACCURACY, location.getAccuracy());
+            update.putExtra(EXTRA_ACCURACY, location.hasAccuracy() ? location.getAccuracy() : 0f);
         }
         sendBroadcast(update);
     }
 
     private void stopExploration() {
-        if (callback != null) {
-            fused.removeLocationUpdates(callback);
-            callback = null;
+        try {
+            locationManager.removeUpdates(this);
+        } catch (SecurityException ignored) {
         }
         updatesStarted = false;
         store.setTrackingActive(false);
@@ -183,14 +215,33 @@ public final class TrackingService extends Service {
         stopSelf();
     }
 
+    private boolean hasLocationPermission() {
+        return hasFineLocationPermission()
+                || ContextCompat.checkSelfPermission(
+                        this,
+                        Manifest.permission.ACCESS_COARSE_LOCATION
+                ) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private boolean hasFineLocationPermission() {
+        return ContextCompat.checkSelfPermission(
+                this,
+                Manifest.permission.ACCESS_FINE_LOCATION
+        ) == PackageManager.PERMISSION_GRANTED;
+    }
+
+    private boolean isLocationEnabled() {
+        return locationManager != null && locationManager.isLocationEnabled();
+    }
+
     private void createNotificationChannel() {
         NotificationManager manager = getSystemService(NotificationManager.class);
         NotificationChannel channel = new NotificationChannel(
                 CHANNEL_ID,
-                "Исследование карты",
+                getString(R.string.notification_channel_name),
                 NotificationManager.IMPORTANCE_LOW
         );
-        channel.setDescription("Фоновое GPS-исследование Roamglyph");
+        channel.setDescription(getString(R.string.notification_channel_description));
         manager.createNotificationChannel(channel);
     }
 
@@ -213,13 +264,13 @@ public final class TrackingService extends Service {
 
         return new NotificationCompat.Builder(this, CHANNEL_ID)
                 .setSmallIcon(R.drawable.ic_roamglyph)
-                .setContentTitle("Roamglyph исследует карту")
+                .setContentTitle(getString(R.string.notification_title))
                 .setContentText(notificationText(visitedCount))
                 .setContentIntent(openPending)
                 .setOngoing(true)
                 .setOnlyAlertOnce(true)
                 .setCategory(NotificationCompat.CATEGORY_SERVICE)
-                .addAction(0, "Остановить", stopPending)
+                .addAction(0, getString(R.string.notification_stop), stopPending)
                 .build();
     }
 
@@ -228,22 +279,35 @@ public final class TrackingService extends Service {
         try {
             manager.notify(NOTIFICATION_ID, buildNotification(visitedCount));
         } catch (SecurityException ignored) {
-            // Android 13+ can hide drawer notifications if POST_NOTIFICATIONS is denied.
-            // The foreground service itself remains valid and visible in system task UI.
+            // Android 13+ may hide notification-drawer entries when notifications are denied.
+            // The foreground service remains visible through Android's foreground-service UI.
         }
     }
 
     private String notificationText(int visitedCount) {
         double areaM2 = visitedCount * 43.87;
         if (areaM2 >= 1_000_000) {
-            return String.format(Locale.getDefault(), "%d клеток · ≈%.2f км²", visitedCount, areaM2 / 1_000_000.0);
+            return String.format(
+                    Locale.getDefault(),
+                    "%d cells · ≈%.2f km²",
+                    visitedCount,
+                    areaM2 / 1_000_000.0
+            );
         }
-        return String.format(Locale.getDefault(), "%d клеток · ≈%.0f м²", visitedCount, areaM2);
+        return String.format(
+                Locale.getDefault(),
+                "%d cells · ≈%.0f m²",
+                visitedCount,
+                areaM2
+        );
     }
 
     @Override
     public void onDestroy() {
-        if (callback != null) fused.removeLocationUpdates(callback);
+        try {
+            locationManager.removeUpdates(this);
+        } catch (SecurityException ignored) {
+        }
         super.onDestroy();
     }
 

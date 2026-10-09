@@ -1,5 +1,33 @@
+import java.io.File
+
 plugins {
     id("com.android.application")
+}
+
+fun signingValue(name: String): String? =
+    System.getenv(name)?.takeIf { it.isNotBlank() }
+
+val releaseKeystorePath = signingValue("ROAMGLYPH_KEYSTORE")
+val releaseStorePassword = signingValue("ROAMGLYPH_KEYSTORE_PASSWORD")
+val releaseKeyAlias = signingValue("ROAMGLYPH_KEY_ALIAS")
+val releaseKeyPassword = signingValue("ROAMGLYPH_KEY_PASSWORD")
+
+val hasReleaseSigning =
+    !releaseKeystorePath.isNullOrBlank() &&
+    File(releaseKeystorePath).exists() &&
+    !releaseStorePassword.isNullOrBlank() &&
+    !releaseKeyAlias.isNullOrBlank() &&
+    !releaseKeyPassword.isNullOrBlank()
+
+val requireReleaseSigning =
+    signingValue("ROAMGLYPH_REQUIRE_KEYSTORE")?.lowercase() in setOf("1", "true", "yes")
+
+if (requireReleaseSigning && !hasReleaseSigning) {
+    throw GradleException(
+        "ROAMGLYPH_REQUIRE_KEYSTORE is enabled but release signing is incomplete. " +
+            "Provide ROAMGLYPH_KEYSTORE, ROAMGLYPH_KEYSTORE_PASSWORD, " +
+            "ROAMGLYPH_KEY_ALIAS, and ROAMGLYPH_KEY_PASSWORD."
+    )
 }
 
 android {
@@ -11,26 +39,31 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-    signingConfigs {
-        create("stableDebug") {
-            storeFile = file("roamglyph-debug.keystore")
-            storePassword = "android"
-            keyAlias = "roamglyphdebug"
-            keyPassword = "android"
-        }
-    }
-
     defaultConfig {
         applicationId = "com.sensareth.roamglyph"
         minSdk = 29
         targetSdk = 36
-        versionCode = 5
-        versionName = "0.4.0"
+        versionCode = 6
+        versionName = "0.5.0"
+    }
+
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = File(releaseKeystorePath!!)
+                storePassword = releaseStorePassword
+                keyAlias = releaseKeyAlias
+                keyPassword = releaseKeyPassword
+            }
+        }
     }
 
     buildTypes {
-        getByName("debug") {
-            signingConfig = signingConfigs.getByName("stableDebug")
+        getByName("release") {
+            isMinifyEnabled = false
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 }
@@ -38,7 +71,6 @@ android {
 dependencies {
     implementation("org.maplibre.gl:android-sdk:13.6.1")
     implementation("com.uber:h3-android:4.5.0")
-    implementation("com.google.android.gms:play-services-location:21.4.0")
     implementation("androidx.appcompat:appcompat:1.8.0")
     implementation("androidx.core:core-ktx:1.18.0")
 }
