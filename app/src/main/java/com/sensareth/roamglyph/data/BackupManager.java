@@ -164,10 +164,83 @@ public final class BackupManager {
     }
 
     private static Header validate(File file, H3Core h3) throws IOException {
+        Header header = readHeader(file);
+
+        if (!BACKUP_FORMAT.equals(header.format)
+                && !LEGACY_FORMAT.equals(header.format)) {
+            throw new IOException("Unsupported Roamglyph backup format");
+        }
+
+        if (BACKUP_FORMAT.equals(header.format) && header.version != BACKUP_VERSION) {
+            throw new IOException("Unsupported Roamglyph backup version");
+        }
+
+        if (LEGACY_FORMAT.equals(header.format) && header.version != LEGACY_VERSION) {
+            throw new IOException("Unsupported legacy Roamglyph history version");
+        }
+
+        Set<String> sessionIds = new HashSet<>();
+
+        try (JsonReader reader = newReader(file)) {
+            reader.beginObject();
+            while (reader.hasNext()) {
+                String name = reader.nextName();
+
+                if (BACKUP_FORMAT.equals(header.format)) {
+                    switch (name) {
+                        case "visited_cells":
+                            reader.beginArray();
+                            while (reader.hasNext()) {
+                                VisitedCellEntity cell = readVisitedCell(reader, null);
+                                validateCell(h3, cell.h3);
+                            }
+                            reader.endArray();
+                            break;
+                        case "sessions":
+                            reader.beginArray();
+                            while (reader.hasNext()) {
+                                SessionEntity session = readSession(reader, false);
+                                if (!sessionIds.add(session.sessionId)) {
+                                    throw new IOException("Duplicate session id in backup");
+                                }
+                            }
+                            reader.endArray();
+                            break;
+                        case "gps_points":
+                            reader.beginArray();
+                            while (reader.hasNext()) {
+                                GpsPointEntity point = readGpsPoint(reader);
+                                if (point.acceptedForExploration && point.h3 != null) {
+                                    validateCell(h3, point.h3);
+                                }
+                            }
+                            reader.endArray();
+                            break;
+                        default:
+                            reader.skipValue();
+                    }
+                } else if ("cells".equals(name)) {
+                    reader.beginArray();
+                    while (reader.hasNext()) {
+                        validateCell(h3, reader.nextString());
+                    }
+                    reader.endArray();
+                } else {
+                    reader.skipValue();
+                }
+            }
+            reader.endObject();
+        } catch (IllegalStateException | NumberFormatException error) {
+            throw new IOException("Malformed Roamglyph backup", error);
+        }
+
+        return header;
+    }
+
+    private static Header readHeader(File file) throws IOException {
         String format = null;
         int version = -1;
         int resolution = -1;
-        Set<String> sessionIds = new HashSet<>();
 
         try (JsonReader reader = newReader(file)) {
             reader.beginObject();
@@ -183,83 +256,20 @@ public final class BackupManager {
                     case "h3_resolution":
                         resolution = reader.nextInt();
                         break;
-                    case "visited_cells":
-                        if (BACKUP_FORMAT.equals(format)) {
-                            reader.beginArray();
-                            while (reader.hasNext()) {
-                                VisitedCellEntity cell = readVisitedCell(reader, null);
-                                validateCell(h3, cell.h3);
-                            }
-                            reader.endArray();
-                        } else {
-                            reader.skipValue();
-                        }
-                        break;
-                    case "sessions":
-                        if (BACKUP_FORMAT.equals(format)) {
-                            reader.beginArray();
-                            while (reader.hasNext()) {
-                                SessionEntity session = readSession(reader, false);
-                                if (session.sessionId.isBlank()) {
-                                    throw new IOException("Blank session id");
-                                }
-                                if (!sessionIds.add(session.sessionId)) {
-                                    throw new IOException("Duplicate session id in backup");
-                                }
-                            }
-                            reader.endArray();
-                        } else {
-                            reader.skipValue();
-                        }
-                        break;
-                    case "gps_points":
-                        if (BACKUP_FORMAT.equals(format)) {
-                            reader.beginArray();
-                            while (reader.hasNext()) {
-                                GpsPointEntity point = readGpsPoint(reader);
-                                validatePoint(point);
-                                if (point.acceptedForExploration && point.h3 != null) {
-                                    validateCell(h3, point.h3);
-                                }
-                            }
-                            reader.endArray();
-                        } else {
-                            reader.skipValue();
-                        }
-                        break;
-                    case "cells":
-                        if (LEGACY_FORMAT.equals(format)) {
-                            reader.beginArray();
-                            while (reader.hasNext()) {
-                                validateCell(h3, reader.nextString());
-                            }
-                            reader.endArray();
-                        } else {
-                            reader.skipValue();
-                        }
-                        break;
                     default:
                         reader.skipValue();
                 }
             }
             reader.endObject();
         } catch (IllegalStateException | NumberFormatException error) {
-            throw new IOException("Malformed Roamglyph backup", error);
+            throw new IOException("Malformed Roamglyph backup header", error);
         }
 
         if (format == null || version < 0 || resolution != H3_RESOLUTION) {
             throw new IOException("Missing or unsupported Roamglyph backup header");
         }
 
-        if (BACKUP_FORMAT.equals(format) && version == BACKUP_VERSION) {
-            return new Header(format, version);
-        }
-
-        if (LEGACY_FORMAT.equals(format) && version == LEGACY_VERSION) {
-            return new Header(format, version);
-        }
-
-        throw new IOException("Unsupported Roamglyph backup version");
+        return new Header(format, version);
     }
 
     private static ImportResult importLegacyV1(
