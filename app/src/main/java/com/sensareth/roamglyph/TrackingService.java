@@ -22,32 +22,38 @@ import androidx.core.app.NotificationCompat;
 import androidx.core.app.ServiceCompat;
 import androidx.core.content.ContextCompat;
 
+import com.sensareth.roamglyph.data.ExplorationRepository;
+import com.sensareth.roamglyph.data.TrackingResult;
 import com.uber.h3core.H3Core;
 
-import java.util.HashSet;
 import java.util.Locale;
-import java.util.Set;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 public final class TrackingService extends Service implements LocationListener {
     public static final String ACTION_START = "com.sensareth.roamglyph.action.START";
     public static final String ACTION_STOP = "com.sensareth.roamglyph.action.STOP";
-    public static final String ACTION_STATE_CHANGED = "com.sensareth.roamglyph.action.STATE_CHANGED";
+    public static final String ACTION_STATE_CHANGED =
+            "com.sensareth.roamglyph.action.STATE_CHANGED";
+
     public static final String EXTRA_LAT = "lat";
     public static final String EXTRA_LNG = "lng";
     public static final String EXTRA_ACCURACY = "accuracy";
     public static final String EXTRA_ACCEPTED = "accepted";
     public static final String EXTRA_TRACKING = "tracking";
     public static final String EXTRA_LOCATION_ENABLED = "location_enabled";
+    public static final String EXTRA_CELLS_CHANGED = "cells_changed";
+    public static final String EXTRA_REJECTION_REASON = "rejection_reason";
 
-    private static final int H3_RESOLUTION = 13;
     private static final long UPDATE_INTERVAL_MS = 2_000L;
     private static final float MIN_DISTANCE_M = 4f;
-    private static final float MAX_ACCEPTED_ACCURACY_M = 35f;
     private static final int NOTIFICATION_ID = 1001;
     private static final String CHANNEL_ID = "exploration";
 
     private LocationManager locationManager;
-    private VisitedStore store;
+    private VisitedStore state;
+    private ExplorationRepository repository;
+    private ExecutorService dataExecutor;
     private H3Core h3;
     private boolean updatesStarted;
 
@@ -55,12 +61,16 @@ public final class TrackingService extends Service implements LocationListener {
     public void onCreate() {
         super.onCreate();
         locationManager = getSystemService(LocationManager.class);
-        store = new VisitedStore(this);
+        state = new VisitedStore(this);
+        repository = new ExplorationRepository(this);
+        dataExecutor = Executors.newSingleThreadExecutor();
+
         try {
             h3 = H3Core.newSystemInstance();
         } catch (Throwable error) {
             h3 = null;
         }
+
         createNotificationChannel();
     }
 
@@ -74,21 +84,38 @@ public final class TrackingService extends Service implements LocationListener {
         }
 
         if (h3 == null || !hasLocationPermission()) {
-            store.setTrackingActive(false);
-            broadcastState(null, false);
+            state.setTrackingActive(false);
+            broadcastState(null, false, false, null);
             stopSelf();
             return START_NOT_STICKY;
         }
 
-        promoteToForeground();
-        store.setTrackingActive(true);
+        promoteToForeground(state.getVisitedCountCache());
+        state.setTrackingActive(true);
         startLocationUpdates();
-        broadcastState(null, true);
+        broadcastState(null, true, false, null);
+
+        dataExecutor.execute(() -> {
+            repository.migrateLegacyCellsIfNeeded(state);
+
+            if (!state.isTrackingActive()) return;
+
+            String sessionId = repository.ensureSession(
+                    state.getActiveSessionId(),
+                    System.currentTimeMillis()
+            );
+            state.setActiveSessionId(sessionId);
+
+            int total = repository.countVisitedCells();
+            state.setVisitedCountCache(total);
+            updateNotification(total);
+        });
+
         return START_STICKY;
     }
 
-    private void promoteToForeground() {
-        Notification notification = buildNotification(store.load().size());
+    private void promoteToForeground(int visitedCount) {
+        Notification notification = buildNotification(visitedCount);
         ServiceCompat.startForeground(
                 this,
                 NOTIFICATION_ID,
@@ -101,11 +128,12 @@ public final class TrackingService extends Service implements LocationListener {
         if (updatesStarted) return;
 
         if (!isLocationEnabled()) {
-            broadcastState(null, false);
+            broadcastState(null, false, false, null);
             return;
         }
 
         boolean registered = false;
+
         try {
             if (hasFineLocationPermission()
                     && locationManager.isProviderEnabled(LocationManager.GPS_PROVIDER)) {
@@ -136,35 +164,44 @@ public final class TrackingService extends Service implements LocationListener {
 
         updatesStarted = registered;
         if (!registered) {
-            broadcastState(null, false);
+            broadcastState(null, false, false, null);
         }
     }
 
     @Override
     public void onLocationChanged(@NonNull Location location) {
-        store.saveLastLocation(location);
+        state.saveLastLocation(location);
+        Location snapshot = new Location(location);
 
-        if (location.hasAccuracy() && location.getAccuracy() > MAX_ACCEPTED_ACCURACY_M) {
-            broadcastState(location, false);
-            return;
-        }
+        dataExecutor.execute(() -> processLocation(snapshot));
+    }
 
-        Set<String> visited = store.load();
-        String center = h3.latLngToCellAddress(
-                location.getLatitude(),
-                location.getLongitude(),
-                H3_RESOLUTION
+    private void processLocation(@NonNull Location location) {
+        if (!state.isTrackingActive() || h3 == null) return;
+
+        repository.migrateLegacyCellsIfNeeded(state);
+
+        String sessionId = repository.ensureSession(
+                state.getActiveSessionId(),
+                System.currentTimeMillis()
         );
-
-        Set<String> revealed = new HashSet<>(h3.gridDisk(center, 1));
-        revealed.add(center);
-
-        if (visited.addAll(revealed)) {
-            store.save(visited);
-            updateNotification(visited.size());
+        if (!sessionId.equals(state.getActiveSessionId())) {
+            state.setActiveSessionId(sessionId);
         }
 
-        broadcastState(location, true);
+        TrackingResult result = repository.recordLocation(sessionId, location, h3);
+        state.setVisitedCountCache(result.totalVisitedCells);
+
+        if (result.newCells > 0) {
+            updateNotification(result.totalVisitedCells);
+        }
+
+        broadcastState(
+                location,
+                result.accepted,
+                result.newCells > 0,
+                result.rejectionReason
+        );
     }
 
     @Override
@@ -172,34 +209,53 @@ public final class TrackingService extends Service implements LocationListener {
         if (!updatesStarted && hasLocationPermission()) {
             startLocationUpdates();
         }
-        broadcastState(null, true);
+        broadcastState(null, true, false, null);
     }
 
     @Override
     public void onProviderDisabled(@NonNull String provider) {
         if (!isLocationEnabled()) {
+            try {
+                locationManager.removeUpdates(this);
+            } catch (SecurityException ignored) {
+            }
             updatesStarted = false;
         }
-        broadcastState(null, false);
+        broadcastState(null, false, false, null);
     }
 
     @Override
     @SuppressWarnings("deprecation")
     public void onStatusChanged(String provider, int status, Bundle extras) {
-        // Required for compatibility with older Android LocationListener APIs.
+        // Retained for compatibility with the legacy LocationListener callback.
     }
 
-    private void broadcastState(@Nullable Location location, boolean accepted) {
+    private void broadcastState(
+            @Nullable Location location,
+            boolean accepted,
+            boolean cellsChanged,
+            @Nullable String rejectionReason
+    ) {
         Intent update = new Intent(ACTION_STATE_CHANGED);
         update.setPackage(getPackageName());
-        update.putExtra(EXTRA_TRACKING, store.isTrackingActive());
+        update.putExtra(EXTRA_TRACKING, state.isTrackingActive());
         update.putExtra(EXTRA_ACCEPTED, accepted);
         update.putExtra(EXTRA_LOCATION_ENABLED, isLocationEnabled());
+        update.putExtra(EXTRA_CELLS_CHANGED, cellsChanged);
+
+        if (rejectionReason != null) {
+            update.putExtra(EXTRA_REJECTION_REASON, rejectionReason);
+        }
+
         if (location != null) {
             update.putExtra(EXTRA_LAT, location.getLatitude());
             update.putExtra(EXTRA_LNG, location.getLongitude());
-            update.putExtra(EXTRA_ACCURACY, location.hasAccuracy() ? location.getAccuracy() : 0f);
+            update.putExtra(
+                    EXTRA_ACCURACY,
+                    location.hasAccuracy() ? location.getAccuracy() : 0f
+            );
         }
+
         sendBroadcast(update);
     }
 
@@ -208,10 +264,21 @@ public final class TrackingService extends Service implements LocationListener {
             locationManager.removeUpdates(this);
         } catch (SecurityException ignored) {
         }
+
         updatesStarted = false;
-        store.setTrackingActive(false);
-        broadcastState(null, true);
+        state.setTrackingActive(false);
+        String sessionId = state.getActiveSessionId();
+
+        broadcastState(null, true, false, null);
         stopForeground(STOP_FOREGROUND_REMOVE);
+
+        if (dataExecutor != null) {
+            dataExecutor.execute(() -> {
+                repository.endSession(sessionId, System.currentTimeMillis());
+                state.clearActiveSessionId();
+            });
+        }
+
         stopSelf();
     }
 
@@ -279,13 +346,14 @@ public final class TrackingService extends Service implements LocationListener {
         try {
             manager.notify(NOTIFICATION_ID, buildNotification(visitedCount));
         } catch (SecurityException ignored) {
-            // Android 13+ may hide notification-drawer entries when notifications are denied.
-            // The foreground service remains visible through Android's foreground-service UI.
+            // Android 13+ can hide the notification drawer entry when denied.
+            // Android still exposes the foreground service in system UI.
         }
     }
 
     private String notificationText(int visitedCount) {
         double areaM2 = visitedCount * 43.87;
+
         if (areaM2 >= 1_000_000) {
             return String.format(
                     Locale.getDefault(),
@@ -294,6 +362,7 @@ public final class TrackingService extends Service implements LocationListener {
                     areaM2 / 1_000_000.0
             );
         }
+
         return String.format(
                 Locale.getDefault(),
                 "%d cells · ≈%.0f m²",
@@ -308,6 +377,11 @@ public final class TrackingService extends Service implements LocationListener {
             locationManager.removeUpdates(this);
         } catch (SecurityException ignored) {
         }
+
+        if (dataExecutor != null) {
+            dataExecutor.shutdown();
+        }
+
         super.onDestroy();
     }
 

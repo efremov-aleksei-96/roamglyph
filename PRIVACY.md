@@ -9,7 +9,13 @@ Roamglyph is designed as a local-first exploration tracker.
 When you grant location permission and use the app, Roamglyph can store:
 
 - your last known location and reported accuracy;
-- the H3 map cells you have explored;
+- timestamped GPS points recorded during exploration sessions, including coordinates,
+  accuracy and, when Android supplies them, speed, altitude, and provider name;
+- whether each recorded point was accepted for exploration or rejected by the
+  accuracy/teleport filter;
+- exploration-session start/end times and local statistics;
+- H3 map cells you have explored and, for newly recorded cells, their first-seen
+  timestamp;
 - whether background exploration is currently enabled.
 
 This data is stored in the app's private local storage on your Android device.
@@ -45,11 +51,15 @@ but it is not part of version 0.5.0.
 
 ## Export and import
 
-Export happens only when you explicitly choose **Export history** and select a
-destination through Android's system document picker. Import likewise happens only
-after you explicitly select a file.
+Export happens only when you explicitly choose **Export backup** and select a
+destination through Android's system document picker. A version-2 backup contains
+explored cells, sessions, and recorded GPS points in a documented JSON format.
+Import likewise happens only after you explicitly select a file.
 
-Roamglyph does not receive a copy of exported or imported files.
+Legacy version-1 cell-only JSON exports remain importable.
+
+Roamglyph does not receive a copy of exported or imported files. See
+`docs/BACKUP_FORMAT.md` in the source repository for the portable format.
 
 ## Permissions
 
