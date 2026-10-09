@@ -46,6 +46,14 @@ public abstract class RoamglyphDatabase extends RoomDatabase {
                     "CREATE INDEX IF NOT EXISTS index_discoveries_h3 " +
                     "ON discoveries(h3)"
             );
+            database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_discoveries_latitude " +
+                    "ON discoveries(latitude)"
+            );
+            database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS index_discoveries_longitude " +
+                    "ON discoveries(longitude)"
+            );
         }
     };
 

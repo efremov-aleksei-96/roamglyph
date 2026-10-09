@@ -76,6 +76,26 @@ public final class ExplorationRepository {
         return countInserted(dao.insertDiscoveries(discoveries));
     }
 
+    public List<VisitedCellEntity> findVisitedCells(List<String> cellIds) {
+        if (cellIds.isEmpty()) return java.util.Collections.emptyList();
+        return dao.findVisitedCells(cellIds);
+    }
+
+    public Set<String> findDiscoveryIds(List<String> discoveryIds) {
+        if (discoveryIds.isEmpty()) return java.util.Collections.emptySet();
+        return new HashSet<>(dao.findDiscoveryIds(discoveryIds));
+    }
+
+    public List<DiscoveryEntity> loadDiscoveriesInBounds(
+            double south,
+            double north,
+            double west,
+            double east,
+            int limit
+    ) {
+        return dao.loadDiscoveriesInBounds(south, north, west, east, limit);
+    }
+
     public int countSessions() {
         return dao.countSessions();
     }

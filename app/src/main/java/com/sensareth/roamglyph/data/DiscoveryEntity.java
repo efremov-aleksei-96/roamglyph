@@ -11,7 +11,9 @@ import androidx.room.PrimaryKey;
         tableName = "discoveries",
         indices = {
                 @Index("category"),
-                @Index("h3")
+                @Index("h3"),
+                @Index("latitude"),
+                @Index("longitude")
         }
 )
 public final class DiscoveryEntity {
