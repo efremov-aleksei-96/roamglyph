@@ -3,6 +3,7 @@ package com.sensareth.roamglyph;
 import android.graphics.Color;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
+import android.net.Uri;
 import android.os.Bundle;
 import android.view.Gravity;
 import android.view.View;
@@ -11,15 +12,20 @@ import android.widget.ProgressBar;
 import android.widget.ScrollView;
 import android.widget.TextView;
 
+import androidx.activity.result.ActivityResultLauncher;
+import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.annotation.NonNull;
 import androidx.appcompat.app.AppCompatActivity;
 
 import com.sensareth.roamglyph.data.ExplorationRepository;
 import com.sensareth.roamglyph.data.HistoryStatsSnapshot;
 import com.sensareth.roamglyph.data.SessionEntity;
+import com.sensareth.roamglyph.history.GpxExporter;
 import com.sensareth.roamglyph.history.HistoryFormatter;
 
+import java.io.OutputStream;
 import java.text.DateFormat;
+import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
 import java.util.Locale;
@@ -33,6 +39,23 @@ public final class HistoryActivity extends AppCompatActivity {
     private LinearLayout content;
     private ProgressBar progress;
     private ExplorationRepository repository;
+    private SessionEntity pendingGpxSession;
+    private long pendingGpxThroughTimestampMs;
+
+    private final ActivityResultLauncher<String> exportGpxLauncher =
+            registerForActivityResult(
+                    new ActivityResultContracts.CreateDocument("application/gpx+xml"),
+                    uri -> {
+                        SessionEntity session = pendingGpxSession;
+                        long throughTimestampMs = pendingGpxThroughTimestampMs;
+                        pendingGpxSession = null;
+                        pendingGpxThroughTimestampMs = 0L;
+
+                        if (uri != null && session != null) {
+                            writeSessionGpx(uri, session, throughTimestampMs);
+                        }
+                    }
+            );
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -287,11 +310,91 @@ public final class HistoryActivity extends AppCompatActivity {
                 session.source
         );
 
-        new androidx.appcompat.app.AlertDialog.Builder(this)
-                .setTitle(dateFormat.format(new Date(session.startedAtMs)))
-                .setMessage(message)
-                .setPositiveButton(android.R.string.ok, null)
-                .show();
+        androidx.appcompat.app.AlertDialog.Builder builder =
+                new androidx.appcompat.app.AlertDialog.Builder(this)
+                        .setTitle(dateFormat.format(new Date(session.startedAtMs)))
+                        .setMessage(message)
+                        .setPositiveButton(android.R.string.ok, null);
+
+        if (session.acceptedPoints > 0L) {
+            builder.setNeutralButton(
+                    R.string.history_export_gpx,
+                    (dialog, which) -> requestGpxExport(session)
+            );
+        }
+
+        builder.show();
+    }
+
+    private void requestGpxExport(@NonNull SessionEntity session) {
+        if (session.acceptedPoints <= 0L) {
+            android.widget.Toast.makeText(
+                    this,
+                    R.string.history_gpx_no_points,
+                    android.widget.Toast.LENGTH_SHORT
+            ).show();
+            return;
+        }
+
+        long throughTimestampMs = System.currentTimeMillis();
+        pendingGpxSession = session;
+        pendingGpxThroughTimestampMs = throughTimestampMs;
+
+        String stamp = new SimpleDateFormat(
+                "yyyyMMdd-HHmm",
+                Locale.US
+        ).format(new Date(session.startedAtMs));
+
+        exportGpxLauncher.launch("roamglyph-session-" + stamp + ".gpx");
+    }
+
+    private void writeSessionGpx(
+            @NonNull Uri uri,
+            @NonNull SessionEntity session,
+            long throughTimestampMs
+    ) {
+        executor.execute(() -> {
+            try (OutputStream output = getContentResolver().openOutputStream(uri)) {
+                if (output == null) {
+                    throw new IllegalStateException("No GPX output stream");
+                }
+
+                String label = new SimpleDateFormat(
+                        "yyyy-MM-dd HH:mm",
+                        Locale.getDefault()
+                ).format(new Date(session.startedAtMs));
+
+                GpxExporter.ExportResult result = GpxExporter.exportSession(
+                        output,
+                        repository,
+                        session,
+                        throughTimestampMs,
+                        getString(R.string.history_gpx_track_name, label)
+                );
+
+                runOnUiThread(() -> {
+                    if (isDestroyed()) return;
+                    android.widget.Toast.makeText(
+                            this,
+                            getString(
+                                    R.string.history_gpx_export_success,
+                                    result.points,
+                                    result.segments
+                            ),
+                            android.widget.Toast.LENGTH_LONG
+                    ).show();
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> {
+                    if (isDestroyed()) return;
+                    android.widget.Toast.makeText(
+                            this,
+                            R.string.history_gpx_export_failed,
+                            android.widget.Toast.LENGTH_LONG
+                    ).show();
+                });
+            }
+        });
     }
 
     private void addSectionTitle(int textRes) {

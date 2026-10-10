@@ -1,6 +1,6 @@
 Major local-first foundation release: removes Google Play Services, uses Android
 LocationManager, Room/SQLite sessions and timestamped GPS points, portable backup
 v3, adaptive Fog of War, local-first Discoveries from OpenMapTiles POIs, and
-optional local PMTiles v3 vector maps, plus local history/statistics. Also adds GPS
+optional local PMTiles v3 vector maps, plus local history/statistics and GPX session export. Also adds GPS
 teleport filtering, smoother
 recentring, secure release signing, F-Droid metadata, and no ads/analytics/backend.

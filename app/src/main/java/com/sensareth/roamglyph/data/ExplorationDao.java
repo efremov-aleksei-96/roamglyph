@@ -102,6 +102,32 @@ public interface ExplorationDao {
     @Query("SELECT COUNT(*) FROM gps_points")
     long countGpsPoints();
 
+    @Query(
+            "SELECT COUNT(*) FROM gps_points " +
+            "WHERE session_id = :sessionId " +
+            "AND accepted_for_exploration = 1 " +
+            "AND timestamp_ms <= :throughTimestampMs"
+    )
+    long countAcceptedGpsPointsForSession(
+            @NonNull String sessionId,
+            long throughTimestampMs
+    );
+
+    @Query(
+            "SELECT * FROM gps_points " +
+            "WHERE session_id = :sessionId " +
+            "AND accepted_for_exploration = 1 " +
+            "AND timestamp_ms <= :throughTimestampMs " +
+            "ORDER BY timestamp_ms ASC, point_id ASC " +
+            "LIMIT :limit OFFSET :offset"
+    )
+    List<GpsPointEntity> loadAcceptedGpsPointsForSessionPage(
+            @NonNull String sessionId,
+            long throughTimestampMs,
+            int limit,
+            int offset
+    );
+
     @Insert(onConflict = OnConflictStrategy.IGNORE)
     long insertDiscovery(DiscoveryEntity discovery);
 

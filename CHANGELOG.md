@@ -13,6 +13,7 @@
 - Persistent switching between online OpenFreeMap and the local PMTiles basemap.
 - Local History & statistics screen with aggregate exploration metrics and recent
   session summaries.
+- Streaming GPX 1.1 export for individual sessions from the history screen.
 
 ### Changed
 
