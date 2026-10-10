@@ -16,7 +16,7 @@ import androidx.sqlite.db.SupportSQLiteDatabase;
                 GpsPointEntity.class,
                 DiscoveryEntity.class
         },
-        version = 2,
+        version = 3,
         exportSchema = false
 )
 public abstract class RoamglyphDatabase extends RoomDatabase {
@@ -57,6 +57,19 @@ public abstract class RoamglyphDatabase extends RoomDatabase {
         }
     };
 
+    // Adds only a read-performance index. No history/GPS tables are rebuilt
+    // or deleted; every existing point and H3 visit stays untouched.
+    private static final Migration MIGRATION_2_3 = new Migration(2, 3) {
+        @Override
+        public void migrate(@NonNull SupportSQLiteDatabase database) {
+            database.execSQL(
+                    "CREATE INDEX IF NOT EXISTS " +
+                    "index_gps_points_accepted_for_exploration_latitude_longitude " +
+                    "ON gps_points(accepted_for_exploration, latitude, longitude)"
+            );
+        }
+    };
+
     private static volatile RoamglyphDatabase instance;
 
     public abstract ExplorationDao explorationDao();
@@ -73,7 +86,7 @@ public abstract class RoamglyphDatabase extends RoomDatabase {
                                 RoamglyphDatabase.class,
                                 DATABASE_NAME
                         )
-                        .addMigrations(MIGRATION_1_2)
+                        .addMigrations(MIGRATION_1_2, MIGRATION_2_3)
                         .build();
                 instance = local;
             }
