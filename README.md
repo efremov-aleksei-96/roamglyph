@@ -79,7 +79,8 @@ Upstream Fastlane/F-Droid listing text lives under
 `fastlane/metadata/android/`.
 
 See [docs/DISTRIBUTION.md](docs/DISTRIBUTION.md) for release, signing, F-Droid,
-and IzzyOnDroid details.
+and IzzyOnDroid details. The required physical-device checks before the first
+public release are in [docs/RELEASE_CANDIDATE_QA.md](docs/RELEASE_CANDIDATE_QA.md).
 
 ## Android configuration
 
