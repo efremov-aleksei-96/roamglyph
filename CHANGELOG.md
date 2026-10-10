@@ -1,5 +1,29 @@
 # Changelog
 
+## 0.5.0-dev.20 — 2026-10-10 (experimental test build)
+
+- Based on direct Pixel screenshots of dev.18/dev.19: soften the
+  UNDERLYING H3 silhouette, not simply a rounded hexagonal outline.
+- Compute a continuous 2D occupancy field using two separable box-blur
+  passes (approximately Gaussian) over the exact H3-13 source stencil.
+  Spatial occupancy gates a broad visible INNER gradient, suppressing
+  isolated hexagonal teeth rather than retaining their hard edges.
+- A separate low-opacity center channel preserves narrow real routes;
+  city-scale subpixel traces survive without showing their H3 borders.
+- Preserve exact geographical correctness: output alpha never exceeds
+  the underlying visited mask; the GPU additionally clips to the H3
+  vector geometry during pan and zoom.
+- Add pure JVM synthetic-image tests for a broad-area gradient, narrow
+  routes, protruding H3-like tips, and no outward mask expansion.
+- Filter into an off-screen padded work mask (support of both blur passes)
+  before cropping the viewport, eliminating false seams during panning.
+- Cancel superseded mask jobs during distance and filter passes instead of
+  finishing stale multi-megapixel computations. Work area including the
+  padding remains under the bounded memory budget.
+- No history, JSON backup, discoveries, permissions or storage migration.
+- Requires physical-device visual verification before release.
+
+
 ## 0.5.0-dev.19 — 2026-10-10 (experimental test build)
 
 - On-device dev.18 feedback confirmed visible H3 sawteeth and almost no

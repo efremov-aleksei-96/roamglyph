@@ -9,14 +9,15 @@ import android.graphics.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.CancellationException;
+import java.util.function.BooleanSupplier;
 
 /**
- * Software-rasterized, supersampled fog cutout with inward Gaussian-like
- * feathering. Intended for an off-UI-thread viewport snapshot worker.
+ * Supersampled exact-H3 raster mask, with a padded 2D smoothed silhouette.
  *
- * Two separable box passes low-pass the exact mask; a chamfer distance
- * transform prevents the blur from uncovering ANY outside H3 pixel.
- * Supersampling is capped to bound working memory on high-DPI phones.
+ * The work buffer includes at least the FULL support of both box blur passes
+ * beyond the visible map rectangle. Viewport edges therefore cannot be
+ * mistaken for real exploration borders during a pan or a zoom.
+ * Both the oversized work area and its bitmaps stay within a 5MP cap.
  */
 final class FogRasterFeather {
     private static final int MAX_RASTER_PIXELS = 5_000_000;
@@ -24,18 +25,30 @@ final class FogRasterFeather {
 
     private FogRasterFeather() {}
 
+    private static void checkCancelled(BooleanSupplier cancelled) {
+        if (Thread.currentThread().isInterrupted() || cancelled.getAsBoolean()) {
+            throw new CancellationException("Superseded fog mask");
+        }
+    }
+
     static Bitmap[] createPyramid(Path exact, int viewWidth, int viewHeight,
                                   float cellDiameterPx, float density) {
+        return createPyramid(exact, viewWidth, viewHeight,
+                cellDiameterPx, density, () -> false);
+    }
+
+    static Bitmap[] createPyramid(Path exact, int viewWidth, int viewHeight,
+                                  float cellDiameterPx, float density,
+                                  BooleanSupplier cancelled) {
         List<Bitmap> levels = new ArrayList<>();
         try {
             Bitmap current = create(exact, viewWidth, viewHeight,
-                    cellDiameterPx, density);
+                    cellDiameterPx, density, cancelled);
             if (current == null) return new Bitmap[0];
             levels.add(current);
-            // Repeated 2x2 filtered reductions preserve average alpha of
-            // subpixel trails when a camera gesture minifies the bitmap.
+            // Area filtering preserves small legitimate trails on zoom-out.
             for (int i = 0; i < 14; i++) {
-                checkInterrupted();
+                checkCancelled(cancelled);
                 if (current.getWidth() == 1 && current.getHeight() == 1) break;
                 int nextWidth = Math.max(1, current.getWidth() / 2);
                 int nextHeight = Math.max(1, current.getHeight() / 2);
@@ -43,6 +56,7 @@ final class FogRasterFeather {
                         current, nextWidth, nextHeight, true);
                 levels.add(current);
             }
+            checkCancelled(cancelled);
             return levels.toArray(new Bitmap[0]);
         } catch (RuntimeException | OutOfMemoryError failure) {
             for (Bitmap bitmap : levels) bitmap.recycle();
@@ -50,138 +64,92 @@ final class FogRasterFeather {
         }
     }
 
-    private static void checkInterrupted() {
-        if (Thread.currentThread().isInterrupted()) {
-            throw new CancellationException("Stale fog mask job");
-        }
+    static Bitmap create(Path exact, int viewWidth, int viewHeight,
+                         float cellDiameterPx, float density) {
+        return create(exact, viewWidth, viewHeight,
+                cellDiameterPx, density, () -> false);
     }
 
     static Bitmap create(Path exact, int viewWidth, int viewHeight,
-                         float cellDiameterPx, float density) {
+                         float cellDiameterPx, float density,
+                         BooleanSupplier cancelled) {
         if (viewWidth <= 0 || viewHeight <= 0) return null;
+
         double scale = Math.min(MAX_SUPERSAMPLE,
                 Math.sqrt((double) MAX_RASTER_PIXELS
                         / ((double) viewWidth * viewHeight)));
-        // The cap MUST also hold for very large external displays.
-        int width = Math.max(1, (int) Math.floor(viewWidth * scale));
-        int height = Math.max(1, (int) Math.floor(viewHeight * scale));
-        while ((long) width * height > MAX_RASTER_PIXELS) {
-            if (width >= height && width > 1) width--;
-            else height--;
+        int width = 0, height = 0, blur = 0, feather = 0, pad = 0;
+        long area = Long.MAX_VALUE;
+
+        // Compute padding in RASTER pixels after scaling. Two full
+        // 2D box-filter passes have 2*r kernel support in each direction.
+        // The gradient/distance raster also needs real H3 input outside
+        // the screen. Decrease render scale until all padded pixels fit.
+        for (int pass = 0; pass < 40; pass++) {
+            width = Math.max(1, (int) Math.floor(viewWidth * scale));
+            height = Math.max(1, (int) Math.floor(viewHeight * scale));
+            float effective = (float) width / viewWidth;
+            blur = Math.max(1, Math.min(64,
+                    Math.round(Math.max(1f / effective,
+                            Math.min(30f * density, cellDiameterPx * 0.78f))
+                            * effective)));
+            feather = Math.max(1, Math.min(80,
+                    Math.round(Math.max(1f / effective,
+                            Math.min(42f * density, cellDiameterPx * 1.7f))
+                            * effective)));
+            pad = Math.max(2 * blur + 3, feather + 3);
+            area = ((long) width + 2L * pad) * (height + 2L * pad);
+            if (area <= MAX_RASTER_PIXELS) break;
+            scale *= Math.max(0.15,
+                    Math.sqrt((double) MAX_RASTER_PIXELS / area) * 0.985);
         }
-        checkInterrupted();
-        Bitmap bitmap = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888);
-        boolean complete = false;
+        if (area > MAX_RASTER_PIXELS) {
+            // This should never happen in a realistic viewport. Refuse
+            // oversized allocations and let the overlay fail dark.
+            throw new IllegalArgumentException("Padded fog buffer exceeds cap");
+        }
+
+        checkCancelled(cancelled);
+        int workWidth = width + 2 * pad;
+        int workHeight = height + 2 * pad;
+        Bitmap work = Bitmap.createBitmap(
+                workWidth, workHeight, Bitmap.Config.ARGB_8888);
         try {
-        Canvas canvas = new Canvas(bitmap);
-        canvas.scale((float) width / viewWidth, (float) height / viewHeight);
-        Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
-        paint.setColor(Color.WHITE);
-        paint.setStyle(Paint.Style.FILL);
-        canvas.drawPath(exact, paint);
+            Canvas canvas = new Canvas(work);
+            // Actual geographic vertices were projected for the visible
+            // viewport, but the full Path includes off-screen geometry.
+            // Translate BEFORE scaling to keep that geometry in the pad.
+            canvas.translate(pad, pad);
+            canvas.scale((float) width / viewWidth,
+                    (float) height / viewHeight);
+            Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+            paint.setColor(Color.WHITE);
+            paint.setStyle(Paint.Style.FILL);
+            canvas.drawPath(exact, paint);
 
-        int n = width * height;
-        int[] pixels = new int[n];
-        int[] intermediate = new int[n];
-        byte[] distance = new byte[n];
-        bitmap.getPixels(pixels, 0, width, 0, 0, width, height);
+            checkCancelled(cancelled);
+            int[] pixels = new int[workWidth * workHeight];
+            work.getPixels(pixels, 0, workWidth, 0, 0, workWidth, workHeight);
+            FogSilhouetteField.renderInPlace(
+                    pixels, workWidth, workHeight, blur, feather, cancelled);
+            checkCancelled(cancelled);
+            work.setPixels(pixels, 0, workWidth, 0, 0,
+                    workWidth, workHeight);
 
-        final float effectiveScale = (float) width / viewWidth;
-        int blurRadius = Math.max(1, Math.min(64,
-                Math.round(Math.max(1f / effectiveScale,
-                        Math.min(32f * density, cellDiameterPx * 1.35f))
-                        * effectiveScale)));
-        // At city zoom the minimum must be close to ONE RASTER pixel,
-        // otherwise small but genuine routes get feathered completely out.
-        int featherRadius = Math.max(1, Math.min(80,
-                Math.round(Math.max(1f / effectiveScale,
-                        Math.min(42f * density, cellDiameterPx * 1.85f))
-                        * effectiveScale)));
-
-        // Distances are inside-only, capped at 255 steps (85 raster px).
-        // The exact source alpha gates every resulting pixel.
-        checkInterrupted();
-        for (int i = 0; i < n; i++) {
-            distance[i] = (byte) (((pixels[i] >>> 24) >= 24) ? 255 : 0);
-        }
-        for (int y = 0; y < height; y++) {
-            if ((y & 31) == 0) checkInterrupted();
-            int row = y * width;
-            for (int x = 0; x < width; x++) {
-                int i = row + x;
-                int d = distance[i] & 255;
-                if (d == 0) continue;
-                if (x > 0) d = Math.min(d, (distance[i - 1] & 255) + 3);
-                if (y > 0) {
-                    d = Math.min(d, (distance[i - width] & 255) + 3);
-                    if (x > 0) d = Math.min(d, (distance[i - width - 1] & 255) + 4);
-                    if (x + 1 < width) d = Math.min(d, (distance[i - width + 1] & 255) + 4);
-                }
-                distance[i] = (byte) d;
+            // Only the central viewport travels with the geographic
+            // camera matrix. Its alpha was calculated with a real,
+            // continuous neighbourhood instead of clamped edge samples.
+            Bitmap cropped = Bitmap.createBitmap(
+                    work, pad, pad, width, height);
+            try {
+                checkCancelled(cancelled);
+                return cropped;
+            } catch (RuntimeException | OutOfMemoryError failure) {
+                cropped.recycle();
+                throw failure;
             }
-        }
-        for (int y = height - 1; y >= 0; y--) {
-            if ((y & 31) == 0) checkInterrupted();
-            int row = y * width;
-            for (int x = width - 1; x >= 0; x--) {
-                int i = row + x;
-                int d = distance[i] & 255;
-                if (d == 0) continue;
-                if (x + 1 < width) d = Math.min(d, (distance[i + 1] & 255) + 3);
-                if (y + 1 < height) {
-                    d = Math.min(d, (distance[i + width] & 255) + 3);
-                    if (x > 0) d = Math.min(d, (distance[i + width - 1] & 255) + 4);
-                    if (x + 1 < width) d = Math.min(d, (distance[i + width + 1] & 255) + 4);
-                }
-                distance[i] = (byte) d;
-            }
-        }
-
-        // Separable O(width*height) low-pass filter. Edge values extend
-        // across viewport borders so a cropped view doesn't fade to black.
-        int span = 2 * blurRadius + 1;
-        for (int y = 0; y < height; y++) {
-            if ((y & 31) == 0) checkInterrupted();
-            int offset = y * width;
-            long sum = 0;
-            for (int dx = -blurRadius; dx <= blurRadius; dx++) {
-                int x = Math.max(0, Math.min(width - 1, dx));
-                sum += pixels[offset + x] >>> 24;
-            }
-            for (int x = 0; x < width; x++) {
-                intermediate[offset + x] = (int) ((sum + span / 2) / span);
-                int gone = Math.max(0, x - blurRadius);
-                int added = Math.min(width - 1, x + blurRadius + 1);
-                sum += (pixels[offset + added] >>> 24)
-                        - (pixels[offset + gone] >>> 24);
-            }
-        }
-        for (int x = 0; x < width; x++) {
-            if ((x & 31) == 0) checkInterrupted();
-            long sum = 0;
-            for (int dy = -blurRadius; dy <= blurRadius; dy++) {
-                int y = Math.max(0, Math.min(height - 1, dy));
-                sum += intermediate[y * width + x];
-            }
-            for (int y = 0; y < height; y++) {
-                int i = y * width + x;
-                int rawAlpha = pixels[i] >>> 24;
-                int blurred = (int) ((sum + span / 2) / span);
-                int alpha = FogFeatherProfile.cutoutAlpha(
-                        rawAlpha, blurred, distance[i] & 255, featherRadius);
-                pixels[i] = (alpha << 24) | 0xFFFFFF;
-                int gone = Math.max(0, y - blurRadius);
-                int added = Math.min(height - 1, y + blurRadius + 1);
-                sum += intermediate[added * width + x]
-                        - intermediate[gone * width + x];
-            }
-        }
-        checkInterrupted();
-        bitmap.setPixels(pixels, 0, width, 0, 0, width, height);
-        complete = true;
-        return bitmap;
         } finally {
-            if (!complete) bitmap.recycle();
+            work.recycle();
         }
     }
 }
