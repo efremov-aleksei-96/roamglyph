@@ -43,8 +43,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public final class FogOverlayView extends View {
     private static final int FOG_ALPHA = 210;
-    private static final int MAX_CACHE = 72;
+    private static final int MAX_CACHE = 384;
     private static final int MAX_DEMAND = 32;
+    private static final int MAX_VISIBLE = 512;
     private static final long MAX_CACHE_BYTES = 64L * 1024L * 1024L;
     private static final long DEMAND_INTERVAL_MS = 110L;
 
@@ -99,13 +100,15 @@ public final class FogOverlayView extends View {
     private static final class TileJob {
         final FogWorldTileScheme.Key key;
         final int epoch;
+        final float rasterScale;
         // Sticky: the camera may leave and re-enter this tile before the
         // worker posts its result. Never reinterpret an aborted job as
         // a deterministic empty H3 tile.
         volatile boolean wasCancelled;
-        TileJob(FogWorldTileScheme.Key key, int epoch) {
+        TileJob(FogWorldTileScheme.Key key, int epoch, float rasterScale) {
             this.key = key;
             this.epoch = epoch;
+            this.rasterScale = rasterScale;
         }
     }
 
@@ -276,7 +279,7 @@ public final class FogOverlayView extends View {
             double east = b.getLonEast(), west = b.getLonWest();
             List<FogWorldTileScheme.Key> newVisible =
                     FogWorldTileScheme.covering(
-                            north, east, south, west, requestedZoom, 0, MAX_DEMAND);
+                            north, east, south, west, requestedZoom, 0, MAX_VISIBLE);
             List<FogWorldTileScheme.Key> preload =
                     FogWorldTileScheme.covering(
                             north, east, south, west, requestedZoom, 1, MAX_DEMAND);
@@ -286,8 +289,9 @@ public final class FogOverlayView extends View {
             // a corner that is actually on screen.
             java.util.LinkedHashSet<FogWorldTileScheme.Key> prioritized =
                     new java.util.LinkedHashSet<>(newVisible);
+            int budgeted = Math.max(MAX_DEMAND, newVisible.size());
             for (FogWorldTileScheme.Key key : preload) {
-                if (prioritized.size() >= MAX_DEMAND) break;
+                if (prioritized.size() >= budgeted) break;
                 prioritized.add(key);
             }
             wanted = Collections.unmodifiableSet(new HashSet<>(prioritized));
@@ -305,10 +309,15 @@ public final class FogOverlayView extends View {
             // An older completed tile remains visible while its updated
             // version renders, preventing area flashing during movement.
             int epoch = coverageEpoch;
+            // Gigantic tablets/external displays can show dozens of tiles
+            // simultaneously. Lower their raster resolution proactively
+            // rather than silently dropping on-screen geography or OOMing.
+            float rasterScale = newVisible.size() > 72 ? 0.5f
+                    : newVisible.size() > 36 ? 0.75f : 1.0f;
             for (FogWorldTileScheme.Key key : prioritized) {
                 Tile current = cache.get(key);
                 if ((current == null || current.epoch != epoch) && pending.add(key)) {
-                    jobs.add(new TileJob(key, epoch));
+                    jobs.add(new TileJob(key, epoch, rasterScale));
                 }
             }
             startWorker();
@@ -421,7 +430,7 @@ public final class FogOverlayView extends View {
         float diameter = (float) (8.2 / Math.max(0.000001, mpp));
         Bitmap[] masks = FogRasterFeather.createPyramid(
                 exact, FogWorldTileScheme.TILE_PX, FogWorldTileScheme.TILE_PX,
-                diameter, density, () -> cancelled(job), 1.0f);
+                diameter, density, () -> cancelled(job), job.rasterScale);
         if (cancelled(job)) {
             for (Bitmap bitmap : masks) bitmap.recycle();
             return null;
