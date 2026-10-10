@@ -48,11 +48,21 @@ public final class FogOverlayView extends View {
     private static final int MAX_VISIBLE = 96;
     private static final long MAX_CACHE_BYTES = 64L * 1024L * 1024L;
     private static final long DEMAND_INTERVAL_MS = 110L;
+    private static final RectF TILE_DEST = new RectF(
+            0f, 0f, FogWorldTileScheme.TILE_PX, FogWorldTileScheme.TILE_PX);
+    private static final float[] FRAME_SOURCE = {
+            0f, 0f, FogWorldTileScheme.TILE_PX, 0f,
+            FogWorldTileScheme.TILE_PX, FogWorldTileScheme.TILE_PX,
+            0f, FogWorldTileScheme.TILE_PX
+    };
 
     private final Paint cutoutPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Paint markerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint markerOutline = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Matrix tileMatrix = new Matrix();
+    // One geographic-to-screen homography per frame, NOT four native
+    // MapLibre projections for each cached geographic tile.
+    private final Matrix worldToScreen = new Matrix();
     private final float[] corners = new float[8];
     private final float[] target = new float[8];
     private final float density;
@@ -592,8 +602,8 @@ public final class FogOverlayView extends View {
     }
 
     private void drawCachedTiles(Canvas canvas) {
-        // Keep prior geographic zoom tiles on screen until all tiles
-        // covering the current view have loaded at the new zoom.
+        // Keep prior geographic zoom tiles until the complete newly requested
+        // visible set is available; never briefly hide an explored road.
         if (displayZoom < 0) displayZoom = requestedZoom;
         if (displayZoom != requestedZoom && !visible.isEmpty()) {
             boolean ready = true;
@@ -603,36 +613,107 @@ public final class FogOverlayView extends View {
             if (ready) displayZoom = requestedZoom;
         }
         try {
-            // Enumerate EXISTING resident geographic tiles rather than
-            // enumerating (and inadvertently truncating) a capped list
-            // of old-grid keys. A cached explored road at an outer edge
-            // must remain visible during even a very large zoom handoff.
             org.maplibre.android.geometry.LatLngBounds b =
                     map.getProjection().getVisibleRegion().latLngBounds;
+            double north = b.getLatNorth(), south = b.getLatSouth();
+            double east = b.getLonEast(), west = b.getLonWest();
+            if (!(north > south && east > west && east - west <= 180.0)) return;
+
+            // The geographic culling rectangle is calculated ONCE per frame,
+            // not with repeated Mercator logarithms for every cache entry.
+            int left = (int) Math.floor(
+                    FogWorldTileScheme.longitudeX(west, displayZoom)
+                            / FogWorldTileScheme.TILE_PX);
+            int right = (int) Math.floor(
+                    FogWorldTileScheme.longitudeX(east, displayZoom)
+                            / FogWorldTileScheme.TILE_PX);
+            int top = (int) Math.floor(
+                    FogWorldTileScheme.latitudeY(north, displayZoom)
+                            / FogWorldTileScheme.TILE_PX);
+            int bottom = (int) Math.floor(
+                    FogWorldTileScheme.latitudeY(south, displayZoom)
+                            / FogWorldTileScheme.TILE_PX);
             double currentZoom = map.getCameraPosition().zoom;
+
+            // A flat Mercator map remains a plane under bearing and pitch.
+            // Four anchor projections define the same projective transform
+            // for ALL tiles in a zoom generation. This removes 4*N JNI map
+            // projections during every rapid pan animation frame.
+            FogWorldTileScheme.Key anchor = prepareViewportProjection(displayZoom);
             for (Tile tile : cache.values()) {
                 if (tile.key.z != displayZoom || tile.mipmaps.length == 0) continue;
-                if (!FogWorldTileScheme.intersectsBounds(tile.key,
-                        b.getLatNorth(), b.getLonEast(),
-                        b.getLatSouth(), b.getLonWest())) continue;
-                if (!tileTransform(tile.key)) continue;
+                if (tile.key.x < left || tile.key.x > right
+                        || tile.key.y < top || tile.key.y > bottom) continue;
+                if (anchor == null && !tileTransform(tile.key)) continue;
                 int saved = canvas.save();
-                canvas.concat(tileMatrix);
+                if (anchor != null) {
+                    canvas.concat(worldToScreen);
+                    // Keep values small: global z20 pixel coordinates cannot
+                    // be represented with subpixel accuracy in float.
+                    canvas.translate((tile.key.x - anchor.x) * (float) FogWorldTileScheme.TILE_PX,
+                            (tile.key.y - anchor.y) * (float) FogWorldTileScheme.TILE_PX);
+                } else {
+                    // A degenerate/horizon-crossing projection falls back to
+                    // the earlier independently projected per-tile matrix.
+                    canvas.concat(tileMatrix);
+                }
+                // Critical: always preserve the exact res-13 H3 stencil;
+                // smoothing the underlying raster must never reveal new land.
                 canvas.clipPath(tile.exactPath);
-                // The first retained mip may itself already be a 0.5x or
-                // 0.25x area-filtered level. Subtract that level offset,
-                // otherwise zoom-out minification is applied twice.
                 int level = FogMipLevel.forZoomDelta(
                         tile.key.z - currentZoom, tile.effectiveScale(),
                         tile.mipmaps.length);
-                canvas.drawBitmap(tile.mipmaps[level], null,
-                        new RectF(0, 0, FogWorldTileScheme.TILE_PX,
-                                FogWorldTileScheme.TILE_PX), cutoutPaint);
+                canvas.drawBitmap(tile.mipmaps[level], null, TILE_DEST, cutoutPaint);
                 canvas.restoreToCount(saved);
             }
         } catch (RuntimeException ignored) {
-            // Incomplete projection: full-screen fog remains in place.
+            // Incomplete map projection: unvisited geography remains dark.
         }
+    }
+
+    private FogWorldTileScheme.Key prepareViewportProjection(int zoom) {
+        org.maplibre.android.camera.CameraPosition camera = map.getCameraPosition();
+        if (camera == null || camera.target == null) return null;
+        FogWorldTileScheme.Key anchor = FogWorldTileScheme.projectionAnchor(
+                camera.target.getLatitude(), camera.target.getLongitude(), zoom);
+        if (anchor == null) return null;
+        double west = FogWorldTileScheme.west(anchor);
+        double east = FogWorldTileScheme.east(anchor);
+        double north = FogWorldTileScheme.north(anchor);
+        double south = FogWorldTileScheme.south(anchor);
+        double[] lat = {north, north, south, south};
+        double[] lng = {west, east, east, west};
+        try {
+            for (int i = 0; i < 4; i++) {
+                PointF point = map.getProjection().toScreenLocation(
+                        new org.maplibre.android.geometry.LatLng(lat[i], lng[i]));
+                if (!Float.isFinite(point.x) || !Float.isFinite(point.y)) return null;
+                target[2 * i] = point.x;
+                target[2 * i + 1] = point.y;
+            }
+            // A projected, pitched ground tile must be a convex quad. If it
+            // crosses a wrapped longitude seam or the horizon, do not let a
+            // malformed homography distort explored coverage.
+            if (!convexQuad(target)) return null;
+            return worldToScreen.setPolyToPoly(FRAME_SOURCE, 0, target, 0, 4)
+                    ? anchor : null;
+        } catch (RuntimeException failure) {
+            return null;
+        }
+    }
+
+    private static boolean convexQuad(float[] p) {
+        float orientation = 0f;
+        for (int i = 0; i < 4; i++) {
+            int a = i * 2, b = ((i + 1) & 3) * 2, c = ((i + 2) & 3) * 2;
+            float abx = p[b] - p[a], aby = p[b + 1] - p[a + 1];
+            float bcx = p[c] - p[b], bcy = p[c + 1] - p[b + 1];
+            float cross = abx * bcy - aby * bcx;
+            if (!Float.isFinite(cross) || Math.abs(cross) < 0.01f) return false;
+            if (orientation != 0f && cross * orientation <= 0f) return false;
+            orientation = cross;
+        }
+        return true;
     }
 
     private boolean tileTransform(FogWorldTileScheme.Key key) {
