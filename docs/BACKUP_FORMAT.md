@@ -3,6 +3,49 @@
 Roamglyph backups are intentionally independent of any Roamglyph server or map
 provider.
 
+## Version 3
+
+Version 3 extends the complete version-2 backup with persistent discoveries.
+Roamglyph continues to import version 2 and the legacy version-1 cell format.
+
+The exported file is UTF-8 JSON with this top-level structure:
+
+```json
+{
+  "format": "roamglyph-backup",
+  "version": 3,
+  "h3_resolution": 13,
+  "exported_at_ms": 0,
+  "cell_count": 0,
+  "session_count": 0,
+  "gps_point_count": 0,
+  "discovery_count": 0,
+  "visited_cells": [],
+  "sessions": [],
+  "gps_points": [],
+  "discoveries": []
+}
+```
+
+The count fields are informational. Import validates the actual arrays.
+
+### discoveries
+
+Each item contains:
+
+- `discovery_id`: stable identifier derived from the map-source POI;
+- `name`: the revealed display name;
+- `category`: Roamglyph discovery category;
+- `subclass`: optional source POI subclass;
+- `latitude`, `longitude`;
+- `h3`: the resolution-13 cell containing the POI;
+- `discovered_at_ms`: first-known exploration timestamp or `null` for legacy
+  coverage where the historical time is unknown;
+- `source`: provenance label.
+
+A discovery is portable personal history. Restoring it does not imply that a future
+competitive/verified system must accept it for ranking.
+
 ## Version 2
 
 The exported file is UTF-8 JSON with this top-level structure:
@@ -64,17 +107,25 @@ Each item contains:
 
 ## Import safety
 
-Before importing version 2, Roamglyph performs a complete validation pass:
+Before importing version 2 or 3, Roamglyph performs a complete validation pass:
 
 - format/version/resolution are checked;
 - required arrays must exist;
 - H3 values are validated;
 - coordinates and basic numeric ranges are validated;
 - duplicate session IDs are rejected;
-- every GPS point must reference a session present in the backup.
+- every GPS point must reference a session present in the backup;
+- version-3 discovery coordinates, H3 IDs, and coordinate-to-H3 correspondence are
+  validated before restore.
 
 Only after validation does restore begin. Inserts use stable primary keys and
 conflict-ignore semantics, making repeated import idempotent.
+
+## Version 2 compatibility
+
+Version 2 contains `visited_cells`, `sessions`, and `gps_points` but no
+`discoveries`. It remains importable; discoveries can then be reconstructed from
+available map POIs and the restored H3 exploration history.
 
 ## Legacy version 1
 

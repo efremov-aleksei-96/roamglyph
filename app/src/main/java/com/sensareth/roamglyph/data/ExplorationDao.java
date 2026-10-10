@@ -84,4 +84,43 @@ public interface ExplorationDao {
 
     @Query("SELECT COUNT(*) FROM gps_points")
     long countGpsPoints();
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    long insertDiscovery(DiscoveryEntity discovery);
+
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    long[] insertDiscoveries(List<DiscoveryEntity> discoveries);
+
+    @Query("SELECT * FROM discoveries ORDER BY discovery_id ASC")
+    List<DiscoveryEntity> loadDiscoveries();
+
+    @Query("SELECT * FROM discoveries ORDER BY discovery_id ASC LIMIT :limit OFFSET :offset")
+    List<DiscoveryEntity> loadDiscoveriesPage(int limit, int offset);
+
+    @Query("SELECT discovery_id FROM discoveries")
+    List<String> loadDiscoveryIds();
+
+    @Query("SELECT COUNT(*) FROM discoveries")
+    int countDiscoveries();
+
+    @Query("SELECT * FROM visited_cells WHERE h3 IN (:cellIds)")
+    List<VisitedCellEntity> findVisitedCells(List<String> cellIds);
+
+    @Query("SELECT discovery_id FROM discoveries WHERE discovery_id IN (:discoveryIds)")
+    List<String> findDiscoveryIds(List<String> discoveryIds);
+
+    @Query(
+            "SELECT * FROM discoveries " +
+            "WHERE latitude BETWEEN :south AND :north " +
+            "AND longitude BETWEEN :west AND :east " +
+            "ORDER BY discovered_at_ms DESC, discovery_id ASC " +
+            "LIMIT :limit"
+    )
+    List<DiscoveryEntity> loadDiscoveriesInBounds(
+            double south,
+            double north,
+            double west,
+            double east,
+            int limit
+    );
 }

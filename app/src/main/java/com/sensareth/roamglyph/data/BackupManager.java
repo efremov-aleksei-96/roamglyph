@@ -27,7 +27,8 @@ import java.util.Set;
 
 public final class BackupManager {
     public static final String BACKUP_FORMAT = "roamglyph-backup";
-    public static final int BACKUP_VERSION = 2;
+    public static final int BACKUP_VERSION = 3;
+    private static final int PREVIOUS_BACKUP_VERSION = 2;
 
     private static final String LEGACY_FORMAT = "roamglyph-history";
     private static final int LEGACY_VERSION = 1;
@@ -56,6 +57,7 @@ public final class BackupManager {
             writer.name("cell_count").value(repository.countVisitedCells());
             writer.name("session_count").value(repository.countSessions());
             writer.name("gps_point_count").value(repository.countGpsPoints());
+            writer.name("discovery_count").value(repository.countDiscoveries());
 
             writer.name("visited_cells");
             writer.beginArray();
@@ -94,6 +96,20 @@ public final class BackupManager {
                 if (page.isEmpty()) break;
                 for (GpsPointEntity point : page) {
                     writeGpsPoint(writer, point);
+                }
+                offset += page.size();
+            }
+            writer.endArray();
+
+            writer.name("discoveries");
+            writer.beginArray();
+            offset = 0;
+            while (true) {
+                List<DiscoveryEntity> page =
+                        repository.loadDiscoveriesPage(PAGE_SIZE, offset);
+                if (page.isEmpty()) break;
+                for (DiscoveryEntity discovery : page) {
+                    writeDiscovery(writer, discovery);
                 }
                 offset += page.size();
             }
@@ -146,19 +162,25 @@ public final class BackupManager {
             return importLegacyV1(file, repository, h3);
         }
 
-        if (!BACKUP_FORMAT.equals(header.format) || header.version != BACKUP_VERSION) {
+        if (!BACKUP_FORMAT.equals(header.format)
+                || (header.version != PREVIOUS_BACKUP_VERSION
+                && header.version != BACKUP_VERSION)) {
             throw new IOException("Unsupported Roamglyph backup");
         }
 
         int newCells = importV2Cells(file, repository);
         int newSessions = importV2Sessions(file, repository);
         long newPoints = importV2Points(file, repository);
+        int newDiscoveries = header.version >= 3
+                ? importV3Discoveries(file, repository)
+                : 0;
 
         return new ImportResult(
                 newCells,
                 repository.countVisitedCells(),
                 newSessions,
                 newPoints,
+                newDiscoveries,
                 0
         );
     }
@@ -171,7 +193,9 @@ public final class BackupManager {
             throw new IOException("Unsupported Roamglyph backup format");
         }
 
-        if (BACKUP_FORMAT.equals(header.format) && header.version != BACKUP_VERSION) {
+        if (BACKUP_FORMAT.equals(header.format)
+                && header.version != PREVIOUS_BACKUP_VERSION
+                && header.version != BACKUP_VERSION) {
             throw new IOException("Unsupported Roamglyph backup version");
         }
 
@@ -184,6 +208,7 @@ public final class BackupManager {
         boolean sawVisitedCells = false;
         boolean sawSessions = false;
         boolean sawGpsPoints = false;
+        boolean sawDiscoveries = false;
         boolean sawLegacyCells = false;
 
         try (JsonReader reader = newReader(file)) {
@@ -225,6 +250,15 @@ public final class BackupManager {
                             }
                             reader.endArray();
                             break;
+                        case "discoveries":
+                            sawDiscoveries = true;
+                            reader.beginArray();
+                            while (reader.hasNext()) {
+                                DiscoveryEntity discovery = readDiscovery(reader);
+                                validateDiscovery(h3, discovery);
+                            }
+                            reader.endArray();
+                            break;
                         default:
                             reader.skipValue();
                     }
@@ -246,6 +280,9 @@ public final class BackupManager {
 
         if (BACKUP_FORMAT.equals(header.format)) {
             if (!sawVisitedCells || !sawSessions || !sawGpsPoints) {
+                throw new IOException("Incomplete Roamglyph backup");
+            }
+            if (header.version >= 3 && !sawDiscoveries) {
                 throw new IOException("Incomplete Roamglyph backup");
             }
             if (!sessionIds.containsAll(pointSessionIds)) {
@@ -335,6 +372,7 @@ public final class BackupManager {
                 repository.countVisitedCells(),
                 0,
                 0L,
+                0,
                 0
         );
     }
@@ -448,6 +486,42 @@ public final class BackupManager {
         return inserted;
     }
 
+    private static int importV3Discoveries(
+            File file,
+            ExplorationRepository repository
+    ) throws IOException {
+        List<DiscoveryEntity> batch = new ArrayList<>(PAGE_SIZE);
+        int inserted = 0;
+
+        try (JsonReader reader = newReader(file)) {
+            reader.beginObject();
+            while (reader.hasNext()) {
+                String name = reader.nextName();
+                if (!"discoveries".equals(name)) {
+                    reader.skipValue();
+                    continue;
+                }
+
+                reader.beginArray();
+                while (reader.hasNext()) {
+                    batch.add(readDiscovery(reader));
+                    if (batch.size() >= PAGE_SIZE) {
+                        inserted += repository.importDiscoveries(batch);
+                        batch.clear();
+                    }
+                }
+                reader.endArray();
+            }
+            reader.endObject();
+        }
+
+        if (!batch.isEmpty()) {
+            inserted += repository.importDiscoveries(batch);
+        }
+
+        return inserted;
+    }
+
     private static void writeVisitedCell(JsonWriter writer, VisitedCellEntity cell)
             throws IOException {
         writer.beginObject();
@@ -492,6 +566,25 @@ public final class BackupManager {
         writeNullableString(writer, point.h3);
         writer.name("rejection_reason");
         writeNullableString(writer, point.rejectionReason);
+        writer.endObject();
+    }
+
+    private static void writeDiscovery(
+            JsonWriter writer,
+            DiscoveryEntity discovery
+    ) throws IOException {
+        writer.beginObject();
+        writer.name("discovery_id").value(discovery.discoveryId);
+        writer.name("name").value(discovery.name);
+        writer.name("category").value(discovery.category);
+        writer.name("subclass");
+        writeNullableString(writer, discovery.subclass);
+        writer.name("latitude").value(discovery.latitude);
+        writer.name("longitude").value(discovery.longitude);
+        writer.name("h3").value(discovery.h3);
+        writer.name("discovered_at_ms");
+        writeNullableLong(writer, discovery.discoveredAtMs);
+        writer.name("source").value(discovery.source);
         writer.endObject();
     }
 
@@ -671,6 +764,74 @@ public final class BackupManager {
         return point;
     }
 
+    private static DiscoveryEntity readDiscovery(JsonReader reader) throws IOException {
+        String id = null;
+        String name = null;
+        String category = null;
+        String subclass = null;
+        double latitude = Double.NaN;
+        double longitude = Double.NaN;
+        String h3 = null;
+        Long discoveredAtMs = null;
+        String source = "unknown";
+
+        reader.beginObject();
+        while (reader.hasNext()) {
+            switch (reader.nextName()) {
+                case "discovery_id":
+                    id = reader.nextString();
+                    break;
+                case "name":
+                    name = reader.nextString();
+                    break;
+                case "category":
+                    category = reader.nextString();
+                    break;
+                case "subclass":
+                    subclass = readNullableString(reader);
+                    break;
+                case "latitude":
+                    latitude = reader.nextDouble();
+                    break;
+                case "longitude":
+                    longitude = reader.nextDouble();
+                    break;
+                case "h3":
+                    h3 = reader.nextString();
+                    break;
+                case "discovered_at_ms":
+                    discoveredAtMs = readNullableLong(reader);
+                    break;
+                case "source":
+                    source = readNullableString(reader);
+                    if (source == null) source = "unknown";
+                    break;
+                default:
+                    reader.skipValue();
+            }
+        }
+        reader.endObject();
+
+        if (id == null || id.isBlank()
+                || name == null || name.isBlank()
+                || category == null || category.isBlank()
+                || h3 == null || h3.isBlank()) {
+            throw new IOException("Invalid discovery");
+        }
+
+        return new DiscoveryEntity(
+                id,
+                name,
+                category,
+                subclass,
+                latitude,
+                longitude,
+                h3,
+                discoveredAtMs,
+                source
+        );
+    }
+
     private static void validatePoint(GpsPointEntity point) throws IOException {
         if (point.timestampMs <= 0L
                 || !Double.isFinite(point.latitude)
@@ -686,6 +847,39 @@ public final class BackupManager {
 
         if (point.acceptedForExploration && (point.h3 == null || point.h3.isBlank())) {
             throw new IOException("Accepted GPS point is missing H3 cell");
+        }
+    }
+
+    private static void validateDiscovery(
+            H3Core h3,
+            DiscoveryEntity discovery
+    ) throws IOException {
+        if (!Double.isFinite(discovery.latitude)
+                || !Double.isFinite(discovery.longitude)
+                || discovery.latitude < -90.0
+                || discovery.latitude > 90.0
+                || discovery.longitude < -180.0
+                || discovery.longitude > 180.0
+                || (discovery.discoveredAtMs != null && discovery.discoveredAtMs <= 0L)) {
+            throw new IOException("Invalid discovery");
+        }
+
+        validateCell(h3, discovery.h3);
+
+        try {
+            String expected;
+            synchronized (h3) {
+                expected = h3.latLngToCellAddress(
+                        discovery.latitude,
+                        discovery.longitude,
+                        H3_RESOLUTION
+                );
+            }
+            if (!expected.equals(discovery.h3)) {
+                throw new IOException("Discovery H3 does not match coordinates");
+            }
+        } catch (RuntimeException error) {
+            throw new IOException("Invalid discovery coordinates", error);
         }
     }
 
@@ -767,6 +961,7 @@ public final class BackupManager {
         public final int totalCells;
         public final int newSessions;
         public final long newGpsPoints;
+        public final int newDiscoveries;
         public final int invalidItems;
 
         ImportResult(
@@ -774,12 +969,14 @@ public final class BackupManager {
                 int totalCells,
                 int newSessions,
                 long newGpsPoints,
+                int newDiscoveries,
                 int invalidItems
         ) {
             this.newCells = newCells;
             this.totalCells = totalCells;
             this.newSessions = newSessions;
             this.newGpsPoints = newGpsPoints;
+            this.newDiscoveries = newDiscoveries;
             this.invalidItems = invalidItems;
         }
     }

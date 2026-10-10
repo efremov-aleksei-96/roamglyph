@@ -52,6 +52,8 @@ Roamglyph does not upload them to a Roamglyph server. Android cloud backup is
 disabled. See [PRIVACY.md](PRIVACY.md).
 
 The default map is online in 0.5.0 and is served by OpenFreeMap over HTTPS.
+Discoveries are derived locally from POI features already present in the loaded
+OpenMapTiles vector source; Roamglyph does not contact a separate POI service.
 Offline PMTiles support is planned.
 
 ## Open-source distribution

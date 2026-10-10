@@ -8,6 +8,7 @@ import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
 import android.graphics.Color;
+import android.graphics.PointF;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.location.Location;
@@ -33,8 +34,13 @@ import androidx.appcompat.app.AppCompatActivity;
 import androidx.core.content.ContextCompat;
 
 import com.sensareth.roamglyph.data.BackupManager;
+import com.sensareth.roamglyph.data.DiscoveryEntity;
 import com.sensareth.roamglyph.data.ExplorationRepository;
+import com.sensareth.roamglyph.map.DiscoveryClassifier;
+import com.sensareth.roamglyph.map.DiscoveryEngine;
+import com.sensareth.roamglyph.map.DiscoveryOverlayBuilder;
 import com.sensareth.roamglyph.map.ExplorationCoverageIndex;
+import com.sensareth.roamglyph.map.PoiDiscoveryCandidate;
 import com.sensareth.roamglyph.map.ViewportOverlayBuilder;
 import com.uber.h3core.H3Core;
 import com.uber.h3core.util.LatLng;
@@ -52,6 +58,7 @@ import org.maplibre.android.maps.Style;
 import org.maplibre.android.style.layers.CircleLayer;
 import org.maplibre.android.style.layers.FillLayer;
 import org.maplibre.android.style.sources.GeoJsonSource;
+import org.maplibre.android.style.sources.VectorSource;
 import org.maplibre.geojson.Feature;
 import org.maplibre.geojson.FeatureCollection;
 import org.maplibre.geojson.Point;
@@ -98,6 +105,14 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private static final String FOG_LAYER_ID = "roamglyph-fog-layer";
     private static final String VISITED_SOURCE_ID = "roamglyph-visited-source";
     private static final String VISITED_LAYER_ID = "roamglyph-visited-layer";
+    private static final String DISCOVERY_HINT_SOURCE_ID = "roamglyph-discovery-hint-source";
+    private static final String DISCOVERY_HINT_LAYER_ID = "roamglyph-discovery-hint-layer";
+    private static final String DISCOVERED_SOURCE_ID = "roamglyph-discovered-source";
+    private static final String DISCOVERED_LAYER_ID = "roamglyph-discovered-layer";
+    private static final String BASE_MAP_SOURCE_ID = "openmaptiles";
+    private static final String BASE_POI_SOURCE_LAYER = "poi";
+    private static final double MIN_DISCOVERY_RENDER_ZOOM = 12.5;
+    private static final double MIN_POI_QUERY_ZOOM = 14.0;
     private static final String LOCATION_SOURCE_ID = "roamglyph-current-location-source";
     private static final String LOCATION_HALO_LAYER_ID = "roamglyph-current-location-halo";
     private static final String LOCATION_LAYER_ID = "roamglyph-current-location-dot";
@@ -112,7 +127,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     private final Set<String> visited = new HashSet<>();
     private final AtomicBoolean refreshPending = new AtomicBoolean(false);
+    private final AtomicBoolean discoveryScanScheduled = new AtomicBoolean(false);
     private final AtomicLong overlayGeneration = new AtomicLong(0L);
+    private final AtomicLong discoveryScanGeneration = new AtomicLong(0L);
     private final ExplorationCoverageIndex coverageIndex = new ExplorationCoverageIndex();
     private VisitedStore store;
     private ExplorationRepository repository;
@@ -176,6 +193,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                             );
                         }
                         scheduleViewportOverlay();
+                        requestDiscoveryScan();
                     }
                 } else {
                     refreshVisitedFromDatabase();
@@ -401,6 +419,36 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             ));
 
             style.addSource(new GeoJsonSource(
+                    DISCOVERY_HINT_SOURCE_ID,
+                    FeatureCollection.fromFeatures(new Feature[]{})
+            ));
+            style.addLayer(new CircleLayer(
+                    DISCOVERY_HINT_LAYER_ID,
+                    DISCOVERY_HINT_SOURCE_ID
+            ).withProperties(
+                    circleColor("#F9AB00"),
+                    circleRadius(7f),
+                    circleOpacity(0.88f),
+                    circleStrokeColor("#FFFFFF"),
+                    circleStrokeWidth(2f)
+            ));
+
+            style.addSource(new GeoJsonSource(
+                    DISCOVERED_SOURCE_ID,
+                    FeatureCollection.fromFeatures(new Feature[]{})
+            ));
+            style.addLayer(new CircleLayer(
+                    DISCOVERED_LAYER_ID,
+                    DISCOVERED_SOURCE_ID
+            ).withProperties(
+                    circleColor("#34A853"),
+                    circleRadius(8f),
+                    circleOpacity(0.96f),
+                    circleStrokeColor("#FFFFFF"),
+                    circleStrokeWidth(2.5f)
+            ));
+
+            style.addSource(new GeoJsonSource(
                     LOCATION_SOURCE_ID,
                     FeatureCollection.fromFeatures(new Feature[]{})
             ));
@@ -441,8 +489,20 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 );
             }
 
-            map.addOnCameraIdleListener(this::scheduleViewportOverlay);
+            map.addOnCameraIdleListener(() -> {
+                scheduleViewportOverlay();
+                requestDiscoveryScan();
+            });
+            map.addOnMapClickListener(this::onMapClickForDiscovery);
+            mapView.addOnSourceChangedListener(sourceId -> {
+                if (BASE_MAP_SOURCE_ID.equals(sourceId)) {
+                    requestDiscoveryScan();
+                }
+            });
+            mapView.addOnDidBecomeIdleListener(this::requestDiscoveryScan);
+
             scheduleViewportOverlay();
+            requestDiscoveryScan();
         });
     }
 
@@ -670,9 +730,17 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 2,
                 store.isFogEnabled() ? R.string.menu_fog_on : R.string.menu_fog_off
         );
-        popup.getMenu().add(0, 3, 3, R.string.menu_refresh_location);
-        popup.getMenu().add(0, 4, 4, R.string.menu_source_code);
-        popup.getMenu().add(0, 5, 5, R.string.menu_privacy);
+        popup.getMenu().add(
+                0,
+                7,
+                3,
+                store.isDiscoveriesEnabled()
+                        ? R.string.menu_discoveries_on
+                        : R.string.menu_discoveries_off
+        );
+        popup.getMenu().add(0, 3, 4, R.string.menu_refresh_location);
+        popup.getMenu().add(0, 4, 5, R.string.menu_source_code);
+        popup.getMenu().add(0, 5, 6, R.string.menu_privacy);
 
         popup.setOnMenuItemClickListener(item -> {
             if (item.getItemId() == 1) {
@@ -710,6 +778,16 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     clearFogLayer();
                 }
                 scheduleViewportOverlay();
+                return true;
+            }
+            if (item.getItemId() == 7) {
+                boolean enabled = !store.isDiscoveriesEnabled();
+                store.setDiscoveriesEnabled(enabled);
+                if (enabled) {
+                    requestDiscoveryScan();
+                } else {
+                    clearDiscoveryLayers();
+                }
                 return true;
             }
             if (item.getItemId() == 3) {
@@ -754,6 +832,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 int cells = repository.countVisitedCells();
                 int sessions = repository.countSessions();
                 long points = repository.countGpsPoints();
+                int discoveries = repository.countDiscoveries();
 
                 try (OutputStream output = getContentResolver().openOutputStream(uri)) {
                     if (output == null) throw new IllegalStateException("No output stream");
@@ -762,7 +841,13 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
                 runOnUiThread(() -> Toast.makeText(
                         this,
-                        getString(R.string.backup_export_success, cells, sessions, points),
+                        getString(
+                                R.string.backup_export_success,
+                                cells,
+                                sessions,
+                                points,
+                                discoveries
+                        ),
                         Toast.LENGTH_LONG
                 ).show());
             } catch (Exception error) {
@@ -793,9 +878,11 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                         BackupManager.importBackup(temp, repository, h3);
 
                 store.setVisitedCountCache(result.totalCells);
+                store.setDiscoveryCountCache(repository.countDiscoveries());
 
                 runOnUiThread(() -> {
                     refreshVisitedFromDatabase();
+                    requestDiscoveryScan();
                     Toast.makeText(
                             this,
                             getString(
@@ -803,6 +890,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                                     result.newCells,
                                     result.newSessions,
                                     result.newGpsPoints,
+                                    result.newDiscoveries,
                                     result.totalCells
                             ),
                             Toast.LENGTH_LONG
@@ -831,10 +919,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 ? String.format(Locale.getDefault(), "%.2f km²", approxAreaM2 / 1_000_000.0)
                 : String.format(Locale.getDefault(), "%,.0f m²", approxAreaM2);
 
-        statsText.setText(String.format(
-                Locale.getDefault(),
-                "%,d cells · ≈%s",
+        statsText.setText(getString(
+                R.string.stats_summary,
                 count,
+                store.getDiscoveryCountCache(),
                 area
         ));
 
@@ -868,7 +956,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             try {
                 repository.migrateLegacyCellsIfNeeded(store);
                 Set<String> stored = repository.loadVisitedCellIds();
+                int discoveryCount = repository.countDiscoveries();
                 store.setVisitedCountCache(stored.size());
+                store.setDiscoveryCountCache(discoveryCount);
 
                 runOnUiThread(() -> {
                     refreshPending.set(false);
@@ -884,6 +974,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                             );
                         }
                         scheduleViewportOverlay();
+                        requestDiscoveryScan();
                     }
                     updateUi(true);
                 });
@@ -956,6 +1047,211 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 }
             });
         });
+    }
+
+    private void requestDiscoveryScan() {
+        if (map == null
+                || map.getStyle() == null
+                || dataExecutor == null
+                || h3 == null) {
+            return;
+        }
+
+        discoveryScanGeneration.incrementAndGet();
+
+        if (!store.isDiscoveriesEnabled()) {
+            clearDiscoveryLayers();
+            return;
+        }
+
+        if (!discoveryScanScheduled.compareAndSet(false, true)) {
+            return;
+        }
+
+        mapView.postDelayed(() -> {
+            discoveryScanScheduled.set(false);
+            scanDiscoveries();
+        }, 300L);
+    }
+
+    private void scanDiscoveries() {
+        if (!store.isDiscoveriesEnabled()
+                || map == null
+                || map.getStyle() == null
+                || h3 == null) {
+            clearDiscoveryLayers();
+            return;
+        }
+
+        CameraPosition camera = map.getCameraPosition();
+        if (camera == null || camera.zoom < MIN_DISCOVERY_RENDER_ZOOM) {
+            clearDiscoveryLayers();
+            return;
+        }
+
+        VisibleRegion region = map.getProjection().getVisibleRegion();
+        LatLngBounds bounds = region.latLngBounds;
+        double south = bounds.getLatSouth();
+        double north = bounds.getLatNorth();
+        double west = bounds.getLonWest();
+        double east = bounds.getLonEast();
+        double zoom = camera.zoom;
+
+        List<PoiDiscoveryCandidate> candidates = new ArrayList<>();
+
+        if (zoom >= MIN_POI_QUERY_ZOOM) {
+            VectorSource source = map.getStyle().getSourceAs(BASE_MAP_SOURCE_ID);
+            if (source != null) {
+                try {
+                    List<Feature> features = source.querySourceFeatures(
+                            new String[]{BASE_POI_SOURCE_LAYER},
+                            null
+                    );
+                    for (Feature feature : features) {
+                        PoiDiscoveryCandidate candidate =
+                                PoiDiscoveryCandidate.fromFeature(feature);
+                        if (candidate != null
+                                && candidate.latitude >= south
+                                && candidate.latitude <= north
+                                && candidate.longitude >= west
+                                && candidate.longitude <= east) {
+                            candidates.add(candidate);
+                        }
+                    }
+                } catch (RuntimeException ignored) {
+                    // The source may be between tile/style states; a later source/idle
+                    // callback will rescan without affecting stored discoveries.
+                }
+            }
+        }
+
+        candidates.sort((a, b) -> Integer.compare(b.score, a.score));
+        if (candidates.size() > DiscoveryEngine.MAX_SOURCE_CANDIDATES) {
+            candidates = new ArrayList<>(
+                    candidates.subList(0, DiscoveryEngine.MAX_SOURCE_CANDIDATES)
+            );
+        }
+
+        List<PoiDiscoveryCandidate> scanCandidates = candidates;
+        long generation = discoveryScanGeneration.get();
+        boolean currentLocationAvailable = hasLocation;
+        double currentLat = lastLat;
+        double currentLng = lastLng;
+
+        dataExecutor.execute(() -> {
+            DiscoveryEngine.Result result;
+            try {
+                result = DiscoveryEngine.process(
+                        repository,
+                        h3,
+                        scanCandidates,
+                        south,
+                        north,
+                        west,
+                        east,
+                        zoom,
+                        currentLocationAvailable,
+                        currentLat,
+                        currentLng
+                );
+            } catch (RuntimeException error) {
+                return;
+            }
+
+            if (result.newlyDiscovered > 0) {
+                store.setDiscoveryCountCache(repository.countDiscoveries());
+            }
+
+            runOnUiThread(() -> {
+                if (generation != discoveryScanGeneration.get()
+                        || isDestroyed()
+                        || !store.isDiscoveriesEnabled()
+                        || map == null
+                        || map.getStyle() == null) {
+                    return;
+                }
+
+                if (result.newlyDiscovered > 0) {
+                    updateUi(true);
+                }
+
+                GeoJsonSource discoveredSource =
+                        map.getStyle().getSourceAs(DISCOVERED_SOURCE_ID);
+                GeoJsonSource hintSource =
+                        map.getStyle().getSourceAs(DISCOVERY_HINT_SOURCE_ID);
+
+                if (discoveredSource != null) {
+                    discoveredSource.setGeoJson(
+                            DiscoveryOverlayBuilder.discovered(result.discovered)
+                    );
+                }
+                if (hintSource != null) {
+                    hintSource.setGeoJson(
+                            DiscoveryOverlayBuilder.hints(result.hints)
+                    );
+                }
+            });
+        });
+    }
+
+    private void clearDiscoveryLayers() {
+        if (map == null || map.getStyle() == null) return;
+
+        FeatureCollection empty = FeatureCollection.fromFeatures(new Feature[]{});
+        GeoJsonSource discoveredSource =
+                map.getStyle().getSourceAs(DISCOVERED_SOURCE_ID);
+        GeoJsonSource hintSource =
+                map.getStyle().getSourceAs(DISCOVERY_HINT_SOURCE_ID);
+
+        if (discoveredSource != null) {
+            discoveredSource.setGeoJson(empty);
+        }
+        if (hintSource != null) {
+            hintSource.setGeoJson(empty);
+        }
+    }
+
+    private boolean onMapClickForDiscovery(
+            @NonNull org.maplibre.android.geometry.LatLng point
+    ) {
+        if (map == null || map.getStyle() == null) return false;
+
+        PointF screenPoint = map.getProjection().toScreenLocation(point);
+        List<Feature> features = map.queryRenderedFeatures(
+                screenPoint,
+                DISCOVERED_LAYER_ID,
+                DISCOVERY_HINT_LAYER_ID
+        );
+        if (features.isEmpty()) return false;
+
+        Feature feature = features.get(0);
+        String state = feature.getStringProperty("state");
+
+        if ("discovered".equals(state)) {
+            String name = feature.getStringProperty("name");
+            String category = feature.getStringProperty("category");
+            new AlertDialog.Builder(this)
+                    .setTitle(
+                            name == null || name.isBlank()
+                                    ? getString(R.string.discovery_opened_label)
+                                    : name
+                    )
+                    .setMessage(
+                            DiscoveryClassifier.humanize(category)
+                                    + "\n"
+                                    + getString(R.string.discovery_opened_label)
+                    )
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show();
+            return true;
+        }
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.discovery_hint_title)
+                .setMessage(R.string.discovery_hint_message)
+                .setPositiveButton(android.R.string.ok, null)
+                .show();
+        return true;
     }
 
     private void clearFogLayer() {
@@ -1062,6 +1358,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         renderCurrentLocation();
         setLocateAvailable(hasLocation);
         updateUi(true);
+        requestDiscoveryScan();
 
         if (tracking && hasLocationPermission() && locationEnabled) {
             Intent service = new Intent(this, TrackingService.class)
