@@ -65,5 +65,14 @@ jobs:
             adb shell dumpsys activity activities | grep -q "com.sensareth.roamglyph/.MainActivity" || { echo "MainActivity is not present after launch"; adb logcat -d; exit 1; }
             adb logcat -d -v brief > /tmp/roamglyph-logcat.txt
             ! grep -q "FATAL EXCEPTION.*com.sensareth.roamglyph" /tmp/roamglyph-logcat.txt || (echo "Fatal Roamglyph exception detected"; cat /tmp/roamglyph-logcat.txt; exit 1)
+
+            adb logcat -c
+            adb shell am start -W -n com.sensareth.roamglyph/.HistoryActivity
+            sleep 4
+            adb shell dumpsys activity activities | grep -q "com.sensareth.roamglyph/.HistoryActivity" || { echo "HistoryActivity is not present after launch"; adb logcat -d; exit 1; }
+            adb logcat -d -v brief > /tmp/roamglyph-history-logcat.txt
+            ! grep -q "FATAL EXCEPTION.*com.sensareth.roamglyph" /tmp/roamglyph-history-logcat.txt || (echo "Fatal HistoryActivity exception detected"; cat /tmp/roamglyph-history-logcat.txt; exit 1)
+
             echo "Default AOSP emulator launch passed: Roamglyph has no Google Play Services runtime requirement."
+            echo "HistoryActivity empty-database launch passed."
             echo "H3 Android native artifacts are exercised on physical ARM/ARM64 devices."
