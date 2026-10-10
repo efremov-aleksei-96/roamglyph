@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.0-dev.17 — 2026-10-10 (test build, not released)
+
+- Replace visibly hexagonal vector contour strokes with a continuous,
+  anti-aliased raster alpha field, sampled up to 2x screen resolution.
+- Blur exact H3-13 coverage and apply a smoothly graduated INNER feather:
+  source-alpha gating plus exact vector clipping ensure that no unvisited
+  cell opens, including while the cached mask is zoomed or panned.
+- Build masks off the main thread with one coalesced latest-viewport task.
+  Keep the previous validated fog snapshot until the new mask is ready;
+  cap temporary pixels to avoid extreme high-DPI allocations.
+- Add unit tests for boundary safety, interior gradation, and narrow paths.
+- Still requires visual and performance validation on a physical phone.
+- Exploration data, history and JSON backup format are unchanged.
+
+
 ## 0.5.0-dev.16 — 2026-10-10 (test build, not released)
 
 - Development APK gets versionCode 16 and a source-specific versionName
