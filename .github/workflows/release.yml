@@ -16,14 +16,30 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
 
-      - name: Verify tag matches versionName
+      - name: Validate release tag and store metadata
         shell: bash
         run: |
           VERSION_NAME="$(sed -n 's/.*versionName = "\([^"]*\)".*/\1/p' app/build.gradle.kts | head -n1)"
-          test -n "$VERSION_NAME"
+          VERSION_CODE="$(sed -n 's/.*versionCode = \([0-9][0-9]*\).*/\1/p' app/build.gradle.kts | head -n1)"
+          test -n "$VERSION_NAME" && test -n "$VERSION_CODE"
           test "$GITHUB_REF_NAME" = "v$VERSION_NAME" || {
             echo "Tag $GITHUB_REF_NAME does not match app version v$VERSION_NAME"
+            exit 1
+          }
+          FDROID_VERSION="$(sed -n 's/^CurrentVersion: //p' .fdroid.yml | head -n1)"
+          FDROID_CODE="$(sed -n 's/^CurrentVersionCode: //p' .fdroid.yml | head -n1)"
+          test "$FDROID_VERSION" = "$VERSION_NAME" && test "$FDROID_CODE" = "$VERSION_CODE" || {
+            echo "F-Droid version metadata differs from app version"
+            exit 1
+          }
+          test -f "fastlane/metadata/android/en-US/changelogs/$VERSION_CODE.txt"
+          test -f LICENSE && test -f PRIVACY.md
+          git fetch origin main
+          git merge-base --is-ancestor "$GITHUB_SHA" refs/remotes/origin/main || {
+            echo "Release tags must target history reachable from main"
             exit 1
           }
 
@@ -60,6 +76,55 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '9.6.0'
+
+      - name: Verify FLOSS runtime and source security
+        shell: bash
+        run: |
+          gradle --no-daemon :app:dependencies --configuration releaseRuntimeClasspath > runtime-deps.txt
+          if grep -Eiq 'com\\.google\\.android\\.gms|com\\.google\\.firebase|play-services|firebase|crashlytics|admob' runtime-deps.txt; then
+            echo "Proprietary Google/Firebase runtime dependency detected."
+            exit 1
+          fi
+          if git ls-files | grep -Ei '\\.(jks|keystore|p12|pfx)        env:
+          KEYSTORE_BASE64: ${{ secrets.ROAMGLYPH_KEYSTORE_BASE64 }}
+        shell: bash
+        run: |
+          echo "$KEYSTORE_BASE64" | base64 --decode > "$RUNNER_TEMP/roamglyph-release.jks"
+
+      - name: Build signed release
+        env:
+          ROAMGLYPH_REQUIRE_KEYSTORE: "true"
+          ROAMGLYPH_KEYSTORE: ${{ runner.temp }}/roamglyph-release.jks
+          ROAMGLYPH_KEYSTORE_PASSWORD: ${{ secrets.ROAMGLYPH_KEYSTORE_PASSWORD }}
+          ROAMGLYPH_KEY_ALIAS: ${{ secrets.ROAMGLYPH_KEY_ALIAS }}
+          ROAMGLYPH_KEY_PASSWORD: ${{ secrets.ROAMGLYPH_KEY_PASSWORD }}
+        run: gradle --no-daemon :app:assembleRelease
+
+      - name: Verify APK and checksum
+        shell: bash
+        run: |
+          mkdir -p dist
+          cp app/build/outputs/apk/release/app-release.apk "dist/roamglyph-${GITHUB_REF_NAME#v}.apk"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n1)"
+          test -x "$APKSIGNER"
+          "$APKSIGNER" verify --verbose "dist/roamglyph-${GITHUB_REF_NAME#v}.apk"
+          (cd dist && sha256sum *.apk > SHA256SUMS.txt)
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/* --verify-tag --generate-notes --title "Roamglyph $GITHUB_REF_NAME"
+; then
+            echo "Signing key material must not be tracked."
+            exit 1
+          fi
+
+      - name: Unit tests and lint
+        run: |
+          gradle --no-daemon :app:testDebugUnitTest
+          gradle --no-daemon :app:lintDebug
 
       - name: Decode release keystore
         env:
