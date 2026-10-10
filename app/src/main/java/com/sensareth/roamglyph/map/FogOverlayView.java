@@ -52,6 +52,9 @@ public final class FogOverlayView extends View {
     private final LatLng[] referenceGeo = new LatLng[4];
     private final float[] referencePixels = new float[8];
     private final float[] currentPixels = new float[8];
+    private double snapshotZoom = Double.NaN;
+    private double snapshotTilt = Double.NaN;
+    private double snapshotCellDiameterPx = Double.NaN;
     private List<List<List<LatLng>>> polygons = Collections.emptyList();
 
     private boolean hasLocation;
@@ -190,6 +193,7 @@ public final class FogOverlayView extends View {
                 * Math.cos(Math.toRadians(Math.max(-85.0, Math.min(85.0, latitude))))
                 / Math.pow(2.0, zoom);
         float cellDiameterPx = (float) (8.2 / Math.max(0.000001, metersPerPixel));
+        snapshotCellDiameterPx = cellDiameterPx;
         float maxWidthPx = Math.max(0.4f,
                 Math.min(4.0f * density, 0.38f * cellDiameterPx));
         int passes = cellDiameterPx >= 1.0f ? 12 : 3;
@@ -217,9 +221,25 @@ public final class FogOverlayView extends View {
                             new PointF(corners[i * 2], corners[i * 2 + 1]));
             referenceGeo[i] = new LatLng(geo.getLatitude(), geo.getLongitude());
         }
+        if (map.getCameraPosition() != null) {
+            snapshotZoom = map.getCameraPosition().zoom;
+            snapshotTilt = map.getCameraPosition().tilt;
+        }
     }
 
     private boolean transformedMaskIsSafe() {
+        if (map.getCameraPosition() == null
+                || !FogMaskReusePolicy.mayReuse(
+                        snapshotZoom,
+                        map.getCameraPosition().zoom,
+                        snapshotTilt,
+                        map.getCameraPosition().tilt,
+                        snapshotCellDiameterPx)) {
+            // Bitmap antialiasing is already quantized at the reference
+            // camera; zooming in would enlarge visited pixels beyond H3.
+            // Keep screen fully dark until the exact geometry is rebuilt.
+            return false;
+        }
         for (int i = 0; i < 4; i++) {
             LatLng point = referenceGeo[i];
             if (point == null) return false;

@@ -66,6 +66,15 @@ subtract more area from the black mask. Rounded line joins visually soften
 tiny H3 corners. During fast motion an uncached visited area may briefly
 remain dark until its exact geometry arrives, but unknown land stays dark.
 
+A cached raster mask is reused only when estimated bitmap magnification
+would shift the projected H3 cell diameter by at most half a screen pixel
+(hard maximum of 0.05 zoom levels), and the camera tilt changes by no more
+than one degree. At close zoom the threshold becomes much stricter.
+Otherwise the overlay temporarily fails dark until
+an exact, newly rasterized H3 mask becomes available. This prevents
+magnifying subpixel anti-aliased visited footprints into false discoveries
+during abrupt pinch zoom.
+
 The renderer caps its native H3 polygon union at 20,000 exact cells per
 viewport. Exceeding that safety limit is conservatively rendered dark,
 never replaced by larger fake visited regions. This high-density fallback
