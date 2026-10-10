@@ -46,6 +46,21 @@ public final class FogWorldTileSchemeTest {
         }
     }
 
+    @Test public void giantViewportFitsTwoVisibleZoomGenerationsInCache() {
+        for (int visible : new int[]{1, 16, 32, 64, 128, 256, 384, 512}) {
+            float scale = FogWorldTileScheme.rasterScaleForVisibleTiles(visible);
+            assertTrue(scale >= 0.20f && scale <= 1.0f);
+            // Conservative upper bound for the complete mip pyramid,
+            // two visible zoom generations and a 30% remaining cache reserve.
+            double bytes = visible * 2.0
+                    * Math.ceil(FogWorldTileScheme.TILE_PX * scale)
+                    * Math.ceil(FogWorldTileScheme.TILE_PX * scale)
+                    * 4.0 * 1.34;
+            assertTrue("Visible zoom handoff must remain below 64MiB at " + visible,
+                    bytes < 64.0 * 1024 * 1024 * 0.78);
+        }
+    }
+
     @Test public void unsupportedAntimeridianViewFailsDark() {
         assertTrue(FogWorldTileScheme.covering(
                 40.2, -179.8, 40.1, 179.8, 16, 1, 34).isEmpty());
