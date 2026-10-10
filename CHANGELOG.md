@@ -11,6 +11,8 @@
 - Local PMTiles v3 MVT import using Android's system document picker.
 - A network-independent offline geometry style for OpenMapTiles-compatible archives.
 - Persistent switching between online OpenFreeMap and the local PMTiles basemap.
+- Local History & statistics screen with aggregate exploration metrics and recent
+  session summaries.
 
 ### Changed
 

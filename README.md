@@ -14,7 +14,7 @@ This is still an early project. The original GPS/background flow has been tested
 a physical Android device. The 0.5.0 development line now includes Room/SQLite
 history, complete portable backups, adaptive Fog of War, local-first Discoveries,
 and optional local PMTiles maps. These newer components still require a physical
-ARM64 regression pass before the first public 0.5.0 release. Richer statistics,
+ARM64 regression pass before the first public 0.5.0 release. Detailed route replay,
 discovery collections, and route planning toward unexplored areas remain future
 work.
 
@@ -45,6 +45,8 @@ work.
 - Fully offline geometry style for OpenMapTiles-compatible archives: buildings,
   streets, water, parks, landuse and boundaries without remote glyph/sprite requests.
 - Local PMTiles can be removed independently of exploration history and backups.
+- Local History & statistics screen with total distance, tracked time, sessions,
+  GPS-fix counts, explored area, discoveries, and the 100 most recent sessions.
 - Smooth manual recentering without forced camera-follow while browsing.
 - No account, ads, analytics, Firebase, or mandatory backend.
 

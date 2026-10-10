@@ -14,6 +14,7 @@ Current features:
 • GPS accuracy filtering
 • local Room/SQLite history with sessions and timestamped GPS points
 • portable full JSON backup and restore
+• local history and statistics with distance, tracked time and recent sessions
 • backward-compatible import of older cell-only backups
 • no account, advertisements, analytics, Firebase, or Google Play Services
 
