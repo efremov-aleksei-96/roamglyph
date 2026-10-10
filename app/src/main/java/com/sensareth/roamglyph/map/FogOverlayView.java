@@ -283,7 +283,9 @@ public final class FogOverlayView extends View {
                 referencePixels, 0, currentPixels, 0, 4);
     }
 
-    private static final float CORNER_ROUNDING = 0.43f;
+    // 0.50 joins quadratic corner arcs without residual flat hexagon sides.
+    // Exact H3 clip always remains the upper bound for visible coverage.
+    private static final float CORNER_ROUNDING = 0.50f;
 
     private static final class ProjectedRing {
         final Path exact;
