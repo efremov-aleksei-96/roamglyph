@@ -1,6 +1,12 @@
 <resources>
     <string name="app_name">Roamglyph</string>
     <string name="menu_description">Menu</string>
+    <string name="menu_version_changelog">Version %1$s · Changelog</string>
+    <string name="menu_about">About Roamglyph</string>
+    <string name="about_version">Version %1$s</string>
+    <string name="about_development_build">Development build · 0.5.0 release pending</string>
+    <string name="about_changelog_unavailable">Release notes are unavailable.</string>
+    <string name="version_unknown">Unknown</string>
     <string name="tracking_button_description">Start or stop exploration</string>
     <string name="locate_button_description">Show my location</string>
     <string name="zoom_in_description">Zoom in</string>
