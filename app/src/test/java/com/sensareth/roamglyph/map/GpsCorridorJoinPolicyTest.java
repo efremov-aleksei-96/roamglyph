@@ -30,6 +30,16 @@ public final class GpsCorridorJoinPolicyTest {
                 "ride-1", 3000L, 40.20, 44.52));
     }
 
+    @Test public void tileHaloCoversAllowedJoinsAtHigherLatitude() {
+        double northSouth = GpsCorridorJoinPolicy.tileHaloLatitudeDegrees();
+        double eastWest40 = GpsCorridorJoinPolicy.tileHaloLongitudeDegrees(40.1872);
+        double eastWest60 = GpsCorridorJoinPolicy.tileHaloLongitudeDegrees(60.0);
+        assertTrue("Halo must exceed 140m segment and 11m radius",
+                northSouth * 111_000.0 > 160.0);
+        assertTrue(eastWest40 > northSouth);
+        assertTrue(eastWest60 > eastWest40);
+    }
+
     @Test public void outOfOrderOrInvalidFixesNeverJoin() {
         assertFalse(GpsCorridorJoinPolicy.shouldConnect(
                 "ride-1", 3000L, 40.1872, 44.5152,
