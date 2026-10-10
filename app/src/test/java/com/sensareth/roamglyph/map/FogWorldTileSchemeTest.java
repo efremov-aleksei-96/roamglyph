@@ -114,6 +114,38 @@ public final class FogWorldTileSchemeTest {
                 FogWorldTileScheme.needsSharperRaster(Float.NaN, 1.0f));
     }
 
+    @Test public void frameAnchorKeepsWorldOffsetsSmallAtVeryHighZoom() {
+        for (int zoom : new int[]{1, 9, 16, 19, 20}) {
+            FogWorldTileScheme.Key anchor =
+                    FogWorldTileScheme.projectionAnchor(40.1872, 44.5152, zoom);
+            assertNotNull(anchor);
+            assertEquals(zoom, anchor.z);
+            assertTrue(anchor.x >= 0 && anchor.x + 1 < (1 << zoom));
+            assertTrue(anchor.y >= 0 && anchor.y + 1 < (1 << zoom));
+            double centerX = FogWorldTileScheme.longitudeX(44.5152, zoom);
+            double centerY = FogWorldTileScheme.latitudeY(40.1872, zoom);
+            // A tile-local transform subtracts the anchor before converting
+            // to float; using full z20 world pixels loses subpixel accuracy.
+            assertTrue(Math.abs(centerX - anchor.x * (double) FogWorldTileScheme.TILE_PX)
+                    <= 2 * FogWorldTileScheme.TILE_PX);
+            assertTrue(Math.abs(centerY - anchor.y * (double) FogWorldTileScheme.TILE_PX)
+                    <= 2 * FogWorldTileScheme.TILE_PX);
+        }
+    }
+
+    @Test public void frameAnchorNeverProjectsBeyondLongitudeSeamOrPole() {
+        for (int zoom : new int[]{1, 12, 20}) {
+            int max = (1 << zoom) - 2;
+            assertEquals(0, FogWorldTileScheme.projectionAnchor(0, -180, zoom).x);
+            assertEquals(max, FogWorldTileScheme.projectionAnchor(0, 180, zoom).x);
+            assertEquals(0, FogWorldTileScheme.projectionAnchor(85.0511, 0, zoom).y);
+            assertEquals(max, FogWorldTileScheme.projectionAnchor(-85.0511, 0, zoom).y);
+        }
+        assertNull(FogWorldTileScheme.projectionAnchor(40, 44, 0));
+        assertNull(FogWorldTileScheme.projectionAnchor(89, 44, 17));
+        assertNull(FogWorldTileScheme.projectionAnchor(40, Double.NaN, 17));
+    }
+
     @Test public void unsupportedAntimeridianViewFailsDark() {
         assertTrue(FogWorldTileScheme.covering(
                 40.2, -179.8, 40.1, 179.8, 16, 1, 34).isEmpty());
