@@ -59,7 +59,8 @@ public final class FogOverlayView extends View {
     private int revision;
     private int snapshotWidth;
     private int snapshotHeight;
-    private Bitmap maskBitmap;
+    private Bitmap[] maskMipmaps = new Bitmap[0];
+    private double referenceZoom;
     private Path snapshotExactPath;
     private final LatLng[] referenceGeo = new LatLng[4];
     private final float[] referencePixels = new float[8];
@@ -91,18 +92,20 @@ public final class FogOverlayView extends View {
         final Path exact;
         final int width;
         final int height;
+        final double zoom;
         final float cellDiameterPx;
         final float density;
         final LatLng[] geoCorners;
         final float[] pixelCorners;
 
         MaskJob(int revision, Path exact, int width, int height,
-                float cellDiameterPx, float density,
+                double zoom, float cellDiameterPx, float density,
                 LatLng[] geoCorners, float[] pixelCorners) {
             this.revision = revision;
             this.exact = exact;
             this.width = width;
             this.height = height;
+            this.zoom = zoom;
             this.cellDiameterPx = cellDiameterPx;
             this.density = density;
             this.geoCorners = geoCorners;
@@ -207,15 +210,18 @@ public final class FogOverlayView extends View {
         // because the bitmap is clipped to current-scale exact H3 geometry.
         int fogLayer = canvas.saveLayer(0f, 0f, getWidth(), getHeight(), null);
         canvas.drawColor(Color.argb(FOG_ALPHA, 17, 20, 24));
-        if (map != null && maskBitmap != null
+        if (map != null && maskMipmaps.length > 0
                 && snapshotExactPath != null && transformedMaskIsSafe()) {
+            double currentZoom = map.getCameraPosition().zoom;
+            int level = FogMipLevel.forZoomDelta(
+                    referenceZoom - currentZoom, maskMipmaps.length);
             int saved = canvas.save();
             canvas.concat(transform);
             // Exact vector clipping occurs at the CURRENT zoom, not
             // in a cached source-resolution display-list texture.
             // Bilinear magnification cannot reveal outside H3 cells.
             canvas.clipPath(snapshotExactPath);
-            canvas.drawBitmap(maskBitmap, null,
+            canvas.drawBitmap(maskMipmaps[level], null,
                     new RectF(0f, 0f, snapshotWidth, snapshotHeight),
                     cutoutPaint);
             canvas.restoreToCount(saved);
@@ -228,10 +234,15 @@ public final class FogOverlayView extends View {
     private void clearVectorSnapshot() {
         revision++;
         queuedJob.set(null);
-        if (maskBitmap != null) maskBitmap.recycle();
-        maskBitmap = null;
+        recycleMasks(maskMipmaps);
+        maskMipmaps = new Bitmap[0];
         snapshotExactPath = null;
         for (int i = 0; i < referenceGeo.length; i++) referenceGeo[i] = null;
+    }
+
+    private static void recycleMasks(Bitmap[] masks) {
+        if (masks == null) return;
+        for (Bitmap mask : masks) if (mask != null) mask.recycle();
     }
 
     /** Project exact H3 geography once per refreshed viewport. */
@@ -282,7 +293,7 @@ public final class FogOverlayView extends View {
             geo[i] = new LatLng(point.getLatitude(), point.getLongitude());
         }
         MaskJob job = new MaskJob(++revision, exact, getWidth(), getHeight(),
-                cellDiameterPx, density, geo, corners);
+                zoom, cellDiameterPx, density, geo, corners);
         queuedJob.set(job);
         startWorkerIfNeeded();
     }
@@ -303,16 +314,16 @@ public final class FogOverlayView extends View {
             while (!Thread.currentThread().isInterrupted()
                     && (job = queuedJob.getAndSet(null)) != null) {
                 final MaskJob completedJob = job;
-                Bitmap bitmap = null;
+                Bitmap[] masks = null;
                 try {
-                    bitmap = FogRasterFeather.create(
+                    masks = FogRasterFeather.createPyramid(
                             job.exact, job.width, job.height,
                             job.cellDiameterPx, job.density);
                 } catch (RuntimeException | OutOfMemoryError ignored) {
                     // The main thread will fail dark rather than use a
                     // partial or incorrectly feathered mask.
                 }
-                final Bitmap result = bitmap;
+                final Bitmap[] result = masks;
                 uiHandler.post(() -> publishMask(completedJob, result));
             }
         } finally {
@@ -321,19 +332,21 @@ public final class FogOverlayView extends View {
         }
     }
 
-    private void publishMask(MaskJob job, Bitmap bitmap) {
+    private void publishMask(MaskJob job, Bitmap[] masks) {
         if (disposed || !enabled || job.revision != revision
                 || job.width != getWidth() || job.height != getHeight()
-                || bitmap == null) {
-            if (bitmap != null) bitmap.recycle();
-            if (bitmap == null && !disposed && job.revision == revision) {
+                || masks == null || masks.length == 0) {
+            recycleMasks(masks);
+            if ((masks == null || masks.length == 0)
+                    && !disposed && job.revision == revision) {
                 clearVectorSnapshot();
                 invalidate();
             }
             return;
         }
-        if (maskBitmap != null) maskBitmap.recycle();
-        maskBitmap = bitmap;
+        recycleMasks(maskMipmaps);
+        maskMipmaps = masks;
+        referenceZoom = job.zoom;
         snapshotExactPath = job.exact;
         snapshotWidth = job.width;
         snapshotHeight = job.height;
