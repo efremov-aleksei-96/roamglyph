@@ -82,11 +82,13 @@ subtract more area from the black mask. Rounded line joins visually soften
 tiny H3 corners. During fast motion an uncached visited area may briefly
 remain dark until its exact geometry arrives, but unknown land stays dark.
 
-The overlay caches *vector paths*, not a screen-quantized bitmap. During
-camera movement MapLibre provides a four-corner projective transform for
-the cached paths; the native renderer rasterizes at the CURRENT zoom, so
-even a large pinch-zoom has no anti-aliased pixel magnification and cannot
-cause the former bitmap safety policy to hide a visited trail. A new viewport
+The overlay records its vector cutouts and five border shades once per
+viewport into an Android API 29+ hardware RenderNode display list, not a
+screen-quantized bitmap. During camera movement MapLibre supplies a
+four-corner projective transform; a single cached display-list draw
+replaces five full-path redraws on every camera frame. The native
+renderer rasterizes the vector commands at the current zoom, so the
+old bitmap safety policy cannot hide a visited trail. A new viewport
 may still be dark until its precise H3 geometry loads; the previous traced
 path stays spatially anchored through the camera transform.
 
