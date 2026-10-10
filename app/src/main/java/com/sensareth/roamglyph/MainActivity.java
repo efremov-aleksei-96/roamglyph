@@ -769,6 +769,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     private void showDataMenu(View anchor) {
         PopupMenu popup = new PopupMenu(this, anchor);
+        boolean localMapAvailable = OfflineMapStore.hasValidMap(this);
+
         popup.getMenu().add(0, 1, 0, R.string.menu_export_history);
         popup.getMenu().add(0, 2, 1, R.string.menu_import_history);
         popup.getMenu().add(
@@ -785,9 +787,25 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                         ? R.string.menu_discoveries_on
                         : R.string.menu_discoveries_off
         );
-        popup.getMenu().add(0, 3, 4, R.string.menu_refresh_location);
-        popup.getMenu().add(0, 4, 5, R.string.menu_source_code);
-        popup.getMenu().add(0, 5, 6, R.string.menu_privacy);
+
+        if (localMapAvailable) {
+            popup.getMenu().add(
+                    0,
+                    8,
+                    4,
+                    store.isOfflineMapEnabled()
+                            ? R.string.menu_use_online_map
+                            : R.string.menu_use_local_map
+            );
+        }
+        popup.getMenu().add(0, 9, 5, R.string.menu_import_local_map);
+        if (localMapAvailable) {
+            popup.getMenu().add(0, 10, 6, R.string.menu_remove_local_map);
+        }
+
+        popup.getMenu().add(0, 3, 7, R.string.menu_refresh_location);
+        popup.getMenu().add(0, 4, 8, R.string.menu_source_code);
+        popup.getMenu().add(0, 5, 9, R.string.menu_privacy);
 
         popup.setOnMenuItemClickListener(item -> {
             if (item.getItemId() == 1) {
@@ -837,6 +855,40 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 }
                 return true;
             }
+            if (item.getItemId() == 8) {
+                boolean useOffline = !store.isOfflineMapEnabled();
+                if (useOffline && !OfflineMapStore.hasValidMap(this)) {
+                    offlineMapLauncher.launch(new String[]{
+                            "application/vnd.pmtiles",
+                            "application/octet-stream",
+                            "*/*"
+                    });
+                    return true;
+                }
+
+                store.setOfflineMapEnabled(useOffline);
+                loadActiveMapStyle();
+                Toast.makeText(
+                        this,
+                        useOffline
+                                ? R.string.offline_map_enabled
+                                : R.string.offline_map_online,
+                        Toast.LENGTH_SHORT
+                ).show();
+                return true;
+            }
+            if (item.getItemId() == 9) {
+                offlineMapLauncher.launch(new String[]{
+                        "application/vnd.pmtiles",
+                        "application/octet-stream",
+                        "*/*"
+                });
+                return true;
+            }
+            if (item.getItemId() == 10) {
+                removeOfflineMap();
+                return true;
+            }
             if (item.getItemId() == 3) {
                 requestCurrentLocation(true);
                 return true;
@@ -853,6 +905,77 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         });
 
         popup.show();
+    }
+
+    private void importOfflineMap(@NonNull Uri uri) {
+        if (mapIoExecutor == null) return;
+
+        Toast.makeText(
+                this,
+                R.string.offline_map_importing,
+                Toast.LENGTH_LONG
+        ).show();
+
+        mapIoExecutor.execute(() -> {
+            try {
+                long bytes = OfflineMapStore.importFromUri(this, uri);
+                store.setOfflineMapEnabled(true);
+
+                runOnUiThread(() -> {
+                    if (isDestroyed()) return;
+                    loadActiveMapStyle();
+                    Toast.makeText(
+                            this,
+                            getString(
+                                    R.string.offline_map_import_success,
+                                    Formatter.formatFileSize(this, bytes)
+                            ),
+                            Toast.LENGTH_LONG
+                    ).show();
+                });
+            } catch (Exception error) {
+                runOnUiThread(() -> {
+                    if (isDestroyed()) return;
+                    Toast.makeText(
+                            this,
+                            R.string.offline_map_import_failed,
+                            Toast.LENGTH_LONG
+                    ).show();
+                });
+            }
+        });
+    }
+
+    private void removeOfflineMap() {
+        store.setOfflineMapEnabled(false);
+
+        if (map == null) {
+            if (mapIoExecutor != null) {
+                mapIoExecutor.execute(() -> OfflineMapStore.delete(this));
+            }
+            return;
+        }
+
+        map.setStyle(new Style.Builder().fromUri(MAP_STYLE_URI), style -> {
+            configureLoadedMapStyle(style);
+
+            if (mapIoExecutor != null) {
+                mapIoExecutor.execute(() -> {
+                    boolean removed = OfflineMapStore.delete(this);
+                    if (removed) {
+                        runOnUiThread(() -> {
+                            if (!isDestroyed()) {
+                                Toast.makeText(
+                                        this,
+                                        R.string.offline_map_removed,
+                                        Toast.LENGTH_SHORT
+                                ).show();
+                            }
+                        });
+                    }
+                });
+            }
+        });
     }
 
     private void openUrl(String url) {
