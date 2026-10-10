@@ -50,9 +50,23 @@ final class FogRasterFeather {
     static Bitmap[] createPyramid(Path exact, int viewWidth, int viewHeight,
                                   float cellDiameterPx, float density,
                                   BooleanSupplier cancelled, float maxScale) {
+        return createPyramid(exact, null, viewWidth, viewHeight,
+                cellDiameterPx, density, cancelled, maxScale);
+    }
+
+    /**
+     * routeFootprint is optional. When present its smooth GPS corridor
+     * replaces the jagged H3 display silhouette but is raster-clipped to
+     * exact stored H3 polygons, so no new terrain is ever revealed.
+     */
+    static Bitmap[] createPyramid(Path exact, Path routeFootprint,
+                                  int viewWidth, int viewHeight,
+                                  float cellDiameterPx, float density,
+                                  BooleanSupplier cancelled, float maxScale) {
         List<Bitmap> levels = new ArrayList<>();
         try {
-            Bitmap current = create(exact, viewWidth, viewHeight,
+            Bitmap current = create(exact, routeFootprint,
+                    viewWidth, viewHeight,
                     cellDiameterPx, density, cancelled, maxScale);
             if (current == null) return new Bitmap[0];
             levels.add(current);
@@ -88,6 +102,14 @@ final class FogRasterFeather {
     }
 
     static Bitmap create(Path exact, int viewWidth, int viewHeight,
+                         float cellDiameterPx, float density,
+                         BooleanSupplier cancelled, float maxScale) {
+        return create(exact, null, viewWidth, viewHeight,
+                cellDiameterPx, density, cancelled, maxScale);
+    }
+
+    static Bitmap create(Path exact, Path routeFootprint,
+                         int viewWidth, int viewHeight,
                          float cellDiameterPx, float density,
                          BooleanSupplier cancelled, float maxScale) {
         if (viewWidth <= 0 || viewHeight <= 0) return null;
@@ -145,7 +167,17 @@ final class FogRasterFeather {
             Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
             paint.setColor(Color.WHITE);
             paint.setStyle(Paint.Style.FILL);
-            canvas.drawPath(exact, paint);
+            if (routeFootprint != null) {
+                // Conservative per-pixel stencil BEFORE feathering.
+                // Even a long GPS segment cannot open terrain that was
+                // never included in the canonical resolution-13 H3 set.
+                int clipped = canvas.save();
+                canvas.clipPath(exact);
+                canvas.drawPath(routeFootprint, paint);
+                canvas.restoreToCount(clipped);
+            } else {
+                canvas.drawPath(exact, paint);
+            }
 
             checkCancelled(cancelled);
             int[] pixels = new int[workWidth * workHeight];
