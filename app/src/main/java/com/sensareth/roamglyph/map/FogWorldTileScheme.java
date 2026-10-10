@@ -11,6 +11,21 @@ import java.util.Objects;
  */
 public final class FogWorldTileScheme {
     public static final int TILE_PX = 384;
+
+    /**
+     * Two simultaneous visible zoom generations must fit a 64MiB cache.
+     * Reserve 35% of the budget for one full visible set, leaving a
+     * 30% allowance for halo tiles, intermediates and LRU hysteresis.
+     */
+    public static float rasterScaleForVisibleTiles(int count) {
+        int tiles = Math.max(1, count);
+        double approximateBaseBytes = (double) TILE_PX * TILE_PX * 4.0 * 1.34;
+        double maxGenerationBytes = 64.0 * 1024 * 1024 * 0.35;
+        double scale = Math.sqrt(maxGenerationBytes /
+                (tiles * approximateBaseBytes));
+        return (float) Math.max(0.20, Math.min(1.0, scale));
+    }
+
     private static final double MAX_LAT = 85.05112878;
 
     private FogWorldTileScheme() {}
