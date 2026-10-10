@@ -1487,9 +1487,11 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 getString(R.string.update_stable_releases),
                 getString(R.string.update_test_builds)
         };
+        // AppCompat AlertDialog suppresses setItems when setMessage is
+        // present: keep the installed version in the title so BOTH links
+        // are reliably visible and tappable in its list content.
         new AlertDialog.Builder(this)
-                .setTitle(R.string.menu_check_updates)
-                .setMessage(getString(R.string.update_installed_version, installedVersion()))
+                .setTitle(getString(R.string.update_dialog_title, installedVersion()))
                 .setItems(choices, (dialog, which) -> openUrl(
                         which == 0 ? RELEASES_URL : DEVELOPMENT_BUILDS_URL))
                 .setNegativeButton(android.R.string.cancel, null)
