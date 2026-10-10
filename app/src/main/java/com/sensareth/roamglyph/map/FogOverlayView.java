@@ -1,15 +1,19 @@
 package com.sensareth.roamglyph.map;
 
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Matrix;
-import android.graphics.PorterDuff;
-import android.graphics.PorterDuffXfermode;
-import android.graphics.RenderNode;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PointF;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffXfermode;
+import android.graphics.RectF;
+import android.graphics.RenderNode;
+import android.os.Handler;
+import android.os.Looper;
 import android.view.View;
 
 import androidx.annotation.NonNull;
@@ -18,43 +22,47 @@ import com.uber.h3core.util.LatLng;
 
 import org.maplibre.android.maps.MapLibreMap;
 
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Non-quantized vector Fog of War.
+ * Screen-attached fog with an exact-H3, supersampled, inward-feathered
+ * raster alpha cutout. A mask pixel cannot cut outside the original H3
+ * coverage: the CPU feather never increases source alpha, and the GPU
+ * display list additionally clips the raster against exact vector cells.
  *
- * Exact H3-13 geographical boundaries are projected only when the viewport
- * worker publishes data; the camera reprojection transforms cached vector
- * Paths at ANY zoom, without enlarging a rasterized/antialiased mask.
- *
- * All visited cutouts and gradient bands are clipped against exact H3 cells.
- * The full screen is always dark first; missing coverage fails dark.
+ * The worker prepares snapshots without blocking camera animations. The
+ * last complete snapshot remains visible until the latest one is ready.
  */
 public final class FogOverlayView extends View {
-    private static final int FOG_COLOR = Color.rgb(17, 20, 24);
     private static final int FOG_ALPHA = 210;
 
-    private final Paint cutoutPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
-    private final Paint gradientPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint cutoutPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
     private final Paint clearPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint markerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint markerOutline = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Matrix transform = new Matrix();
     private final float density;
+    private final Handler uiHandler = new Handler(Looper.getMainLooper());
+    private final AtomicReference<MaskJob> queuedJob = new AtomicReference<>();
+    private final AtomicBoolean workerRunning = new AtomicBoolean(false);
+    private ExecutorService featherWorker = Executors.newSingleThreadExecutor();
 
     private MapLibreMap map;
     private boolean enabled = true;
     private boolean cacheDirty = true;
-    private Path exactPath;
-    private Path roundedPath;
-    private Path outlinePath;
+    private boolean disposed;
+    private int revision;
     private RenderNode fogDisplayList;
+    private Bitmap maskBitmap;
+    private Path snapshotExactPath;
     private final LatLng[] referenceGeo = new LatLng[4];
     private final float[] referencePixels = new float[8];
     private final float[] currentPixels = new float[8];
-    private float bandWidthPx;
     private List<List<List<LatLng>>> polygons = Collections.emptyList();
 
     private boolean hasLocation;
@@ -77,20 +85,39 @@ public final class FogOverlayView extends View {
         }
     }
 
+    private static final class MaskJob {
+        final int revision;
+        final Path exact;
+        final int width;
+        final int height;
+        final float cellDiameterPx;
+        final float density;
+        final LatLng[] geoCorners;
+        final float[] pixelCorners;
+
+        MaskJob(int revision, Path exact, int width, int height,
+                float cellDiameterPx, float density,
+                LatLng[] geoCorners, float[] pixelCorners) {
+            this.revision = revision;
+            this.exact = exact;
+            this.width = width;
+            this.height = height;
+            this.cellDiameterPx = cellDiameterPx;
+            this.density = density;
+            this.geoCorners = geoCorners;
+            this.pixelCorners = pixelCorners;
+        }
+    }
+
     public FogOverlayView(@NonNull Context context) {
         super(context);
         density = getResources().getDisplayMetrics().density;
         setClickable(false);
         setWillNotDraw(false);
-
         cutoutPaint.setColor(Color.WHITE);
         cutoutPaint.setStyle(Paint.Style.FILL);
         cutoutPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_OUT));
         clearPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.CLEAR));
-
-        gradientPaint.setStyle(Paint.Style.STROKE);
-        gradientPaint.setStrokeJoin(Paint.Join.ROUND);
-        gradientPaint.setStrokeCap(Paint.Cap.ROUND);
         markerOutline.setStyle(Paint.Style.STROKE);
         markerOutline.setStrokeWidth(2.0f * density);
         markerOutline.setColor(Color.WHITE);
@@ -104,12 +131,15 @@ public final class FogOverlayView extends View {
 
     public void setFogEnabled(boolean value) {
         enabled = value;
+        if (!value) clearVectorSnapshot();
+        else cacheDirty = true;
         invalidate();
     }
 
     public void setGeometry(@NonNull List<List<List<LatLng>>> newPolygons) {
         polygons = newPolygons;
         cacheDirty = true;
+        if (newPolygons.isEmpty()) clearVectorSnapshot();
         invalidate();
     }
 
@@ -130,8 +160,28 @@ public final class FogOverlayView extends View {
     }
 
     @Override
+    protected void onAttachedToWindow() {
+        super.onAttachedToWindow();
+        if (disposed) {
+            disposed = false;
+            featherWorker = Executors.newSingleThreadExecutor();
+            cacheDirty = true;
+            invalidate();
+        }
+    }
+
+    @Override
+    protected void onDetachedFromWindow() {
+        disposed = true;
+        clearVectorSnapshot();
+        featherWorker.shutdownNow();
+        super.onDetachedFromWindow();
+    }
+
+    @Override
     protected void onSizeChanged(int w, int h, int oldw, int oldh) {
         super.onSizeChanged(w, h, oldw, oldh);
+        clearVectorSnapshot();
         cacheDirty = true;
     }
 
@@ -143,7 +193,7 @@ public final class FogOverlayView extends View {
             return;
         }
 
-        if (cacheDirty) {
+        if (cacheDirty && !disposed) {
             cacheDirty = false;
             try {
                 buildVectorSnapshot();
@@ -152,8 +202,9 @@ public final class FogOverlayView extends View {
             }
         }
 
-        // Unknown geography is always covered before a transformed snapshot
-        // is drawn. The exact old viewport may cover only part of the screen.
+        // Fail dark for all unknown pixels, including those outside the old
+        // viewport during a fast gesture. Bitmap reuse cannot over-reveal,
+        // because its recorded mask is clipped to exact H3 geometry.
         int fogLayer = canvas.saveLayer(0f, 0f, getWidth(), getHeight(), null);
         canvas.drawColor(Color.argb(FOG_ALPHA, 17, 20, 24));
         if (map != null && fogDisplayList != null
@@ -161,16 +212,13 @@ public final class FogOverlayView extends View {
                 && transformedMaskIsSafe()) {
             int saved = canvas.save();
             canvas.concat(transform);
-
-            // Make room for the correctly transformed cached snapshot,
-            // without exposing any pixels not covered by its dark backdrop.
-            canvas.drawRect(0, 0, getWidth(), getHeight(), clearPaint);
+            canvas.drawRect(0, 0, fogDisplayList.getWidth(),
+                    fogDisplayList.getHeight(), clearPaint);
             if (canvas.isHardwareAccelerated()) {
-                // Hardware display list captures five gradient paths once;
-                // only one GPU node draw is issued per camera frame.
                 canvas.drawRenderNode(fogDisplayList);
-            } else {
-                renderVectorFog(canvas);
+            } else if (maskBitmap != null && snapshotExactPath != null) {
+                renderBitmapFog(canvas, snapshotExactPath, maskBitmap,
+                        fogDisplayList.getWidth(), fogDisplayList.getHeight());
             }
             canvas.restoreToCount(saved);
         }
@@ -180,113 +228,160 @@ public final class FogOverlayView extends View {
     }
 
     private void clearVectorSnapshot() {
+        revision++;
+        queuedJob.set(null);
         if (fogDisplayList != null) fogDisplayList.discardDisplayList();
         fogDisplayList = null;
-        exactPath = null;
-        roundedPath = null;
-        outlinePath = null;
+        if (maskBitmap != null) maskBitmap.recycle();
+        maskBitmap = null;
+        snapshotExactPath = null;
+        for (int i = 0; i < referenceGeo.length; i++) referenceGeo[i] = null;
     }
 
-    private void renderVectorFog(@NonNull Canvas canvas) {
+    private void renderBitmapFog(Canvas canvas, Path exact, Bitmap mask,
+                                 int width, int height) {
         canvas.drawColor(Color.argb(FOG_ALPHA, 17, 20, 24));
         int saved = canvas.save();
-        canvas.clipPath(exactPath);
-        canvas.drawPath(roundedPath, cutoutPaint);
-        canvas.clipPath(roundedPath);
-        final float[] widths = {1.0f, 0.78f, 0.56f, 0.35f, 0.16f};
-        final int[] alphas = {25, 32, 39, 51, 68};
-        for (int i = 0; i < widths.length; i++) {
-            gradientPaint.setStrokeWidth(bandWidthPx * widths[i]);
-            gradientPaint.setColor(Color.argb(alphas[i], 17, 20, 24));
-            canvas.drawPath(outlinePath, gradientPaint);
-        }
+        canvas.clipPath(exact);
+        // Smooth, variable-alpha cutout is precomputed off the UI thread.
+        // The exact vector clipping prevents resampling from extending it
+        // past visited geometry at ANY camera zoom.
+        canvas.drawBitmap(mask, null, new RectF(0f, 0f, width, height),
+                cutoutPaint);
         canvas.restoreToCount(saved);
     }
 
-    /** Project geographic vertices once per new viewport, not per animation frame. */
+    /** Project exact H3 geography once per refreshed viewport. */
     private void buildVectorSnapshot() {
-        clearVectorSnapshot();
         if (map == null || getWidth() <= 0 || getHeight() <= 0
-                || polygons.isEmpty()) return;
-
+                || polygons.isEmpty()) {
+            clearVectorSnapshot();
+            return;
+        }
         double zoom = map.getCameraPosition() == null
                 ? 15.0 : map.getCameraPosition().zoom;
         double latitude = map.getCameraPosition() == null
                 || map.getCameraPosition().target == null
                 ? 40.0 : map.getCameraPosition().target.getLatitude();
         double metersPerPixel = 156543.03392
-                * Math.cos(Math.toRadians(Math.max(-85.0, Math.min(85.0, latitude))))
+                * Math.cos(Math.toRadians(Math.max(-85.0,
+                        Math.min(85.0, latitude))))
                 / Math.pow(2.0, zoom);
-        float cellDiameterPx = (float) (8.2 / Math.max(0.000001, metersPerPixel));
-
-        // Smaller zigzags are removed from the DISPLAY outline; the exact
-        // clip never changes. Long straight stretches stay straight.
-        float simplificationPx = Math.max(1.8f * density,
-                Math.min(17.0f * density, cellDiameterPx * 0.42f));
-        // Do not let the inward gradient from opposite edges swallow a
-        // single-cell-width visited trail. Leave a clear central corridor.
-        bandWidthPx = Math.max(1.5f * density,
-                Math.min(20.0f * density, cellDiameterPx * 0.72f));
+        float cellDiameterPx = (float) (8.2
+                / Math.max(0.000001, metersPerPixel));
 
         Path exact = new Path();
-        Path smoothed = new Path();
-        Path outlines = new Path();
         exact.setFillType(Path.FillType.EVEN_ODD);
-        smoothed.setFillType(Path.FillType.EVEN_ODD);
-        outlines.setFillType(Path.FillType.EVEN_ODD);
-
         for (List<List<LatLng>> polygon : polygons) {
             for (List<LatLng> ring : polygon) {
                 if (ring.size() < 3) continue;
-                ProjectedRing projected = projectRoundedRing(ring, simplificationPx);
-                exact.addPath(projected.exact);
-                smoothed.addPath(projected.rounded);
-                outlines.addPath(projected.rounded);
+                Path ringPath = new Path();
+                for (int i = 0; i < ring.size(); i++) {
+                    LatLng point = ring.get(i);
+                    PointF screen = projectPoint(point.lat, point.lng);
+                    if (screen == null)
+                        throw new IllegalArgumentException("Projection failed");
+                    if (i == 0) ringPath.moveTo(screen.x, screen.y);
+                    else ringPath.lineTo(screen.x, screen.y);
+                }
+                ringPath.close();
+                exact.addPath(ringPath);
             }
         }
 
-        float width = getWidth();
-        float height = getHeight();
+        float width = getWidth(), height = getHeight();
         float[] corners = {0f, 0f, width, 0f, width, height, 0f, height};
-        System.arraycopy(corners, 0, referencePixels, 0, 8);
+        LatLng[] geo = new LatLng[4];
         for (int i = 0; i < 4; i++) {
-            org.maplibre.android.geometry.LatLng geo =
+            org.maplibre.android.geometry.LatLng point =
                     map.getProjection().fromScreenLocation(
                             new PointF(corners[i * 2], corners[i * 2 + 1]));
-            referenceGeo[i] = new LatLng(geo.getLatitude(), geo.getLongitude());
+            geo[i] = new LatLng(point.getLatitude(), point.getLongitude());
         }
+        MaskJob job = new MaskJob(++revision, exact, getWidth(), getHeight(),
+                cellDiameterPx, density, geo, corners);
+        queuedJob.set(job);
+        startWorkerIfNeeded();
+    }
 
-        // Publish complete snapshots only. An invalid projection must never
-        // leave a partially changed vector mask visible.
-        exactPath = exact;
-        roundedPath = smoothed;
-        outlinePath = outlines;
-
-        // API 29+ RenderNode stores the vector DRAW COMMANDS as a display
-        // list; unlike a bitmap it is not quantized to reference pixels.
-        // Animating the 4-corner matrix doesn't re-issue five huge paths
-        // from the UI draw loop. Android HWUI replays the cached node.
-        RenderNode node = new RenderNode("Roamglyph exact fog");
-        node.setPosition(0, 0, getWidth(), getHeight());
-        Canvas recording = node.beginRecording(getWidth(), getHeight());
+    private void startWorkerIfNeeded() {
+        if (disposed || !workerRunning.compareAndSet(false, true)) return;
         try {
-            renderVectorFog(recording);
-        } finally {
-            node.endRecording();
+            featherWorker.execute(this::drainMaskJobs);
+        } catch (RuntimeException failure) {
+            workerRunning.set(false);
+            clearVectorSnapshot();
         }
-        fogDisplayList = node;
+    }
+
+    private void drainMaskJobs() {
+        try {
+            MaskJob job;
+            while (!Thread.currentThread().isInterrupted()
+                    && (job = queuedJob.getAndSet(null)) != null) {
+                final MaskJob completedJob = job;
+                Bitmap bitmap = null;
+                try {
+                    bitmap = FogRasterFeather.create(
+                            job.exact, job.width, job.height,
+                            job.cellDiameterPx, job.density);
+                } catch (RuntimeException | OutOfMemoryError ignored) {
+                    // The main thread will fail dark rather than use a
+                    // partial or incorrectly feathered mask.
+                }
+                final Bitmap result = bitmap;
+                uiHandler.post(() -> publishMask(completedJob, result));
+            }
+        } finally {
+            workerRunning.set(false);
+            if (!disposed && queuedJob.get() != null) startWorkerIfNeeded();
+        }
+    }
+
+    private void publishMask(MaskJob job, Bitmap bitmap) {
+        if (disposed || !enabled || job.revision != revision
+                || job.width != getWidth() || job.height != getHeight()
+                || bitmap == null) {
+            if (bitmap != null) bitmap.recycle();
+            if (bitmap == null && !disposed && job.revision == revision) {
+                clearVectorSnapshot();
+                invalidate();
+            }
+            return;
+        }
+        try {
+            RenderNode node = new RenderNode("RoamGlyph feathered exact fog");
+            node.setPosition(0, 0, job.width, job.height);
+            Canvas recording = node.beginRecording(job.width, job.height);
+            try {
+                renderBitmapFog(recording, job.exact, bitmap,
+                        job.width, job.height);
+            } finally {
+                node.endRecording();
+            }
+            if (fogDisplayList != null) fogDisplayList.discardDisplayList();
+            if (maskBitmap != null) maskBitmap.recycle();
+            fogDisplayList = node;
+            maskBitmap = bitmap;
+            snapshotExactPath = job.exact;
+            System.arraycopy(job.geoCorners, 0, referenceGeo, 0, 4);
+            System.arraycopy(job.pixelCorners, 0, referencePixels, 0, 8);
+            invalidate();
+        } catch (RuntimeException | OutOfMemoryError failure) {
+            bitmap.recycle();
+            clearVectorSnapshot();
+            invalidate();
+        }
     }
 
     private boolean transformedMaskIsSafe() {
-        // A cached vector path is not raster-quantized: zooming in cannot
-        // enlarge individual antialiased pixels. Keep projecting it at all
-        // finite zoom levels instead of switching to an all-dark frame.
         if (map.getCameraPosition() == null) return false;
         for (int i = 0; i < 4; i++) {
             LatLng point = referenceGeo[i];
             if (point == null) return false;
             PointF screen = map.getProjection().toScreenLocation(
-                    new org.maplibre.android.geometry.LatLng(point.lat, point.lng));
+                    new org.maplibre.android.geometry.LatLng(
+                            point.lat, point.lng));
             if (!Float.isFinite(screen.x) || !Float.isFinite(screen.y)
                     || Math.abs(screen.x) > 10_000_000f
                     || Math.abs(screen.y) > 10_000_000f) return false;
@@ -295,114 +390,6 @@ public final class FogOverlayView extends View {
         }
         return transform.setPolyToPoly(
                 referencePixels, 0, currentPixels, 0, 4);
-    }
-
-    private static final class ProjectedRing {
-        final Path exact;
-        final Path rounded;
-        ProjectedRing(Path exact, Path rounded) {
-            this.exact = exact;
-            this.rounded = rounded;
-        }
-    }
-
-    @NonNull
-    private ProjectedRing projectRoundedRing(
-            @NonNull List<LatLng> ring, float tolerancePx) {
-        int n = ring.size();
-        if (n > 3) {
-            LatLng first = ring.get(0);
-            LatLng last = ring.get(n - 1);
-            if (Math.abs(first.lat - last.lat) < 1e-12
-                    && Math.abs(first.lng - last.lng) < 1e-12) n--;
-        }
-        if (n < 3) return new ProjectedRing(new Path(), new Path());
-
-        List<FogContourSmoother.Vertex> screenPoints = new ArrayList<>(n);
-        Path exact = new Path();
-        for (int i = 0; i < n; i++) {
-            LatLng coordinate = ring.get(i);
-            PointF screen = projectPoint(coordinate.lat, coordinate.lng);
-            if (screen == null) throw new IllegalArgumentException("Projection failed");
-            screenPoints.add(new FogContourSmoother.Vertex(screen.x, screen.y));
-            if (i == 0) exact.moveTo(screen.x, screen.y);
-            else exact.lineTo(screen.x, screen.y);
-        }
-        exact.close();
-
-        // An isolated H3 cell should never look like a small rounded
-        // hexagon. Display it as an inscribed smooth circle instead. It stays
-        // entirely inside the exact hex footprint and cannot over-reveal.
-        if (n == 6) {
-            Path circle = inscribedSingleCellCircle(screenPoints);
-            if (circle != null) return new ProjectedRing(exact, circle);
-        }
-
-        List<FogContourSmoother.Vertex> simplified =
-                FogContourSmoother.simplifyClosed(screenPoints, tolerancePx);
-        int size = simplified.size();
-        Path rounded = new Path();
-        // Long RDP-simplified segments are represented as lines; curves only
-        // round the *corners*. This avoids hexagonal zigzags and excessive
-        // snaking while retaining smooth bends.
-        for (int i = 0; i < size; i++) {
-            FogContourSmoother.Vertex prev = simplified.get((i + size - 1) % size);
-            FogContourSmoother.Vertex at = simplified.get(i);
-            FogContourSmoother.Vertex next = simplified.get((i + 1) % size);
-            float incoming = (float) Math.hypot(at.x - prev.x, at.y - prev.y);
-            float outgoing = (float) Math.hypot(next.x - at.x, next.y - at.y);
-            float roundingPx = Math.min(
-                    10.0f * density, Math.min(incoming, outgoing) * 0.45f);
-            float fractionIn = incoming > 0.0001f ? roundingPx / incoming : 0f;
-            float fractionOut = outgoing > 0.0001f ? roundingPx / outgoing : 0f;
-            float entryX = lerp(at.x, prev.x, fractionIn);
-            float entryY = lerp(at.y, prev.y, fractionIn);
-            float exitX = lerp(at.x, next.x, fractionOut);
-            float exitY = lerp(at.y, next.y, fractionOut);
-            if (i == 0) rounded.moveTo(entryX, entryY);
-            else rounded.lineTo(entryX, entryY);
-            rounded.quadTo(at.x, at.y, exitX, exitY);
-        }
-        rounded.close();
-        return new ProjectedRing(exact, rounded);
-    }
-
-    private Path inscribedSingleCellCircle(
-            List<FogContourSmoother.Vertex> vertices) {
-        float centerX = 0f, centerY = 0f;
-        float shortestSide = Float.MAX_VALUE, longestSide = 0f;
-        for (int i = 0; i < 6; i++) {
-            FogContourSmoother.Vertex p = vertices.get(i);
-            FogContourSmoother.Vertex next = vertices.get((i + 1) % 6);
-            centerX += p.x / 6f;
-            centerY += p.y / 6f;
-            float side = (float) Math.hypot(next.x - p.x, next.y - p.y);
-            shortestSide = Math.min(shortestSide, side);
-            longestSide = Math.max(longestSide, side);
-        }
-        // Reject heavily skewed polygons: these might not represent a
-        // regular single cell in the current tilted camera projection.
-        if (shortestSide < 0.01f || longestSide > shortestSide * 1.8f)
-            return null;
-
-        float radius = Float.MAX_VALUE;
-        for (int i = 0; i < 6; i++) {
-            FogContourSmoother.Vertex a = vertices.get(i);
-            FogContourSmoother.Vertex b = vertices.get((i + 1) % 6);
-            float dx = b.x - a.x, dy = b.y - a.y;
-            float length = (float) Math.hypot(dx, dy);
-            float distance = Math.abs(
-                    (centerX - a.x) * dy - (centerY - a.y) * dx) / length;
-            radius = Math.min(radius, distance);
-        }
-        if (!Float.isFinite(radius) || radius <= 0) return null;
-        Path circle = new Path();
-        circle.addCircle(centerX, centerY, 0.98f * radius, Path.Direction.CW);
-        return circle;
-    }
-
-    private static float lerp(float a, float b, float factor) {
-        return a + (b - a) * factor;
     }
 
     private void drawForegroundMarkers(Canvas canvas, boolean drawLocation) {
