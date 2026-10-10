@@ -128,11 +128,27 @@ public final class GpxWriter implements Closeable {
 
     @NonNull
     static String escapeXml(@NonNull String text) {
-        return text
-                .replace("&", "&amp;")
-                .replace("<", "&lt;")
-                .replace(">", "&gt;")
-                .replace("\"", "&quot;")
-                .replace("'", "&apos;");
+        StringBuilder escaped = new StringBuilder(text.length());
+        for (int i = 0; i < text.length();) {
+            int codePoint = text.codePointAt(i);
+            i += Character.charCount(codePoint);
+
+            // XML 1.0 disallows C0 controls and unpaired UTF-16 surrogates.
+            boolean legal = codePoint == 0x9 || codePoint == 0xA || codePoint == 0xD
+                    || (codePoint >= 0x20 && codePoint <= 0xD7FF)
+                    || (codePoint >= 0xE000 && codePoint <= 0xFFFD)
+                    || (codePoint >= 0x10000 && codePoint <= 0x10FFFF);
+            if (!legal) continue;
+
+            switch (codePoint) {
+                case '&': escaped.append("&amp;"); break;
+                case '<': escaped.append("&lt;"); break;
+                case '>': escaped.append("&gt;"); break;
+                case '"': escaped.append("&quot;"); break;
+                case '\'': escaped.append("&apos;"); break;
+                default: escaped.appendCodePoint(codePoint);
+            }
+        }
+        return escaped.toString();
     }
 }
