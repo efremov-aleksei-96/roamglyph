@@ -3,41 +3,38 @@ package com.sensareth.roamglyph.map;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
 
 public class ViewportOverlayBuilderTest {
     @Test
-    public void keepsFineCellsUntilTheyAreAboutOnePixel() {
-        assertEquals(13, ViewportOverlayBuilder.resolutionForZoom(17.0));
-        assertEquals(13, ViewportOverlayBuilder.resolutionForZoom(15.0));
-        assertEquals(13, ViewportOverlayBuilder.resolutionForZoom(14.0));
-        assertEquals(12, ViewportOverlayBuilder.resolutionForZoom(13.0));
-        assertEquals(10, ViewportOverlayBuilder.resolutionForZoom(11.0));
+    public void zoomNeverChangesActualExploredCellResolution() {
+        for (int zoom = 0; zoom <= 24; zoom++) {
+            assertEquals(13, ViewportOverlayBuilder.resolutionForZoom(zoom));
+        }
+        assertEquals(13, ViewportOverlayBuilder.resolutionForZoom(-10));
+        assertEquals(13, ViewportOverlayBuilder.resolutionForZoom(100));
     }
 
     @Test
-    public void doesNotDisableFogAtWorldScale() {
-        assertTrue(ViewportOverlayBuilder.resolutionForZoom(2.0) >= 0);
-        assertTrue(ViewportOverlayBuilder.resolutionForZoom(0.0) >= 0);
-        assertEquals(13, ViewportOverlayBuilder.resolutionForZoom(22.0));
-    }
-
-    @Test
-    public void zoomSelectionIsLatitudeAwareAndMonotonic() {
-        int equator = ViewportOverlayBuilder.resolutionForZoom(12.0, 0.0);
-        int yerevan = ViewportOverlayBuilder.resolutionForZoom(12.0, 40.0);
-        assertTrue(yerevan >= equator);
-        int previous = 0;
-        for (int zoom = 0; zoom <= 22; zoom++) {
-            int resolution = ViewportOverlayBuilder.resolutionForZoom(zoom, 40.0);
-            assertTrue(resolution >= previous);
-            assertTrue(resolution <= 13);
-            previous = resolution;
+    public void onlySourceResolutionIsExact() {
+        assertTrue(ViewportOverlayBuilder.isExactCoverage(13));
+        for (int resolution = 0; resolution < 13; resolution++) {
+            assertFalse(ViewportOverlayBuilder.isExactCoverage(resolution));
         }
     }
 
     @Test
-    public void initialFogCoversWorldBeforeAsyncRender() {
-        assertEquals(1, ViewportOverlayBuilder.initialFog().features().size());
+    public void overBudgetGeometryFailsDarkInsteadOfInflatingCells() {
+        assertTrue(ViewportOverlayBuilder.withinGeometryBudget(0));
+        assertTrue(ViewportOverlayBuilder.withinGeometryBudget(20000));
+        assertFalse(ViewportOverlayBuilder.withinGeometryBudget(20001));
+        assertFalse(ViewportOverlayBuilder.withinGeometryBudget(-1));
+    }
+
+    @Test
+    public void failDarkResultNeverContainsFakeVisitedPolygons() {
+        assertEquals(0, ViewportOverlayBuilder.Result.dark().polygons.size());
+        assertEquals(0, ViewportOverlayBuilder.Result.dark().exactCellCount);
     }
 }
