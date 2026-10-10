@@ -204,7 +204,7 @@ public final class FogOverlayView extends View {
 
         // Fail dark for all unknown pixels, including those outside the old
         // viewport during a fast gesture. Bitmap reuse cannot over-reveal,
-        // because its recorded mask is clipped to exact H3 geometry.
+        // because the bitmap is clipped to current-scale exact H3 geometry.
         int fogLayer = canvas.saveLayer(0f, 0f, getWidth(), getHeight(), null);
         canvas.drawColor(Color.argb(FOG_ALPHA, 17, 20, 24));
         if (map != null && maskBitmap != null
