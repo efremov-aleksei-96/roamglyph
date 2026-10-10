@@ -40,6 +40,9 @@ matrix or exact restored counts. Those remain required below.
 | Fog | Throw/pan/zoom rapidly near explored and unexplored cells | The screen-space dark mask covers all unknown geography with no uncovered strip or flash; visited polygons stay geographically registered |
 | Zoom accuracy | Compare a thin discovered trail at street/city/country zoom | Never expand partial H3 parents; visited area gets smaller in screen pixels as expected and can become subpixel |
 | Screen-space edge smoothing | Inspect boundaries including sparse isolated visited areas | Anti-aliased cutouts and graduated soft dark borders, without obvious block outlines |
+| Rounded silhouette | Inspect isolated explored H3 cells and long connected trails while zooming | Corners visibly curved, not just blurred straight hex edges; no unvisited area opens |
+| Discovery emoji | Inspect museum, nature, landmark and hint POIs | Category-specific emojis visible above fog, tappable POI details preserved; icons also visible with Fog off |
+| Offline changelog | Open menu ⋮ → Version & Changelog without internet | Installed version shown dynamically, bundled 0.5.0 release notes readable without GitHub |
 | Fog edge quality | Inspect a visited border at multiple zooms | No repeated grid, rounded softly shaded border, and no artificially opened unvisited pixels |
 | Fine zoom detail | Zoom from street to city scale | All visible explored geometry derives from exact resolution-13 cells; no zoom-dependent parent-cell expansion |
 | Map controls | Tap + and − repeatedly | Camera zoom changes smoothly; controls do not block GPS recenter or tracking |
