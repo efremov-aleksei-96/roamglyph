@@ -17,6 +17,7 @@ public final class VisitedStore {
     private static final String KEY_TRACKING_ACTIVE = "tracking_active";
     private static final String KEY_ACTIVE_SESSION_ID = "active_session_id";
     private static final String KEY_VISITED_COUNT_CACHE = "visited_count_cache";
+    private static final String KEY_DISCOVERY_COUNT_CACHE = "discovery_count_cache";
     private static final String KEY_FOG_ENABLED = "fog_enabled";
     private static final String KEY_DISCOVERIES_ENABLED = "discoveries_enabled";
     private static final String KEY_HAS_LOCATION = "has_location";
@@ -73,6 +74,14 @@ public final class VisitedStore {
 
     public void setVisitedCountCache(int count) {
         prefs.edit().putInt(KEY_VISITED_COUNT_CACHE, Math.max(0, count)).apply();
+    }
+
+    public int getDiscoveryCountCache() {
+        return prefs.getInt(KEY_DISCOVERY_COUNT_CACHE, 0);
+    }
+
+    public void setDiscoveryCountCache(int count) {
+        prefs.edit().putInt(KEY_DISCOVERY_COUNT_CACHE, Math.max(0, count)).apply();
     }
 
     public boolean isFogEnabled() {
