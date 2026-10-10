@@ -60,8 +60,22 @@ public final class FogOverlayView extends View {
     private boolean hasLocation;
     private double locationLat;
     private double locationLng;
-    private List<LatLng> discoveredMarkers = Collections.emptyList();
-    private List<LatLng> hintMarkers = Collections.emptyList();
+    private List<PoiMarker> discoveredMarkers = Collections.emptyList();
+    private List<PoiMarker> hintMarkers = Collections.emptyList();
+
+    /** A drawable POI; no remote tiles, fonts or icon assets are required. */
+    public static final class PoiMarker {
+        public final double latitude;
+        public final double longitude;
+        @NonNull public final String emoji;
+
+        public PoiMarker(double latitude, double longitude,
+                         @NonNull String category, String subclass) {
+            this.latitude = latitude;
+            this.longitude = longitude;
+            this.emoji = DiscoveryCategoryIcons.iconFor(category, subclass);
+        }
+    }
 
     public FogOverlayView(@NonNull Context context) {
         super(context);
@@ -110,8 +124,8 @@ public final class FogOverlayView extends View {
     }
 
     public void setDiscoveries(
-            @NonNull List<LatLng> discovered,
-            @NonNull List<LatLng> hints
+            @NonNull List<PoiMarker> discovered,
+            @NonNull List<PoiMarker> hints
     ) {
         discoveredMarkers = discovered;
         hintMarkers = hints;
@@ -127,7 +141,11 @@ public final class FogOverlayView extends View {
     @Override
     protected void onDraw(@NonNull Canvas canvas) {
         super.onDraw(canvas);
-        if (!enabled) return;
+        if (!enabled) {
+            // Category emoji remain useful when the fog is disabled.
+            if (map != null) drawForegroundMarkers(canvas, false);
+            return;
+        }
 
         if (cacheDirty) {
             cacheDirty = false;
@@ -150,7 +168,7 @@ public final class FogOverlayView extends View {
 
         // MapLibre GL annotations are below this Android overlay; redraw
         // lightweight location and discovery markers above it.
-        if (map != null) drawForegroundMarkers(canvas);
+        if (map != null) drawForegroundMarkers(canvas, true);
     }
 
     /** Build full-resolution geometry just once per changed viewport. */
@@ -169,20 +187,29 @@ public final class FogOverlayView extends View {
         maskBitmap.eraseColor(Color.TRANSPARENT);
 
         Canvas snapshot = new Canvas(maskBitmap);
-        Path explored = new Path();
-        explored.setFillType(Path.FillType.EVEN_ODD);
-        Path outlines = new Path();
+        Path exact = new Path();
+        exact.setFillType(Path.FillType.EVEN_ODD);
+        Path rounded = new Path();
+        rounded.setFillType(Path.FillType.EVEN_ODD);
+        Path roundedOutlines = new Path();
 
         for (List<List<LatLng>> polygon : polygons) {
             for (List<LatLng> ring : polygon) {
                 if (ring.size() < 3) continue;
-                Path projected = projectRing(ring);
-                explored.addPath(projected);
-                outlines.addPath(projected);
+                ProjectedRing projected = projectRoundedRing(ring);
+                exact.addPath(projected.exact);
+                rounded.addPath(projected.rounded);
+                roundedOutlines.addPath(projected.rounded);
             }
         }
-        // Mask is opaque only where the user truly visited.
-        snapshot.drawPath(explored, maskPaint);
+
+        // Actual curvature, not merely feathering a sharp hexagonal edge.
+        // Rounding may cross concave H3 boundaries. The exact H3 mask is an
+        // immutable clip so NO unvisited pixel can ever be cleared.
+        snapshot.save();
+        snapshot.clipPath(exact);
+        snapshot.drawPath(rounded, maskPaint);
+        snapshot.restore();
 
         double zoom = map.getCameraPosition() == null
                 ? 15.0 : map.getCameraPosition().zoom;
@@ -201,11 +228,12 @@ public final class FogOverlayView extends View {
         // Feathering subtracts mask alpha INSIDE explored areas only.
         // It never creates extra transparent pixels in unknown territory.
         snapshot.save();
-        snapshot.clipPath(explored);
+        snapshot.clipPath(exact);
+        snapshot.clipPath(rounded);
         for (int i = passes; i >= 1; i--) {
             edgePaint.setStrokeWidth(maxWidthPx * i / passes);
             edgePaint.setColor(Color.argb(passes == 12 ? 45 : 150, 0, 0, 0));
-            snapshot.drawPath(outlines, edgePaint);
+            snapshot.drawPath(roundedOutlines, edgePaint);
         }
         snapshot.restore();
 
@@ -255,32 +283,76 @@ public final class FogOverlayView extends View {
                 referencePixels, 0, currentPixels, 0, 4);
     }
 
-    @NonNull
-    private Path projectRing(@NonNull List<LatLng> ring) {
-        Path path = new Path();
-        for (int i = 0; i < ring.size(); i++) {
-            LatLng coordinate = ring.get(i);
-            PointF screen = map.getProjection().toScreenLocation(
-                    new org.maplibre.android.geometry.LatLng(
-                            coordinate.lat, coordinate.lng));
-            if (!Float.isFinite(screen.x) || !Float.isFinite(screen.y)) {
-                throw new IllegalArgumentException("Non-finite map projection");
-            }
-            if (i == 0) path.moveTo(screen.x, screen.y);
-            else path.lineTo(screen.x, screen.y);
+    // 0.50 joins quadratic corner arcs without residual flat hexagon sides.
+    // Exact H3 clip always remains the upper bound for visible coverage.
+    private static final float CORNER_ROUNDING = 0.50f;
+
+    private static final class ProjectedRing {
+        final Path exact;
+        final Path rounded;
+
+        ProjectedRing(Path exact, Path rounded) {
+            this.exact = exact;
+            this.rounded = rounded;
         }
-        path.close();
-        return path;
     }
 
-    private void drawForegroundMarkers(Canvas canvas) {
-        for (LatLng coordinate : hintMarkers) {
-            drawMarker(canvas, coordinate.lat, coordinate.lng, 0xFFF9AB00, 7f);
+    @NonNull
+    private ProjectedRing projectRoundedRing(@NonNull List<LatLng> ring) {
+        int n = ring.size();
+        if (n > 3) {
+            LatLng first = ring.get(0);
+            LatLng last = ring.get(n - 1);
+            if (Math.abs(first.lat - last.lat) < 1e-12
+                    && Math.abs(first.lng - last.lng) < 1e-12) n--;
         }
-        for (LatLng coordinate : discoveredMarkers) {
-            drawMarker(canvas, coordinate.lat, coordinate.lng, 0xFF34A853, 8f);
+        if (n < 3) return new ProjectedRing(new Path(), new Path());
+
+        PointF[] points = new PointF[n];
+        Path exact = new Path();
+        for (int i = 0; i < n; i++) {
+            LatLng coordinate = ring.get(i);
+            PointF screen = projectPoint(coordinate.lat, coordinate.lng);
+            if (screen == null) {
+                throw new IllegalArgumentException("Non-finite H3 projection");
+            }
+            points[i] = screen;
+            if (i == 0) exact.moveTo(screen.x, screen.y);
+            else exact.lineTo(screen.x, screen.y);
         }
-        if (hasLocation) {
+        exact.close();
+
+        // Quadratic corners turn solitary hexagons into rounded islands and
+        // connect neighbouring H3 footprints without sawtooth-looking edges.
+        Path rounded = new Path();
+        for (int i = 0; i < n; i++) {
+            PointF previous = points[(i + n - 1) % n];
+            PointF current = points[i];
+            PointF next = points[(i + 1) % n];
+            float entryX = lerp(current.x, previous.x, CORNER_ROUNDING);
+            float entryY = lerp(current.y, previous.y, CORNER_ROUNDING);
+            float exitX = lerp(current.x, next.x, CORNER_ROUNDING);
+            float exitY = lerp(current.y, next.y, CORNER_ROUNDING);
+            if (i == 0) rounded.moveTo(entryX, entryY);
+            else rounded.lineTo(entryX, entryY);
+            rounded.quadTo(current.x, current.y, exitX, exitY);
+        }
+        rounded.close();
+        return new ProjectedRing(exact, rounded);
+    }
+
+    private static float lerp(float a, float b, float factor) {
+        return a + (b - a) * factor;
+    }
+
+    private void drawForegroundMarkers(Canvas canvas, boolean drawLocation) {
+        for (PoiMarker hint : hintMarkers) {
+            drawPoiMarker(canvas, hint, 0xFFF9AB00);
+        }
+        for (PoiMarker discovery : discoveredMarkers) {
+            drawPoiMarker(canvas, discovery, 0xFF34A853);
+        }
+        if (drawLocation && hasLocation) {
             PointF pos = projectPoint(locationLat, locationLng);
             if (pos != null && insideView(pos, 25f * density)) {
                 markerPaint.setStyle(Paint.Style.FILL);
@@ -288,19 +360,28 @@ public final class FogOverlayView extends View {
                 canvas.drawCircle(pos.x, pos.y, 16f * density, markerPaint);
                 markerPaint.setColor(0xFF1A73E8);
                 canvas.drawCircle(pos.x, pos.y, 7f * density, markerPaint);
+                markerOutline.setColor(Color.WHITE);
                 canvas.drawCircle(pos.x, pos.y, 7f * density, markerOutline);
             }
         }
     }
 
-    private void drawMarker(Canvas canvas, double lat, double lng,
-                            int color, float radiusDp) {
-        PointF pos = projectPoint(lat, lng);
-        if (pos == null || !insideView(pos, 20f * density)) return;
+    private void drawPoiMarker(Canvas canvas, PoiMarker marker, int ringColor) {
+        PointF pos = projectPoint(marker.latitude, marker.longitude);
+        if (pos == null || !insideView(pos, 24f * density)) return;
+        float radius = 13.5f * density;
         markerPaint.setStyle(Paint.Style.FILL);
-        markerPaint.setColor(color);
-        canvas.drawCircle(pos.x, pos.y, radiusDp * density, markerPaint);
-        canvas.drawCircle(pos.x, pos.y, radiusDp * density, markerOutline);
+        markerPaint.setColor(Color.WHITE);
+        canvas.drawCircle(pos.x, pos.y, radius, markerPaint);
+        markerOutline.setColor(ringColor);
+        canvas.drawCircle(pos.x, pos.y, radius, markerOutline);
+
+        // Android's system emoji fallback renders color glyphs without
+        // proprietary font/icon packs; tapping still uses MapLibre hit tests.
+        markerPaint.setTextAlign(Paint.Align.CENTER);
+        markerPaint.setTextSize(16f * density);
+        markerPaint.setColor(Color.BLACK);
+        canvas.drawText(marker.emoji, pos.x, pos.y + 5.5f * density, markerPaint);
     }
 
     private PointF projectPoint(double latitude, double longitude) {

@@ -7,8 +7,10 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.IntentFilter;
 import android.content.pm.PackageManager;
+import android.content.pm.PackageInfo;
 import android.graphics.Color;
 import android.graphics.PointF;
+import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.location.Location;
@@ -25,6 +27,7 @@ import android.widget.Button;
 import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.PopupMenu;
+import android.widget.ScrollView;
 import android.widget.TextView;
 import android.widget.Toast;
 
@@ -878,8 +881,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         }
 
         popup.getMenu().add(0, 3, 8, R.string.menu_refresh_location);
-        popup.getMenu().add(0, 4, 9, R.string.menu_source_code);
-        popup.getMenu().add(0, 5, 10, R.string.menu_privacy);
+        popup.getMenu().add(0, 12, 9,
+                getString(R.string.menu_version_changelog, installedVersion()));
+        popup.getMenu().add(0, 4, 10, R.string.menu_source_code);
+        popup.getMenu().add(0, 5, 11, R.string.menu_privacy);
 
         popup.setOnMenuItemClickListener(item -> {
             if (item.getItemId() == 11) {
@@ -971,6 +976,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             }
             if (item.getItemId() == 3) {
                 requestCurrentLocation(true);
+                return true;
+            }
+            if (item.getItemId() == 12) {
+                showVersionAndChangelog();
                 return true;
             }
             if (item.getItemId() == 4) {
@@ -1427,18 +1436,73 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     );
                 }
                 if (fogOverlayView != null) {
-                    ArrayList<LatLng> opened = new ArrayList<>(result.discovered.size());
+                    ArrayList<FogOverlayView.PoiMarker> opened =
+                            new ArrayList<>(result.discovered.size());
                     for (DiscoveryEntity discovery : result.discovered) {
-                        opened.add(new LatLng(discovery.latitude, discovery.longitude));
+                        opened.add(new FogOverlayView.PoiMarker(
+                                discovery.latitude, discovery.longitude,
+                                discovery.category, discovery.subclass));
                     }
-                    ArrayList<LatLng> hints = new ArrayList<>(result.hints.size());
+                    ArrayList<FogOverlayView.PoiMarker> hints =
+                            new ArrayList<>(result.hints.size());
                     for (PoiDiscoveryCandidate hint : result.hints) {
-                        hints.add(new LatLng(hint.latitude, hint.longitude));
+                        hints.add(new FogOverlayView.PoiMarker(
+                                hint.latitude, hint.longitude,
+                                hint.category, hint.subclass));
                     }
                     fogOverlayView.setDiscoveries(opened, hints);
                 }
             });
         });
+    }
+
+    private String installedVersion() {
+        try {
+            PackageInfo info = getPackageManager().getPackageInfo(getPackageName(), 0);
+            return info.versionName == null ? getString(R.string.version_unknown)
+                    : info.versionName;
+        } catch (PackageManager.NameNotFoundException error) {
+            return getString(R.string.version_unknown);
+        }
+    }
+
+    private void showVersionAndChangelog() {
+        String version = installedVersion();
+        String header = getString(R.string.about_version, version);
+        StringBuilder content = new StringBuilder(header)
+                .append("\n").append(getString(R.string.about_development_build))
+                .append("\n\n");
+
+        // Keep the release notes bundled in the APK: no browser, network,
+        // storage permissions or connected account is needed.
+        try (InputStream stream = getAssets().open("changelog.txt");
+             BufferedReader reader = new BufferedReader(
+                     new InputStreamReader(stream, StandardCharsets.UTF_8))) {
+            String line;
+            while ((line = reader.readLine()) != null) {
+                content.append(line).append('\n');
+            }
+        } catch (Exception error) {
+            content.append(getString(R.string.about_changelog_unavailable));
+        }
+
+        TextView notes = new TextView(this);
+        notes.setText(content.toString());
+        notes.setTextSize(14f);
+        notes.setTextIsSelectable(true);
+        notes.setPadding(dp(22), dp(12), dp(22), dp(20));
+
+        ScrollView scroll = new ScrollView(this);
+        scroll.setFillViewport(false);
+        scroll.addView(notes);
+
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.menu_about)
+                .setView(scroll)
+                .setNeutralButton(R.string.menu_source_code,
+                        (dialog, which) -> openUrl(SOURCE_URL))
+                .setPositiveButton(android.R.string.ok, null)
+                .show();
     }
 
     private void clearDiscoveryLayers() {
@@ -1467,14 +1531,34 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         if (map == null || map.getStyle() == null) return false;
 
         PointF screenPoint = map.getProjection().toScreenLocation(point);
+        float touchRadius = dp(15);
         List<Feature> features = map.queryRenderedFeatures(
-                screenPoint,
+                new RectF(
+                        screenPoint.x - touchRadius, screenPoint.y - touchRadius,
+                        screenPoint.x + touchRadius, screenPoint.y + touchRadius),
                 DISCOVERED_LAYER_ID,
                 DISCOVERY_HINT_LAYER_ID
         );
-        if (features.isEmpty()) return false;
-
-        Feature feature = features.get(0);
+        // The visible emoji disc is 13.5 dp across its radius while the
+        // MapLibre hit layer is smaller. Match the touch area to the actual
+        // emoji icon, and prefer the closest place when several overlap.
+        Feature feature = null;
+        float closestDistanceSquared = touchRadius * touchRadius;
+        for (Feature candidate : features) {
+            if (!(candidate.geometry() instanceof Point)) continue;
+            Point poi = (Point) candidate.geometry();
+            PointF screen = map.getProjection().toScreenLocation(
+                    new org.maplibre.android.geometry.LatLng(
+                            poi.latitude(), poi.longitude()));
+            float dx = screen.x - screenPoint.x;
+            float dy = screen.y - screenPoint.y;
+            float distanceSquared = dx * dx + dy * dy;
+            if (distanceSquared <= closestDistanceSquared) {
+                feature = candidate;
+                closestDistanceSquared = distanceSquared;
+            }
+        }
+        if (feature == null) return false;
         String state = feature.getStringProperty("state");
 
         if ("discovered".equals(state)) {

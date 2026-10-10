@@ -1,0 +1,31 @@
+ROAMGLYPH · WHAT'S NEW
+
+0.5.0 — DEVELOPMENT VERSION (NOT YET RELEASED)
+
+EXPLORATION
+• Local-first tracking with GPS accuracy and freshness checks.
+• H3 resolution 13 remains the source of truth at every zoom.
+• Fog of War uses a screen-space mask, rounded geographic silhouettes, and softer border shading.
+• A GPS location button and +/- map zoom controls.
+
+DISCOVERIES
+• Interesting places come from OpenMapTiles POIs already loaded on the map.
+• New category emojis for museums, landmarks, viewpoints, nature, fountains and more.
+• Green = discovered. Amber = place not discovered yet.
+• Discoveries are stored locally and included in JSON backups.
+
+MAPS & HISTORY
+• OpenFreeMap online map or imported local PMTiles v3 vector map.
+• Session history, statistics and GPX 1.1 route export.
+• JSON backup v3, with support for older v1 and v2 imports.
+• No account required for local history or exploration.
+
+APP & PRIVACY
+• Version and changelog viewable offline in the menu.
+• No proprietary Google Play Services requirement.
+• Open-source project with F-Droid release preparation.
+
+STATUS
+This is a development build. Public 0.5.0 release is still pending physical-device QA, including extended GPS and battery tests. Export a JSON backup before changing APK signing certificates.
+
+Earlier release notes and full technical history are available in the project's GitHub CHANGELOG.md.
