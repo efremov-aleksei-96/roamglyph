@@ -43,7 +43,7 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public final class FogOverlayView extends View {
     private static final int FOG_ALPHA = 210;
-    private static final int MAX_CACHE = 384;
+    private static final int MAX_CACHE = 1024;
     private static final int MAX_DEMAND = 32;
     private static final int MAX_VISIBLE = 512;
     private static final long MAX_CACHE_BYTES = 64L * 1024L * 1024L;
@@ -312,8 +312,8 @@ public final class FogOverlayView extends View {
             // Gigantic tablets/external displays can show dozens of tiles
             // simultaneously. Lower their raster resolution proactively
             // rather than silently dropping on-screen geography or OOMing.
-            float rasterScale = newVisible.size() > 72 ? 0.5f
-                    : newVisible.size() > 36 ? 0.75f : 1.0f;
+            float rasterScale =
+                    FogWorldTileScheme.rasterScaleForVisibleTiles(newVisible.size());
             for (FogWorldTileScheme.Key key : prioritized) {
                 Tile current = cache.get(key);
                 if ((current == null || current.epoch != epoch) && pending.add(key)) {
