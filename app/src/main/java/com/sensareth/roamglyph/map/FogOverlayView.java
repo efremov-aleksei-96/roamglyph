@@ -53,10 +53,10 @@ public final class FogOverlayView extends View {
     private ExecutorService featherWorker = Executors.newSingleThreadExecutor();
 
     private MapLibreMap map;
-    private boolean enabled = true;
+    private volatile boolean enabled = true;
     private boolean cacheDirty = true;
-    private boolean disposed;
-    private int revision;
+    private volatile boolean disposed;
+    private volatile int revision;
     private int snapshotWidth;
     private int snapshotHeight;
     private Bitmap[] maskMipmaps = new Bitmap[0];
@@ -318,7 +318,9 @@ public final class FogOverlayView extends View {
                 try {
                     masks = FogRasterFeather.createPyramid(
                             job.exact, job.width, job.height,
-                            job.cellDiameterPx, job.density);
+                            job.cellDiameterPx, job.density,
+                            () -> disposed || !enabled
+                                    || job.revision != revision);
                 } catch (RuntimeException | OutOfMemoryError ignored) {
                     // The main thread will fail dark rather than use a
                     // partial or incorrectly feathered mask.
