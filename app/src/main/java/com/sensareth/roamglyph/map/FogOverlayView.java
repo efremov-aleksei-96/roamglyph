@@ -234,8 +234,10 @@ public final class FogOverlayView extends View {
 
     /** Android memory pressure: discard textures rather than triggering OOM. */
     public void trimForLowMemory() {
+        coverageEpoch++; // Cancel an active raster job, not just queued work.
         jobs.clear();
         pending.clear();
+        wanted = Collections.emptySet();
         clearCache();
         invalidate();
     }
@@ -334,7 +336,11 @@ public final class FogOverlayView extends View {
                     }
                 }
                 Tile result = tile;
-                post(() -> finishTile(work, result));
+                // A detached view can reject posts; do not leak the
+                // finished bitmap when no UI consumer will receive it.
+                if (!post(() -> finishTile(work, result)) && result != null) {
+                    result.recycle();
+                }
             }
         } finally {
             workerRunning.set(false);
