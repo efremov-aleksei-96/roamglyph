@@ -29,7 +29,7 @@ public final class DiscoveryCategoryIcons {
             case "library": return "📚";
             case "waterfall": return "💧";
             case "peak": return "⛰️";
-            case "cave_entrance": return "🪨";
+            case "cave_entrance": return "🗻";
             case "park":
             case "garden":
             case "botanical_garden": return "🌳";
