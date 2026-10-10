@@ -13,6 +13,7 @@ public class DiscoveryCategoryIconsTest {
         assertEquals("⛲", DiscoveryCategoryIcons.iconFor("fountain", "fountain"));
         assertEquals("🎨", DiscoveryCategoryIcons.iconFor("art", "sculpture"));
         assertEquals("🌳", DiscoveryCategoryIcons.iconFor("nature", "garden"));
+        assertEquals("🗻", DiscoveryCategoryIcons.iconFor("nature", "cave_entrance"));
         assertNotEquals(DiscoveryCategoryIcons.iconFor("art", null),
                 DiscoveryCategoryIcons.iconFor("nature", null));
     }
