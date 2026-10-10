@@ -21,7 +21,12 @@
   large physical jumps and invalid fixes.
 - Physical QA required: compare the same real traveled street in dev.21
   and dev.22 and check that all expected visited terrain is visible.
-- No schema migration, new permissions, network service, or account data.
+- Add a **non-destructive Room v2→v3 index-only migration** for
+  accepted GPS latitude/longitude so per-tile local queries avoid
+  full-history table scans. No GPS points or H3 visits are rewritten.
+  Export JSON backup before testing: older dev.21 cannot automatically
+  open a database upgraded to v3 if you downgrade the APK.
+- No new permissions, network service, or account data.
 
 
 ## 0.5.0-dev.21 — 2026-10-10 (experimental test build)
