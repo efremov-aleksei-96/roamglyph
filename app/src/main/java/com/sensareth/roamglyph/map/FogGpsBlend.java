@@ -61,8 +61,10 @@ final class FogGpsBlend {
             }
         }
 
-        float near = Math.max(2f, Math.min(70f, cellDiameterPx * 1.1f));
-        float blendWidth = Math.max(2f, near * 0.75f);
+        // At most 32 pixels, so the byte-sized 85px distance range
+        // always reaches a fully visible independent H3 fallback.
+        float near = Math.max(2f, Math.min(32f, cellDiameterPx * 0.8f));
+        float blendWidth = Math.max(2f, near * 0.6f);
         for (int i = 0; i < n; i++) {
             int original = originalH3[i] >>> 24;
             if (original == 0) {
