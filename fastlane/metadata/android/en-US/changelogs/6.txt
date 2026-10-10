@@ -1,7 +1,5 @@
-FLOSS foundation release: removes Google Play Services, uses Android LocationManager,
-switches to an OpenFreeMap/MapLibre vector basemap, and keeps the UI in English.
-Adds Room/SQLite sessions, timestamped GPS points and first-seen H3 cells, a
-conservative GPS teleport filter, full portable backup/restore v2 with legacy 0.4.x
-import support, adaptive Fog of War with exact street-level H3 geometry, incremental
-viewport rendering, smoother recentering, secure release signing, and F-Droid
-metadata.
+Major local-first foundation release: removes Google Play Services, uses Android
+LocationManager, Room/SQLite sessions and timestamped GPS points, portable backup
+v3, adaptive Fog of War, local-first Discoveries from OpenMapTiles POIs, and
+optional local PMTiles v3 vector maps. Also adds GPS teleport filtering, smoother
+recentring, secure release signing, F-Droid metadata, and no ads/analytics/backend.
