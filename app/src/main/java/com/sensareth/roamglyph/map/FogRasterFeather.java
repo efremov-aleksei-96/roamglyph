@@ -141,8 +141,13 @@ final class FogRasterFeather {
             // continuous neighbourhood instead of clamped edge samples.
             Bitmap cropped = Bitmap.createBitmap(
                     work, pad, pad, width, height);
-            checkCancelled(cancelled);
-            return cropped;
+            try {
+                checkCancelled(cancelled);
+                return cropped;
+            } catch (RuntimeException | OutOfMemoryError failure) {
+                cropped.recycle();
+                throw failure;
+            }
         } finally {
             work.recycle();
         }
