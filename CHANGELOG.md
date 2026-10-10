@@ -7,8 +7,9 @@
   the revision, so installed test builds can be identified and compared.
 - Removed the raster zoom threshold that caused the explored path to
   blink completely dark and then reappear while pinching/zooming.
-  The screen-space fog now caches VECTOR cutouts and projects them at the
-  actual camera zoom without enlarging pixels.
+  The screen-space fog now caches VECTOR draw commands in a hardware
+  RenderNode display list and projects them at the actual camera zoom,
+  without enlarging pixels or replaying five full paths on every frame.
 - Straightens short H3 zigzags on long explored borders using closed-ring
   line simplification, then rounds corners without falsely revealing
   any unknown area outside the original exact res-13 coverage.
