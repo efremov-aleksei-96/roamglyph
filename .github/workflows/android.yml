@@ -83,6 +83,6 @@ jobs:
       - name: Upload development APK
         uses: actions/upload-artifact@v4
         with:
-          name: roamglyph-dev17-debug-apk
-          path: dist/roamglyph-0.5.0-dev.17-g*.apk
+          name: roamglyph-dev18-debug-apk
+          path: dist/roamglyph-0.5.0-dev.18-g*.apk
           if-no-files-found: error
