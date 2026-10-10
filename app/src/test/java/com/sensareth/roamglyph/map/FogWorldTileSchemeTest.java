@@ -101,6 +101,19 @@ public final class FogWorldTileSchemeTest {
                 north, east, south, west));
     }
 
+    @Test public void coarsePendingJobTriggersExactlyOneSharperReplacement() {
+        assertTrue("Viewport shrinking requires a sharper tile",
+                FogWorldTileScheme.needsSharperRaster(0.25f, 1.0f));
+        assertTrue("Old 0.5x result should be refreshed for 1x viewport",
+                FogWorldTileScheme.needsSharperRaster(0.5f, 1.0f));
+        assertFalse("Same-scale replacement must not repeat forever",
+                FogWorldTileScheme.needsSharperRaster(1.0f, 1.0f));
+        assertFalse("Small raster-budget differences do not thrash",
+                FogWorldTileScheme.needsSharperRaster(0.85f, 1.0f));
+        assertFalse("Bad metadata cannot queue a bogus upgrade",
+                FogWorldTileScheme.needsSharperRaster(Float.NaN, 1.0f));
+    }
+
     @Test public void unsupportedAntimeridianViewFailsDark() {
         assertTrue(FogWorldTileScheme.covering(
                 40.2, -179.8, 40.1, 179.8, 16, 1, 34).isEmpty());
