@@ -37,7 +37,11 @@ public final class FogFeatherProfile {
         float compact = smoothStep((occupancy - 0.09f) / 0.36f);
         float inside = smoothStep((distance - 0.55f)
                 / Math.min(4f, Math.max(1f, 0.35f * feather)));
-        float narrowReveal = 0.72f * compact * inside;
+        // The narrow-route channel must switch off in solid interiors;
+        // otherwise it creates a 72%-clear plateau that makes the gradient
+        // look like a sharp boundary even after contour smoothing.
+        float narrowOnly = 1f - smoothStep((occupancy - 0.48f) / 0.37f);
+        float narrowReveal = 0.72f * compact * inside * narrowOnly;
 
         // A one-screen-pixel route remains visible at city zoom, where
         // even the supersampled mask is only 1-2 pixels across. At street
