@@ -1,5 +1,24 @@
 # Changelog
 
+## 0.5.0-dev.22 — 2026-10-11 (experimental performance build)
+
+- Follow up on Pixel 9 Pro XL dev.21 physical QA: rapid panning no longer
+  blanks the geography, but the Android UI still suffers micro-stutters.
+- Compute one camera-centred Mercator ground-plane projection per drawn
+  frame, shared across all visible geographic fog tiles, rather than
+  calling MapLibre's JNI screen projection four times per tile per frame.
+  The shared projective transform tracks bearing and pitch.
+- Cull cached tiles with one set of frame-local tile bounds and reuse the
+  destination rectangle. Keep small local offsets for accurate rendering
+  at high zoom and fall back to per-tile projection if the frame matrix
+  is degenerate, including longitude-wrap/horizon cases.
+- Keep the full-screen protective fog, existing exact H3-13 clipping,
+  inward alpha gradients, cached raster mipmaps and covered tile data.
+  No changes to persisted history, JSON backup, GPS or discovery logic.
+- Test legal anchor placement at extreme longitude/latitude and z20.
+  Physical frame-timing/pan/zoom evaluation is still required; Android
+  unit tests and emulator startup do not prove absence of device jank.
+
 ## 0.5.0-dev.21 — 2026-10-10 (experimental test build)
 
 - Respond to physical-device reports of a rectangular hard cutout and
