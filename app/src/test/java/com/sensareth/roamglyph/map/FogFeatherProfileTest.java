@@ -50,6 +50,31 @@ public class FogFeatherProfileTest {
     }
 
     @Test
+    public void isolatedHexProtrusionsRemainAlmostDark() {
+        // Low-pass neighbourhood coverage is small at the tips of a
+        // sawtooth, even though the source pixel is technically visited.
+        int tip = FogFeatherProfile.cutoutAlpha(255, 45, 12, 12);
+        int solid = FogFeatherProfile.cutoutAlpha(255, 255, 12, 12);
+        assertTrue("H3 corners should be strongly de-emphasized", tip < solid / 2);
+    }
+
+    @Test
+    public void broadInteriorIsClearWhileBorderFadesContinuously() {
+        int edge = FogFeatherProfile.cutoutAlpha(255, 255, 3, 24);
+        int halfway = FogFeatherProfile.cutoutAlpha(255, 255, 36, 24);
+        int interior = FogFeatherProfile.cutoutAlpha(255, 255, 180, 24);
+        assertTrue(edge < halfway);
+        assertTrue(halfway < interior);
+        assertEquals(255, interior);
+    }
+
+    @Test
+    public void partiallyCoveredEdgeCannotGainOpacityFromBlur() {
+        assertEquals(0, FogFeatherProfile.cutoutAlpha(0, 255, 255, 24));
+        assertTrue(FogFeatherProfile.cutoutAlpha(31, 255, 255, 24) <= 31);
+    }
+
+    @Test
     public void narrowExploredAreaRemainsSubtlyVisible() {
         int result = FogFeatherProfile.cutoutAlpha(255, 40, 6, 2);
         assertTrue(result > 0);
