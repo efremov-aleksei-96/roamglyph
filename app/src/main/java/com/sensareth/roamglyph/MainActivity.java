@@ -131,6 +131,13 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private final AtomicBoolean discoveryScanScheduled = new AtomicBoolean(false);
     private final AtomicBoolean fogMoveUpdatePending = new AtomicBoolean(false);
     private final AtomicBoolean fogBuildRunning = new AtomicBoolean(false);
+    private final Runnable delayedFogRefresh = () -> {
+        fogMoveUpdatePending.set(false);
+        if (!isDestroyed() && store != null && store.isFogEnabled()
+                && overlayExecutor != null && !overlayExecutor.isShutdown()) {
+            scheduleViewportOverlay();
+        }
+    };
     private final AtomicLong overlayGeneration = new AtomicLong(0L);
     private final AtomicLong discoveryScanGeneration = new AtomicLong(0L);
     private final ExplorationCoverageIndex coverageIndex = new ExplorationCoverageIndex();
@@ -317,6 +324,25 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 )
         );
 
+        // Keep required map attribution bright and accessible above fog.
+        TextView mapAttribution = new TextView(this);
+        mapAttribution.setText("© OpenStreetMap contributors");
+        mapAttribution.setTextColor(Color.WHITE);
+        mapAttribution.setTextSize(11f);
+        mapAttribution.setPadding(dp(5), dp(3), dp(5), dp(3));
+        mapAttribution.setBackgroundColor(0xBB202124);
+        mapAttribution.setOnClickListener(v -> startActivity(
+                new Intent(Intent.ACTION_VIEW,
+                        Uri.parse("https://www.openstreetmap.org/copyright"))
+        ));
+        FrameLayout.LayoutParams attributionLp = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+        );
+        attributionLp.gravity = Gravity.BOTTOM | Gravity.START;
+        attributionLp.setMargins(dp(10), 0, 0, dp(6));
+        root.addView(mapAttribution, attributionLp);
+
         LinearLayout statusCard = new LinearLayout(this);
         statusCard.setOrientation(LinearLayout.VERTICAL);
         statusCard.setPadding(dp(16), dp(12), dp(16), dp(12));
@@ -467,11 +493,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             // The exact geographic cutouts are projected on every camera
             // frame; worker refresh changes only which cells are in memory.
             fogOverlayView.invalidate();
-            if (fogMoveUpdatePending.compareAndSet(false, true)) {
-                mapView.postDelayed(() -> {
-                    fogMoveUpdatePending.set(false);
-                    scheduleViewportOverlay();
-                }, 170L);
+            if (store.isFogEnabled()
+                    && fogMoveUpdatePending.compareAndSet(false, true)) {
+                mapView.postDelayed(delayedFogRefresh, 400L);
             }
         });
         map.addOnCameraIdleListener(() -> {
@@ -1213,7 +1237,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     private void scheduleViewportOverlay() {
         if (h3 == null || map == null || fogOverlayView == null
-                || overlayExecutor == null) return;
+                || store == null || !store.isFogEnabled()
+                || overlayExecutor == null || overlayExecutor.isShutdown()
+                || isDestroyed()) return;
 
         CameraPosition camera = map.getCameraPosition();
         if (camera == null) return;
@@ -1245,7 +1271,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             final ViewportOverlayBuilder.Result completed = result;
             runOnUiThread(() -> {
                 fogBuildRunning.set(false);
-                if (isDestroyed() || fogOverlayView == null) return;
+                if (isDestroyed() || fogOverlayView == null
+                        || !store.isFogEnabled()) return;
                 if (generation != overlayGeneration.get()) {
                     scheduleViewportOverlay();
                     return;
@@ -1398,11 +1425,25 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                             DiscoveryOverlayBuilder.hints(result.hints)
                     );
                 }
+                if (fogOverlayView != null) {
+                    ArrayList<LatLng> opened = new ArrayList<>(result.discovered.size());
+                    for (DiscoveryEntity discovery : result.discovered) {
+                        opened.add(new LatLng(discovery.latitude, discovery.longitude));
+                    }
+                    ArrayList<LatLng> hints = new ArrayList<>(result.hints.size());
+                    for (PoiDiscoveryCandidate hint : result.hints) {
+                        hints.add(new LatLng(hint.latitude, hint.longitude));
+                    }
+                    fogOverlayView.setDiscoveries(opened, hints);
+                }
             });
         });
     }
 
     private void clearDiscoveryLayers() {
+        if (fogOverlayView != null) {
+            fogOverlayView.setDiscoveries(Collections.emptyList(), Collections.emptyList());
+        }
         if (map == null || map.getStyle() == null) return;
 
         FeatureCollection empty = FeatureCollection.fromFeatures(new Feature[]{});
@@ -1481,6 +1522,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     }
 
     private void renderCurrentLocation() {
+        if (fogOverlayView != null) {
+            fogOverlayView.setCurrentLocation(hasLocation, lastLat, lastLng);
+        }
         if (!hasLocation || map == null || map.getStyle() == null) return;
 
         GeoJsonSource source = map.getStyle().getSourceAs(LOCATION_SOURCE_ID);
@@ -1627,6 +1671,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     @Override
     protected void onDestroy() {
+        mapView.removeCallbacks(delayedFogRefresh);
+        fogMoveUpdatePending.set(false);
         mapView.onDestroy();
         if (dataExecutor != null) {
             dataExecutor.shutdown();
