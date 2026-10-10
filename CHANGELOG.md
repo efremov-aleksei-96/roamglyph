@@ -8,7 +8,9 @@
   transparency on individual H3 protrusions: opacity now follows the local
   density of visited pixels, suppressing sawtooth peaks instead of merely
   blurring their hard outline.
-- Slightly broaden continuous INWARD feather at street zoom; keep full
+- Slightly broaden continuous INWARD feather and blend short-range and
+  long-range ramps to preserve the visibility of thin explored routes;
+  keep full
   transparency in wide confidently explored interiors and preserve narrow
   trails as subtle hints.
 - Hard safety invariants unchanged: the exact source mask bounds
