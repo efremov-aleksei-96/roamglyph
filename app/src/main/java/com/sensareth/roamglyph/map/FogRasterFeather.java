@@ -89,13 +89,13 @@ final class FogRasterFeather {
         final float effectiveScale = (float) width / viewWidth;
         int blurRadius = Math.max(1, Math.min(64,
                 Math.round(Math.max(1f / effectiveScale,
-                        Math.min(24f * density, cellDiameterPx * 0.85f))
+                        Math.min(32f * density, cellDiameterPx * 1.35f))
                         * effectiveScale)));
         // At city zoom the minimum must be close to ONE RASTER pixel,
         // otherwise small but genuine routes get feathered completely out.
         int featherRadius = Math.max(1, Math.min(80,
                 Math.round(Math.max(1f / effectiveScale,
-                        Math.min(32f * density, cellDiameterPx * 1.65f))
+                        Math.min(42f * density, cellDiameterPx * 1.85f))
                         * effectiveScale)));
 
         // Distances are inside-only, capped at 255 steps (85 raster px).
