@@ -6,6 +6,8 @@ screen is off.
 
 Current features:
 • fine-grained H3 exploration cells
+• adaptive Fog of War over unexplored map areas
+• local-first Discoveries from OpenStreetMap/OpenMapTiles points of interest
 • OpenStreetMap-based vector map rendered with MapLibre
 • background exploration with an explicit persistent notification
 • GPS accuracy filtering
