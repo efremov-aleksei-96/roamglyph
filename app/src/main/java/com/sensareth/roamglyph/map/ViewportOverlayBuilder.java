@@ -11,36 +11,53 @@ import org.maplibre.geojson.Point;
 import org.maplibre.geojson.Polygon;
 
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 
+/**
+ * World-covering inverted fog masks: the map is NEVER temporarily exposed
+ * during a pan, since every fog source always contains the global dark shape.
+ * Only already explored H3 cells are subtracted as transparent holes.
+ */
 public final class ViewportOverlayBuilder {
-    public static final int MAX_VIEWPORT_CELLS = 8_000;
+    public static final int MAX_RENDERED_CELLS = 8_000;
     private static final int SOURCE_RESOLUTION = 13;
-    private static final int MIN_RENDER_RESOLUTION = 3;
-    private static final double VIEWPORT_PADDING_FRACTION = 0.18;
+    private static final int MIN_RENDER_RESOLUTION = 0;
+    private static final double VIEWPORT_PADDING_FRACTION = 0.35;
 
     private ViewportOverlayBuilder() {
     }
 
     /**
-     * Uses exact res-13 cells at normal street-level zoom and progressively coarser
-     * parents only when zooming out. This preserves honest reveal geometry close up
-     * while keeping the overlay bounded at city/region scales.
+     * Keep authoritative res-13 detail until a cell is approximately one
+     * physical map pixel across. Only then step to the smallest H3 parent
+     * that remains visible. This differs from zoom-band aggregation, which
+     * produced visibly oversized hexagons.
      */
     public static int resolutionForZoom(double zoom) {
-        if (zoom >= 17.0) return 13;
-        if (zoom >= 15.5) return 12;
-        if (zoom >= 14.0) return 11;
-        if (zoom >= 12.5) return 10;
-        if (zoom >= 11.0) return 9;
-        if (zoom >= 9.5) return 8;
-        if (zoom >= 8.0) return 7;
-        if (zoom >= 6.5) return 6;
-        if (zoom >= 5.0) return 5;
-        if (zoom >= 3.5) return 4;
-        if (zoom >= 2.5) return 3;
-        return -1;
+        return resolutionForZoom(zoom, 40.0);
+    }
+
+    public static int resolutionForZoom(double zoom, double latitude) {
+        if (!Double.isFinite(zoom) || !Double.isFinite(latitude)) return SOURCE_RESOLUTION;
+        double lat = Math.max(-85.0, Math.min(85.0, latitude));
+        double metresPerPixel = 156543.03392 * Math.cos(Math.toRadians(lat))
+                / Math.pow(2.0, Math.max(0.0, zoom));
+        double diameter = 8.2; // approximate res-13 cell diameter
+        int resolution = SOURCE_RESOLUTION;
+        while (resolution > MIN_RENDER_RESOLUTION && diameter < metresPerPixel) {
+            resolution--;
+            diameter *= Math.sqrt(7.0);
+        }
+        return resolution;
+    }
+
+    /** Full-world dark mask, including while no Room history has loaded yet. */
+    @NonNull
+    public static FeatureCollection initialFog() {
+        return globalMask();
     }
 
     @NonNull
@@ -53,120 +70,167 @@ public final class ViewportOverlayBuilder {
             double west,
             double zoom
     ) {
-        int resolution = resolutionForZoom(zoom);
-        if (resolution < 0 || !validBounds(north, east, south, west)) {
-            return Result.empty();
-        }
+        if (!validBounds(north, east, south, west)) return Result.dark();
 
+        double latitude = (north + south) / 2.0;
+        int resolution = resolutionForZoom(zoom, latitude);
         Bounds padded = paddedBounds(north, east, south, west);
-        List<LatLng> viewport = new ArrayList<>(4);
-        viewport.add(new LatLng(padded.north, padded.west));
-        viewport.add(new LatLng(padded.south, padded.west));
-        viewport.add(new LatLng(padded.south, padded.east));
-        viewport.add(new LatLng(padded.north, padded.east));
+        Set<String> visibleExplored;
 
-        List<String> candidateCells;
+        // Only a genuine performance safety override may choose a coarser
+        // resolution than the ~one-pixel floor. It never affects Room data.
         while (true) {
-            candidateCells = h3.polygonToCellAddresses(
-                    viewport,
-                    null,
-                    resolution
+            visibleExplored = coverage.cellsInBounds(
+                    h3, resolution,
+                    padded.north, padded.east, padded.south, padded.west,
+                    MAX_RENDERED_CELLS
             );
-
-            if (candidateCells.size() <= MAX_VIEWPORT_CELLS
+            if (visibleExplored.size() <= MAX_RENDERED_CELLS
                     || resolution <= MIN_RENDER_RESOLUTION) {
                 break;
             }
-
             resolution--;
         }
-
-        if (candidateCells.size() > MAX_VIEWPORT_CELLS) {
-            return Result.empty();
+        if (visibleExplored.size() > MAX_RENDERED_CELLS) {
+            return Result.dark();
         }
 
-        Set<String> exploredAtResolution =
-                coverage.cellsAtResolution(h3, resolution);
-
-        List<Feature> explored = new ArrayList<>();
-        List<Feature> fog = new ArrayList<>();
-
-        for (String cell : candidateCells) {
-            Feature feature = featureForCell(h3, cell);
-            if (feature == null) continue;
-
-            if (exploredAtResolution.contains(cell)) {
-                explored.add(feature);
-            } else {
-                fog.add(feature);
-            }
+        if (visibleExplored.isEmpty()) {
+            FeatureCollection global = globalMask();
+            return new Result(global, global, global, resolution, 0);
         }
 
+        // Three nested bands generate a visual gradient, not a hex tile grid:
+        // clear in visited cells, light near the edge, darkest far away.
+        Set<String> band1 = expand(h3, visibleExplored, 1);
+        Set<String> band2 = expand(h3, band1, 1);
         return new Result(
-                FeatureCollection.fromFeatures(explored.toArray(new Feature[0])),
-                FeatureCollection.fromFeatures(fog.toArray(new Feature[0])),
+                invertedMask(h3, visibleExplored),
+                invertedMask(h3, band1),
+                invertedMask(h3, band2),
                 resolution,
-                candidateCells.size()
+                visibleExplored.size()
         );
     }
 
-    private static Bounds paddedBounds(
-            double north,
-            double east,
-            double south,
-            double west
+    @NonNull
+    private static Set<String> expand(
+            H3Core h3, Set<String> cells, int distance
     ) {
-        double latitudeSpan = north - south;
-        double longitudeSpan = east - west;
+        Set<String> expanded = new HashSet<>(cells);
+        for (String cell : cells) {
+            try {
+                expanded.addAll(h3.gridDisk(cell, distance));
+            } catch (RuntimeException ignored) {
+                // Pentagons or malformed legacy cells cannot remove global fog.
+            }
+        }
+        return expanded;
+    }
 
-        double latitudePadding = latitudeSpan * VIEWPORT_PADDING_FRACTION;
-        double longitudePadding = longitudeSpan * VIEWPORT_PADDING_FRACTION;
+    /**
+     * GeoJSON outer ring covers the world. A union of H3 polygons becomes
+     * interior holes, avoiding per-hexagon drawn borders. Any islands inside
+     * explored loops are emitted as separate dark polygons.
+     */
+    @NonNull
+    private static FeatureCollection invertedMask(H3Core h3, Set<String> revealed) {
+        if (revealed.isEmpty()) return globalMask();
 
+        List<List<Point>> worldWithHoles = new ArrayList<>();
+        worldWithHoles.add(worldRing());
+
+        List<Feature> islands = new ArrayList<>();
+        try {
+            List<List<List<LatLng>>> merged =
+                    h3.cellAddressesToMultiPolygon(revealed, true);
+            for (List<List<LatLng>> polygon : merged) {
+                if (polygon.isEmpty()) continue;
+                List<Point> exterior = ring(polygon.get(0));
+                if (exterior == null) continue;
+                // H3 merged exterior loops are holes in the inverted fog.
+                worldWithHoles.add(exterior);
+
+                // Interior unexplored pockets remain fogged.
+                for (int i = 1; i < polygon.size(); i++) {
+                    List<Point> island = ring(polygon.get(i));
+                    if (island != null) {
+                        islands.add(Feature.fromGeometry(
+                                Polygon.fromLngLats(Collections.singletonList(island))
+                        ));
+                    }
+                }
+            }
+        } catch (RuntimeException error) {
+            // Never reveal unknown geography when a geometry conversion fails.
+            return globalMask();
+        }
+
+        List<Feature> features = new ArrayList<>(1 + islands.size());
+        features.add(Feature.fromGeometry(Polygon.fromLngLats(worldWithHoles)));
+        features.addAll(islands);
+        return FeatureCollection.fromFeatures(features.toArray(new Feature[0]));
+    }
+
+    private static List<Point> ring(List<LatLng> vertices) {
+        if (vertices.size() < 3) return null;
+        List<Point> points = new ArrayList<>(vertices.size() + 1);
+        for (LatLng vertex : vertices) {
+            // Defer polar/dateline cases rather than constructing invalid holes.
+            if (!Double.isFinite(vertex.lat) || !Double.isFinite(vertex.lng)
+                    || Math.abs(vertex.lat) >= 85.0
+                    || Math.abs(vertex.lng) >= 179.9) return null;
+            points.add(Point.fromLngLat(vertex.lng, vertex.lat));
+        }
+        if (points.isEmpty()) return null;
+        points.add(points.get(0));
+        return points;
+    }
+
+    private static FeatureCollection globalMask() {
+        Feature world = Feature.fromGeometry(
+                Polygon.fromLngLats(Collections.singletonList(worldRing()))
+        );
+        return FeatureCollection.fromFeature(world);
+    }
+
+    private static List<Point> worldRing() {
+        List<Point> points = new ArrayList<>(5);
+        points.add(Point.fromLngLat(-179.999, -85.0));
+        points.add(Point.fromLngLat(179.999, -85.0));
+        points.add(Point.fromLngLat(179.999, 85.0));
+        points.add(Point.fromLngLat(-179.999, 85.0));
+        points.add(points.get(0));
+        return points;
+    }
+
+    private static Bounds paddedBounds(
+            double north, double east, double south, double west
+    ) {
+        double latitudePad = (north - south) * VIEWPORT_PADDING_FRACTION;
+        double longitudePad = (east - west) * VIEWPORT_PADDING_FRACTION;
         return new Bounds(
-                Math.min(89.999999, north + latitudePadding),
-                Math.min(180.0, east + longitudePadding),
-                Math.max(-89.999999, south - latitudePadding),
-                Math.max(-180.0, west - longitudePadding)
+                Math.min(85.0, north + latitudePad),
+                Math.min(179.9, east + longitudePad),
+                Math.max(-85.0, south - latitudePad),
+                Math.max(-179.9, west - longitudePad)
         );
     }
 
     private static boolean validBounds(
-            double north,
-            double east,
-            double south,
-            double west
+            double north, double east, double south, double west
     ) {
         return Double.isFinite(north)
                 && Double.isFinite(east)
                 && Double.isFinite(south)
                 && Double.isFinite(west)
                 && north > south
-                && north <= 90.0
-                && south >= -90.0
+                && north <= 85.0
+                && south >= -85.0
                 && east > west
                 && east <= 180.0
                 && west >= -180.0
                 && east - west <= 180.0;
-    }
-
-    private static Feature featureForCell(H3Core h3, String cell) {
-        try {
-            List<LatLng> boundary = h3.cellToBoundary(cell);
-            List<Point> ring = new ArrayList<>(boundary.size() + 1);
-
-            for (LatLng coordinate : boundary) {
-                ring.add(Point.fromLngLat(coordinate.lng, coordinate.lat));
-            }
-
-            if (ring.isEmpty()) return null;
-            ring.add(ring.get(0));
-
-            List<List<Point>> rings = new ArrayList<>(1);
-            rings.add(ring);
-            return Feature.fromGeometry(Polygon.fromLngLats(rings));
-        } catch (RuntimeException ignored) {
-            return null;
-        }
     }
 
     private static final class Bounds {
@@ -184,27 +248,29 @@ public final class ViewportOverlayBuilder {
     }
 
     public static final class Result {
-        @NonNull public final FeatureCollection explored;
         @NonNull public final FeatureCollection fog;
+        @NonNull public final FeatureCollection fogMid;
+        @NonNull public final FeatureCollection fogFar;
         public final int resolution;
         public final int candidateCells;
 
         Result(
-                @NonNull FeatureCollection explored,
                 @NonNull FeatureCollection fog,
+                @NonNull FeatureCollection fogMid,
+                @NonNull FeatureCollection fogFar,
                 int resolution,
                 int candidateCells
         ) {
-            this.explored = explored;
             this.fog = fog;
+            this.fogMid = fogMid;
+            this.fogFar = fogFar;
             this.resolution = resolution;
             this.candidateCells = candidateCells;
         }
 
-        static Result empty() {
-            FeatureCollection empty =
-                    FeatureCollection.fromFeatures(new Feature[]{});
-            return new Result(empty, empty, -1, 0);
+        static Result dark() {
+            FeatureCollection world = globalMask();
+            return new Result(world, world, world, -1, 0);
         }
     }
 }
