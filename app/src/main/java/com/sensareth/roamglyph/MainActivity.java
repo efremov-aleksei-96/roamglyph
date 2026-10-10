@@ -878,6 +878,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                         BackupManager.importBackup(temp, repository, h3);
 
                 store.setVisitedCountCache(result.totalCells);
+                store.setDiscoveryCountCache(repository.countDiscoveries());
 
                 runOnUiThread(() -> {
                     refreshVisitedFromDatabase();
@@ -918,10 +919,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 ? String.format(Locale.getDefault(), "%.2f km²", approxAreaM2 / 1_000_000.0)
                 : String.format(Locale.getDefault(), "%,.0f m²", approxAreaM2);
 
-        statsText.setText(String.format(
-                Locale.getDefault(),
-                "%,d cells · ≈%s",
+        statsText.setText(getString(
+                R.string.stats_summary,
                 count,
+                store.getDiscoveryCountCache(),
                 area
         ));
 
@@ -955,7 +956,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             try {
                 repository.migrateLegacyCellsIfNeeded(store);
                 Set<String> stored = repository.loadVisitedCellIds();
+                int discoveryCount = repository.countDiscoveries();
                 store.setVisitedCountCache(stored.size());
+                store.setDiscoveryCountCache(discoveryCount);
 
                 runOnUiThread(() -> {
                     refreshPending.set(false);
@@ -1155,6 +1158,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 return;
             }
 
+            if (result.newlyDiscovered > 0) {
+                store.setDiscoveryCountCache(repository.countDiscoveries());
+            }
+
             runOnUiThread(() -> {
                 if (generation != discoveryScanGeneration.get()
                         || isDestroyed()
@@ -1162,6 +1169,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                         || map == null
                         || map.getStyle() == null) {
                     return;
+                }
+
+                if (result.newlyDiscovered > 0) {
+                    updateUi(true);
                 }
 
                 GeoJsonSource discoveredSource =
@@ -1347,7 +1358,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         renderCurrentLocation();
         setLocateAvailable(hasLocation);
         updateUi(true);
-        requestDiscoveryScan();
         requestDiscoveryScan();
 
         if (tracking && hasLocationPermission() && locationEnabled) {
