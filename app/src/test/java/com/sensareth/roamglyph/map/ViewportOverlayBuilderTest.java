@@ -3,31 +3,41 @@ package com.sensareth.roamglyph.map;
 import org.junit.Test;
 
 import static org.junit.Assert.assertEquals;
+import static org.junit.Assert.assertTrue;
 
 public class ViewportOverlayBuilderTest {
     @Test
-    public void disablesFogOnlyAtWorldScale() {
-        assertEquals(-1, ViewportOverlayBuilder.resolutionForZoom(2.49));
-        assertEquals(3, ViewportOverlayBuilder.resolutionForZoom(2.5));
+    public void keepsFineCellsUntilTheyAreAboutOnePixel() {
+        assertEquals(13, ViewportOverlayBuilder.resolutionForZoom(17.0));
+        assertEquals(13, ViewportOverlayBuilder.resolutionForZoom(15.0));
+        assertEquals(13, ViewportOverlayBuilder.resolutionForZoom(14.0));
+        assertEquals(12, ViewportOverlayBuilder.resolutionForZoom(13.0));
+        assertEquals(10, ViewportOverlayBuilder.resolutionForZoom(11.0));
     }
 
     @Test
-    public void preservesExactCellsAtStreetZoom() {
-        assertEquals(13, ViewportOverlayBuilder.resolutionForZoom(17.0));
-        assertEquals(13, ViewportOverlayBuilder.resolutionForZoom(17.5));
+    public void doesNotDisableFogAtWorldScale() {
+        assertTrue(ViewportOverlayBuilder.resolutionForZoom(2.0) >= 0);
+        assertTrue(ViewportOverlayBuilder.resolutionForZoom(0.0) >= 0);
         assertEquals(13, ViewportOverlayBuilder.resolutionForZoom(22.0));
     }
 
     @Test
-    public void progressivelyAggregatesWhenZoomedOut() {
-        assertEquals(12, ViewportOverlayBuilder.resolutionForZoom(15.5));
-        assertEquals(11, ViewportOverlayBuilder.resolutionForZoom(14.0));
-        assertEquals(10, ViewportOverlayBuilder.resolutionForZoom(12.5));
-        assertEquals(9, ViewportOverlayBuilder.resolutionForZoom(11.0));
-        assertEquals(8, ViewportOverlayBuilder.resolutionForZoom(9.5));
-        assertEquals(7, ViewportOverlayBuilder.resolutionForZoom(8.0));
-        assertEquals(6, ViewportOverlayBuilder.resolutionForZoom(6.5));
-        assertEquals(5, ViewportOverlayBuilder.resolutionForZoom(5.0));
-        assertEquals(4, ViewportOverlayBuilder.resolutionForZoom(3.5));
+    public void zoomSelectionIsLatitudeAwareAndMonotonic() {
+        int equator = ViewportOverlayBuilder.resolutionForZoom(12.0, 0.0);
+        int yerevan = ViewportOverlayBuilder.resolutionForZoom(12.0, 40.0);
+        assertTrue(yerevan >= equator);
+        int previous = 0;
+        for (int zoom = 0; zoom <= 22; zoom++) {
+            int resolution = ViewportOverlayBuilder.resolutionForZoom(zoom, 40.0);
+            assertTrue(resolution >= previous);
+            assertTrue(resolution <= 13);
+            previous = resolution;
+        }
+    }
+
+    @Test
+    public void initialFogCoversWorldBeforeAsyncRender() {
+        assertEquals(1, ViewportOverlayBuilder.initialFog().features().size());
     }
 }

@@ -28,6 +28,11 @@
 - Fog rendering uses exact H3 resolution 13 at street-level zoom and progressively
   coarser parent cells only when zooming out.
 - Added a persistent Fog of War on/off switch.
+- Replaced the sparse hex-tile fog with persistent, world-covering inverted
+  masks and three graduated darkness bands around explored areas.
+- Kept fine H3 detail down to roughly one screen pixel before aggregating,
+  and introduced spatially indexed viewport coverage lookups.
+- Added accessible on-map +/− zoom controls.
 - Added viewport-only fog rendering, viewport padding, and incremental cell updates
   so normal panning does not rebuild the complete exploration history.
 - Correctly reports when Android location services are disabled.

@@ -21,6 +21,13 @@ If using any 0.4.x prototype or previously installed CI debug APK:
 The full JSON backup is required to preserve explored cells, session history,
 and Discoveries. **GPX is not a replacement for a full Roamglyph backup.**
 
+## User-reported QA evidence
+
+On 2026-10-10, the user reported a successful JSON history restore on
+their Android device. This establishes a smoke check for import, but does
+**not** yet prove the full export → reinstall → restore → duplicate import
+matrix or exact restored counts. Those remain required below.
+
 ## Required physical-device checks (ARM64, Android 15/16)
 
 | Area | Procedure | Acceptance |
@@ -30,7 +37,10 @@ and Discoveries. **GPX is not a replacement for a full Roamglyph backup.**
 | Bicycle | Ride at varying speeds, including hill climbs | Reasonable route with no systematic false reveals |
 | Accuracy | Temporarily obstruct GPS / go indoors | Poor fixes do not produce remote clusters |
 | Location toggle | Disable Android Location; re-enable later | UI shows `Location disabled`, then resumes |
-| Fog | Pan/zoom near explored and unexplored cells | Discovered area remains visible, unexplored area darkens without freezing |
+| Fog | Pan/zoom near explored and unexplored cells | Unknown geography stays dark throughout camera motion, no transient bare-map flash, and exploration remains visible without freezing |
+| Soft fog gradient | Inspect a visited border at multiple zooms | No obvious repeated hexagon grid; three smooth darkness zones around explored territory |
+| Fine zoom detail | Zoom from street to city scale | Smallest usable H3 resolution persists until about one screen pixel; zooming out does not suddenly reveal large hex tiles |
+| Map controls | Tap + and − repeatedly | Camera zoom changes smoothly; controls do not block GPS recenter or tracking |
 | Fog persistence | Toggle Fog off/on; restart app | Setting and explored territory persist |
 | Discoveries | Explore near mapped POIs, pan away and back | Anonymous hints appear before visits; discovered POIs persist after eligible exploration |
 | Online map | Test street/building details on Wi-Fi | Buildings, roads, and basic styling render; attribution remains available |
