@@ -1,63 +1,54 @@
 package com.sensareth.roamglyph.map;
 
 /**
- * Smooth, exact-coverage-bounded inward fog feather.
+ * Turns a spatially smoothed, supersampled coverage field into a graceful,
+ * inward-only fog fade. This is NOT an outline stroke.
  *
- * The low-pass shape weight suppresses the conspicuous H3 sawtooth outline,
- * while distance-based fading keeps the outermost hexagon edge visually dark.
- * Raw mask alpha is a strict upper bound: unvisited pixels are NEVER revealed.
+ * The source H3 alpha is an absolute upper bound on the returned cutout;
+ * pixels outside the genuinely visited area cannot be exposed.
  */
 public final class FogFeatherProfile {
-    private static final float THIN_TRAIL_VISIBILITY = 0.32f;
-
     private FogFeatherProfile() {}
 
     private static float smoothStep(float value) {
-        float x = Math.max(0f, Math.min(1f, value));
-        return x * x * (3f - 2f * x);
+        float t = Math.max(0f, Math.min(1f, value));
+        return t * t * (3f - 2f * t);
     }
 
-    public static int cutoutAlpha(int rawAlpha, int blurredAlpha,
+    public static int cutoutAlpha(int rawAlpha, int smoothedAlpha,
                                   int distanceSteps, int featherRadiusPx) {
         if (rawAlpha <= 0 || distanceSteps <= 0) return 0;
+        float distance = distanceSteps / 3f;
+        float feather = Math.max(1f, featherRadiusPx);
+        float occupancy = Math.max(0f, Math.min(1f, smoothedAlpha / 255f));
 
-        // Chamfer distance is in thirds of raster pixels, not map meters.
-        float distancePx = distanceSteps / 3f;
-        float coreFade = smoothStep(
-                (distancePx - 0.5f) / Math.max(1f, featherRadiusPx * 0.38f));
-        float wideFade = smoothStep(
-                (distancePx - 0.5f) / Math.max(1, featherRadiusPx));
+        // This is the actual SILHOUETTE. Averaged H3 tips typically have
+        // much lower neighbourhood occupancy than a continuous visited
+        // corridor. Keep their outline effectively dark, and let the smooth
+        // field -- not a clipped polygon edge -- determine visibility.
+        float silhouette = smoothStep((occupancy - 0.32f) / 0.50f);
+        float broadGradient = smoothStep((distance - 0.4f) / (0.90f * feather));
+        float mainReveal = silhouette * broadGradient;
 
-        // A broad low-pass mask removes bumps smaller than one H3 cell:
-        // protruding hex vertices contain little neighbourhood coverage.
-        // Suppress their transparency instead of imposing the old 48% floor,
-        // which made even low-coverage teeth distinctly visible.
-        float coverage = Math.max(0f, Math.min(1f, blurredAlpha / 255f));
-        float smoothedCore = smoothStep((coverage - 0.38f) / 0.55f);
+        // An isolated visited cell or a 1-cell trail may be too thin to
+        // have a large-area occupancy core. Preserve its *center*, not the
+        // geometric vertices: a short inward ramp and local density gate
+        // retain a readable narrow route without resurrecting H3 teeth.
+        float compact = smoothStep((occupancy - 0.09f) / 0.36f);
+        float inside = smoothStep((distance - 0.55f)
+                / Math.min(4f, Math.max(1f, 0.35f * feather)));
+        float narrowReveal = 0.72f * compact * inside;
 
-        // Sparse one-pixel H3 trails need a faint interior even when the
-        // blurred neighbourhood consists mostly of unexplored territory.
-        // Keep this tiny floor INSIDE the exact H3 cutout only.
-        // Two continuous ramps avoid a binary choice between a broad
-        // gradient and an invisible narrow track. The short-distance ramp
-        // keeps the center of a genuinely visited 1-cell-wide path visible;
-        // the longer ramp adds the requested graduated dark halo in open
-        // areas. Both vanish at the strict outer boundary.
-        float reveal = coreFade * Math.max(
-                THIN_TRAIL_VISIBILITY, smoothedCore)
-                * (0.4f + 0.6f * wideFade);
+        // A one-screen-pixel route remains visible at city zoom, where
+        // even the supersampled mask is only 1-2 pixels across. At street
+        // zoom this rescue vanishes, avoiding jagged H3 perimeter detail.
+        float microscopic = 0.22f * smoothStep((10f - feather) / 7f)
+                * smoothStep((distance - 0.25f) / 0.65f);
+        float reveal = Math.max(mainReveal,
+                Math.max(narrowReveal, microscopic));
 
-        // A 1-screen-pixel trail is ~2 pixels in the supersampled mask.
-        // When geographic zoom makes the whole feather only a handful of
-        // raster pixels, even the short ramp can erase the entire route.
-        // Rescue a subdued trace *only at those tiny scales*, never at
-        // ordinary street zoom where hexagonal edge teeth are visible.
-        float tinyScale = Math.max(0f, Math.min(1f,
-                (10f - featherRadiusPx) / 6f));
-        float thinTrace = 0.20f * tinyScale * smoothStep(
-                (distancePx - 0.3f) / 1f);
-        reveal = Math.max(reveal, thinTrace);
-        int alpha = Math.round(255f * reveal);
-        return Math.max(0, Math.min(rawAlpha, alpha));
+        // Never increase rasterized H3 source opacity. AA edge samples and
+        // the final vector clip enforce geographic conservation on the GPU.
+        return Math.max(0, Math.min(rawAlpha, Math.round(255f * reveal)));
     }
 }
