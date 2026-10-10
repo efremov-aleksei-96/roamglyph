@@ -46,6 +46,17 @@ public final class FogFeatherProfile {
         float reveal = coreFade * Math.max(
                 THIN_TRAIL_VISIBILITY, smoothedCore)
                 * (0.4f + 0.6f * wideFade);
+
+        // A 1-screen-pixel trail is ~2 pixels in the supersampled mask.
+        // When geographic zoom makes the whole feather only a handful of
+        // raster pixels, even the short ramp can erase the entire route.
+        // Rescue a subdued trace *only at those tiny scales*, never at
+        // ordinary street zoom where hexagonal edge teeth are visible.
+        float tinyScale = Math.max(0f, Math.min(1f,
+                (10f - featherRadiusPx) / 6f));
+        float thinTrace = 0.20f * tinyScale * smoothStep(
+                (distancePx - 0.3f) / 1f);
+        reveal = Math.max(reveal, thinTrace);
         int alpha = Math.round(255f * reveal);
         return Math.max(0, Math.min(rawAlpha, alpha));
     }
