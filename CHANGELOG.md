@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.5.0-dev.22 — 2026-10-10 (experimental GPS shape test)
+
+- Preserve the geographic fog tile cache and exact H3-13 history from
+  dev.21, but change the VISUAL silhouette when accepted GPS samples exist.
+- Query accepted GPS fixes locally, grouped by tracking session/time; draw
+  round 11-meter-radius corridors and joins between nearby consecutive
+  fixes, producing smooth route edges rather than H3 cell-tooth outlines.
+- Clip each smooth GPS corridor INSIDE exact persisted H3 geography before
+  raster feathering, and retain the exact H3 vector clip during map drawing.
+  No interpolated stroke may reveal new terrain outside visited cells.
+- Fall back to existing H3 silhouette when no GPS points are available,
+  or a tile's bounded query is truncated/fails; legacy and imported
+  visited history and JSON backup representation remain unchanged.
+- Regression tests reject jumps between sessions, long GPS outages,
+  large physical jumps and invalid fixes.
+- Physical QA required: compare the same real traveled street in dev.21
+  and dev.22 and check that all expected visited terrain is visible.
+- No schema migration, new permissions, network service, or account data.
+
+
 ## 0.5.0-dev.21 — 2026-10-10 (experimental test build)
 
 - Respond to physical-device reports of a rectangular hard cutout and
