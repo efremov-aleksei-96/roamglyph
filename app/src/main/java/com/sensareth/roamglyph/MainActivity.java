@@ -131,13 +131,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private final AtomicBoolean discoveryScanScheduled = new AtomicBoolean(false);
     private final AtomicBoolean fogMoveUpdatePending = new AtomicBoolean(false);
     private final AtomicBoolean fogBuildRunning = new AtomicBoolean(false);
-    private final Runnable delayedFogRefresh = () -> {
-        fogMoveUpdatePending.set(false);
-        if (!isDestroyed() && store != null && store.isFogEnabled()
-                && overlayExecutor != null && !overlayExecutor.isShutdown()) {
-            scheduleViewportOverlay();
-        }
-    };
     private final AtomicLong overlayGeneration = new AtomicLong(0L);
     private final AtomicLong discoveryScanGeneration = new AtomicLong(0L);
     private final ExplorationCoverageIndex coverageIndex = new ExplorationCoverageIndex();
@@ -148,6 +141,14 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private ExecutorService mapIoExecutor;
     private H3Core h3;
     private LocationManager locationManager;
+    private final Runnable delayedFogRefresh = () -> {
+        fogMoveUpdatePending.set(false);
+        if (!isDestroyed() && store != null && store.isFogEnabled()
+                && overlayExecutor != null && !overlayExecutor.isShutdown()) {
+            scheduleViewportOverlay();
+        }
+    };
+
 
     private boolean tracking;
     private boolean trackingReceiverRegistered;
