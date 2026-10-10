@@ -76,6 +76,12 @@ Legacy version-1 cell-only JSON exports remain importable.
 Roamglyph does not receive a copy of exported or imported files. See
 `docs/BACKUP_FORMAT.md` in the source repository for the portable format.
 
+Individual sessions can also be exported as GPX 1.1 through Android's document
+picker. GPX export contains accepted track coordinates, timestamps, and altitude
+when available. Rejected GPS fixes, H3 coverage, discoveries, and other Roamglyph
+database state are not included in GPX; use the full Roamglyph backup for complete
+restore.
+
 ## Permissions
 
 - **Location**: required to determine your position and reveal nearby cells.

@@ -47,6 +47,8 @@ work.
 - Local PMTiles can be removed independently of exploration history and backups.
 - Local History & statistics screen with total distance, tracked time, sessions,
   GPS-fix counts, explored area, discoveries, and the 100 most recent sessions.
+- Streaming GPX 1.1 export for individual sessions using accepted GPS fixes only,
+  with timestamps/altitude and segment breaks across long GPS gaps.
 - Smooth manual recentering without forced camera-follow while browsing.
 - No account, ads, analytics, Firebase, or mandatory backend.
 
