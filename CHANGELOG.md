@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.0-dev.19 — 2026-10-10 (experimental test build)
+
+- On-device dev.18 feedback confirmed visible H3 sawteeth and almost no
+  readable fog gradient on wide explored corridors.
+- Increase exact-mask low-pass radius while removing the old minimum 48%
+  transparency on individual H3 protrusions: opacity now follows the local
+  density of visited pixels, suppressing sawtooth peaks instead of merely
+  blurring their hard outline.
+- Slightly broaden continuous INWARD feather and blend short-range and
+  long-range ramps to preserve the visibility of thin explored routes;
+  keep full
+  transparency in wide confidently explored interiors and preserve narrow
+  trails as subtle hints.
+- Hard safety invariants unchanged: the exact source mask bounds
+  transparency, and the live vector clip cannot reveal unexplored land.
+- No data/schema migration. Screenshot verification on real Pixel required.
+
+
 ## 0.5.0-dev.18 — 2026-10-10 (test build, not released)
 
 - Add `⋮ → Check for updates` directly inside the Android application.

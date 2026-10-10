@@ -42,9 +42,9 @@ matrix or exact restored counts. Those remain required below.
 | Screen-space edge smoothing | Inspect boundaries including sparse isolated visited areas | Supersampled, softly fading cutouts without conspicuous hexagonal sawteeth; narrow routes remain visible |
 | Rounded silhouette | Inspect isolated explored H3 cells and long connected trails while zooming | Corners visibly curved, not just blurred straight hex edges; no unvisited area opens |
 | Zigzag simplification | Inspect long cycle paths at street and overview zoom | Unneeded hex sawteeth straightened with curved bends; true visited area is not exaggerated |
-| Smooth inward gradient | Observe explored/unexplored contour at several zoom levels | Continuous rasterized fade from darkness into explored area, not five visible strokes or isolated hex edges |
+| Smooth inward gradient | Compare the same visited intersection on dev.18 and dev.19 at the exact same zoom | Visibly reduced H3 teeth and a noticeable multi-pixel fade toward the clear interior, with no lightening outside actual cells |
 | Continuous pinch zoom | Pinch rapidly both in and out repeatedly around an explored route | Cached inward-feather mask follows actual map coordinates, never reveals beyond the exact H3 footprint, and never exposes a lateral strip |
-| APK version identity | Inspect installed About screen and APK filename | Distinct 0.5.0-dev.18+g&lt;commit&gt; displayed; downloadable artifact filename contains same commit |
+| APK version identity | Inspect installed About screen and APK filename | Distinct 0.5.0-dev.19+g&lt;commit&gt; displayed; downloadable artifact filename contains same commit |
 | Check for updates dialog | Tap ⋮ → Check for updates, then repeat from Version & Changelog | Installed dev.18 version in title and both clickable website choices (not just a text-only message) |
 | Update destinations | Select each website choice with internet | Official releases link opens GitHub Releases; test builds link opens main-branch Android CI runs, which contain downloadable development APKs under Artifacts; no auto-install |
 | Discovery emoji | Inspect museum, nature, landmark and hint POIs | Category-specific emojis visible above fog, tappable POI details preserved; icons also visible with Fog off |
