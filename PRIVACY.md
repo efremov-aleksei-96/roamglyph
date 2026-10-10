@@ -49,6 +49,17 @@ https://www.openstreetmap.org/copyright
 Future offline-map support is intended to allow map viewing without a map provider,
 but it is not part of version 0.5.0.
 
+## Discoveries
+
+The Discoveries feature reads POI features from the same OpenMapTiles vector data
+that is already loaded for the visible map. Classification and visit matching happen
+locally on the device. Roamglyph does not send a separate discovery or POI lookup
+request to a Roamglyph server.
+
+When a POI lies inside explored H3 coverage, Roamglyph can store its identifier,
+name, category, coordinates, discovery time when known, and source provenance in
+the local database and portable backup.
+
 ## Export and import
 
 Export happens only when you explicitly choose **Export backup** and select a
