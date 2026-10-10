@@ -9,8 +9,14 @@
   neighbouring geographic tiles are prefetched asynchronously.
 - Request exact stored H3-13 cells independently for each tile, rather
   than redoing a viewport-wide H3 native polygon union after 400 ms.
-- Keep a bounded LRU cache of completed fog tiles; reuse those tiles
-  across pans and delay switching zoom grids until view coverage loads.
+- Keep a byte-capped (64 MiB) LRU cache of completed fog tiles; protect
+  both visible zoom generations during transitions and use smaller
+  rasters on unusually large/high-resolution displays.
+- Enumerate visible geographic tiles before limiting optional neighbour
+  prefetch, preserving on-screen coverage when the viewport is tall.
+- Rebuild tiles on resume if Android trimmed the cache for low memory.
+- Reuse cached tiles across pans and delay switching zoom grids until
+  view coverage loads.
 - Synchronize H3 spatial-index reads with GPS/backup updates, and
   refresh cached tile coverage when new visited cells arrive.
 - Preserve the existing 2D occupancy-based inward fade and exact H3
