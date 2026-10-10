@@ -5,6 +5,8 @@ import com.sensareth.roamglyph.data.GpsPointEntity;
 import org.junit.Test;
 
 import java.io.ByteArrayOutputStream;
+import java.io.ByteArrayInputStream;
+import javax.xml.parsers.DocumentBuilderFactory;
 import java.nio.charset.StandardCharsets;
 
 import static org.junit.Assert.assertEquals;
@@ -39,6 +41,23 @@ public class GpxWriterTest {
         assertTrue(xml.contains("lat=\"40.1800000\" lon=\"44.5100000\""));
         assertFalse(xml.contains("lat=\"41.0000000\""));
         assertTrue(xml.endsWith("</gpx>\n"));
+    }
+
+    @Test
+    public void filtersInvalidXmlCharactersInTrackName() throws Exception {
+        ByteArrayOutputStream output = new ByteArrayOutputStream();
+        try (GpxWriter writer = new GpxWriter(
+                output, "Ride & " + '\u0001' + "<test>" + '\uD800', 1_000L
+        )) {
+            writer.append(point("p1", 1_000L, 40.18, 44.51, true));
+        }
+
+        String xml = output.toString(StandardCharsets.UTF_8);
+        assertTrue(xml.contains("<name>Ride &amp; &lt;test&gt;</name>"));
+        assertFalse(xml.contains(String.valueOf((char) 1)));
+        DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(
+                new ByteArrayInputStream(output.toByteArray())
+        );
     }
 
     @Test
