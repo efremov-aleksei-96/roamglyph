@@ -95,8 +95,10 @@ the GitHub commit SHA, with an incremented Android versionCode. The
 uploaded APK artifact name contains the same commit identity.
 
 The renderer caps its native H3 polygon union at 20,000 exact cells per
-viewport. Exceeding that safety limit is conservatively rendered dark,
-never replaced by larger fake visited regions. This high-density fallback
+viewport. Exceeding that safety limit preserves the previously loaded,
+geographically anchored exact vector paths instead of blinking existing
+visited routes dark. Unknown map pixels stay covered by the base fog;
+no larger synthetic H3 parents are ever substituted. This high-density fallback
 requires physical performance testing; future optimization can use exact
 tile-based raster masks without changing the permanent user history.
 The old nested H3-gradient-band GeoJSON sources have been removed.
