@@ -13,13 +13,14 @@ Repo: https://github.com/efremov-aleksei-96/roamglyph.git
 Builds:
   - versionName: 0.5.0
     versionCode: 6
-    commit: 022af3477bafb495997687d8874280aebe3d0247
+    commit: d7cd5810215c079444e1c4b9aac52c2ff3c19ee6
     gradle:
       - yes
 
 MaintainerNotes: |-
-  This is the pre-release 0.5.0 source-build recipe used to validate F-Droid
-  compatibility before the public release tag.
+  This is a pre-release 0.5.0 source-build recipe pinned to the latest
+  functionally complete code commit prior to physical-device acceptance.
+  Replace the pinned SHA with the signed-off v0.5.0 tag for submission.
 
   The runtime deliberately excludes Google Play Services, Firebase, advertising,
   and analytics SDKs.
