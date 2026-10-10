@@ -41,8 +41,17 @@ public class FogFeatherProfileTest {
     }
 
     @Test
+    public void onePixelWideRouteSurvivesWideZoomFeather() {
+        // One sample inside an exact H3 cell: 3 chamfer steps. At wide
+        // zoom the pixel-aware feather is one raster pixel, not 20+ dp.
+        int result = FogFeatherProfile.cutoutAlpha(255, 40, 3, 1);
+        assertTrue(result > 0);
+        assertTrue(result < 255);
+    }
+
+    @Test
     public void narrowExploredAreaRemainsSubtlyVisible() {
-        int result = FogFeatherProfile.cutoutAlpha(255, 40, 24, 24);
+        int result = FogFeatherProfile.cutoutAlpha(255, 40, 6, 2);
         assertTrue(result > 0);
         assertTrue(result < 255);
     }
