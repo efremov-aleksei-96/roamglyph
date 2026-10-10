@@ -96,6 +96,17 @@ public interface ExplorationDao {
     @Query("SELECT * FROM gps_points ORDER BY timestamp_ms ASC, point_id ASC")
     List<GpsPointEntity> loadGpsPoints();
 
+    // Read-only spatial query: no schema/index migration required. The extra
+    // limit slot detects truncation; partial GPS corridors fail back to H3.
+    @Query("SELECT * FROM gps_points "
+            + "WHERE accepted_for_exploration = 1 "
+            + "AND latitude BETWEEN :south AND :north "
+            + "AND longitude BETWEEN :west AND :east "
+            + "ORDER BY session_id ASC, timestamp_ms ASC, point_id ASC "
+            + "LIMIT :limit")
+    List<GpsPointEntity> loadAcceptedGpsPointsInBounds(
+            double south, double north, double west, double east, int limit);
+
     @Query("SELECT * FROM gps_points ORDER BY timestamp_ms ASC, point_id ASC LIMIT :limit OFFSET :offset")
     List<GpsPointEntity> loadGpsPointsPage(int limit, int offset);
 
