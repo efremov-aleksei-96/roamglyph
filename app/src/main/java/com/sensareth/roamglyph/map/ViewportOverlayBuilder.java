@@ -61,7 +61,7 @@ public final class ViewportOverlayBuilder {
                 MAX_RENDERED_CELLS
         );
 
-        if (!withinGeometryBudget(cells.size())) return Result.dark();
+        if (!withinGeometryBudget(cells.size())) return Result.overBudget();
         if (cells.isEmpty()) return new Result(Collections.emptyList(), 0);
 
         try {
@@ -92,14 +92,27 @@ public final class ViewportOverlayBuilder {
     public static final class Result {
         @NonNull public final List<List<List<LatLng>>> polygons;
         public final int exactCellCount;
+        public final boolean preservePreviousGeometry;
 
         Result(@NonNull List<List<List<LatLng>>> polygons, int exactCellCount) {
+            this(polygons, exactCellCount, false);
+        }
+
+        Result(@NonNull List<List<List<LatLng>>> polygons,
+               int exactCellCount, boolean preservePreviousGeometry) {
             this.polygons = polygons;
             this.exactCellCount = exactCellCount;
+            this.preservePreviousGeometry = preservePreviousGeometry;
         }
 
         public static Result dark() {
             return new Result(Collections.emptyList(), 0);
+        }
+
+        public static Result overBudget() {
+            // Retain older exact geographically-anchored cutouts; replacing
+            // them with an empty set would blink entire routes dark on zoom-out.
+            return new Result(Collections.emptyList(), 0, true);
         }
     }
 }

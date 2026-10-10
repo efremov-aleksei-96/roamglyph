@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.5.0-dev.16 — 2026-10-10 (test build, not released)
+
+- Development APK gets versionCode 16 and a source-specific versionName
+  such as `0.5.0-dev.16+g12345678`; the downloadable APK is named with
+  the revision, so installed test builds can be identified and compared.
+- Removed the raster zoom threshold that caused the explored path to
+  blink completely dark and then reappear while pinching/zooming.
+  The screen-space fog now caches VECTOR draw commands in a hardware
+  RenderNode display list and projects them at the actual camera zoom,
+  without enlarging pixels or replaying five full paths on every frame.
+- Straightens short H3 zigzags on long explored borders using closed-ring
+  line simplification, then rounds corners without falsely revealing
+  any unknown area outside the original exact res-13 coverage.
+  Single isolated H3 cells appear as inscribed circles rather than hexagons.
+- Restored five visible inward fog gradation levels of progressively
+  greater darkness along curved contours.
+- Wide-zoom H3 budget overflow now preserves already rendered exact routes
+  instead of blanking them until the next viewport update.
+- No migration or change to persisted GPS, H3, discoveries or backups.
+
 ## 0.5.0 - unreleased
 
 ### Added
@@ -25,13 +45,13 @@
 - Made location recentering slower and smoother.
 - Added a real Fog of War overlay: unexplored map cells are darkened while explored
   territory remains visible.
-- Fog rendering uses exact H3 resolution 13 at street-level zoom and progressively
-  coarser parent cells only when zooming out.
+- The early renderer used coarse zoom-dependent H3 parents; later fixes
+  removed them. Current Fog of War always uses exact H3 resolution 13.
 - Added a persistent Fog of War on/off switch.
 - Replaced the sparse hex-tile fog with persistent, world-covering inverted
   masks and three graduated darkness bands around explored areas.
-- Kept fine H3 detail down to roughly one screen pixel before aggregating,
-  and introduced spatially indexed viewport coverage lookups.
+- Preserved exact H3 res-13 coverage at every zoom, with spatially
+  indexed viewport lookup (no parent-cell display aggregation).
 - Added accessible on-map +/− zoom controls.
 - Added curved, conservatively clipped explored-area silhouettes so H3
   cell corners do not remain visible after edge feathering.

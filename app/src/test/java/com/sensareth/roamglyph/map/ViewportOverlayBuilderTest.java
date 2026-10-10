@@ -33,6 +33,14 @@ public class ViewportOverlayBuilderTest {
     }
 
     @Test
+    public void wideZoomOverBudgetKeepsPreviouslyLoadedExactPaths() {
+        ViewportOverlayBuilder.Result result = ViewportOverlayBuilder.Result.overBudget();
+        assertTrue(result.preservePreviousGeometry);
+        assertTrue(result.polygons.isEmpty());
+        assertFalse(ViewportOverlayBuilder.Result.dark().preservePreviousGeometry);
+    }
+
+    @Test
     public void failDarkResultNeverContainsFakeVisitedPolygons() {
         assertEquals(0, ViewportOverlayBuilder.Result.dark().polygons.size());
         assertEquals(0, ViewportOverlayBuilder.Result.dark().exactCellCount);

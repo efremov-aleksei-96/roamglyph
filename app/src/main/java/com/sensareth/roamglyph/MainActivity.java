@@ -1288,8 +1288,11 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     scheduleViewportOverlay();
                     return;
                 }
-                // Pure geographic res-13 geometry: zoom cannot enlarge it.
-                // Unknown space remains covered even if this callback is late.
+                // At very wide zoom, the exact H3 union can exceed the
+                // fixed native budget. Keep previously loaded exact paths
+                // anchored instead of blinking the whole route off; unknown
+                // screen pixels remain covered by the full-screen fog.
+                if (completed.preservePreviousGeometry) return;
                 fogOverlayView.setGeometry(completed.polygons);
             });
         });
