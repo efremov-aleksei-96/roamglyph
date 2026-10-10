@@ -33,6 +33,12 @@
 - Kept fine H3 detail down to roughly one screen pixel before aggregating,
   and introduced spatially indexed viewport coverage lookups.
 - Added accessible on-map +/− zoom controls.
+- Replaced the geospatial GeoJSON fog with a screen-space mask tied to
+  the live MapLibre camera, to eliminate rapid-pan edge flashes.
+- Removed zoom-based parent aggregation entirely: only true res-13
+  visited territory is ever transparent, including at distant zoom.
+- Added anti-aliased, round-joined dark edge feathering that does not
+  artificially enlarge explored coverage.
 - Added viewport-only fog rendering, viewport padding, and incremental cell updates
   so normal panning does not rebuild the complete exploration history.
 - Correctly reports when Android location services are disabled.
