@@ -70,7 +70,8 @@ public final class FogOverlayView extends View {
     private MapLibreMap map;
     private H3Core h3;
     private ExplorationCoverageIndex coverage;
-    private ExplorationRepository gpsRepository;
+    private volatile ExplorationRepository gpsRepository;
+    private long lastGpsRefreshAt;
     private volatile boolean disposed;
     private volatile boolean enabled = true;
     private volatile int coverageEpoch = 1;
@@ -189,6 +190,18 @@ public final class FogOverlayView extends View {
     /** All route-point reads run on the existing off-UI tile worker. */
     public void attachGpsRepository(@NonNull ExplorationRepository repository) {
         gpsRepository = repository;
+    }
+
+    /**
+     * GPS fixes sometimes add no new H3 cells. Refresh the local visual
+     * corridor periodically anyway, but do not start a multi-tile rebuild
+     * for every 2-second fix. Old cached tiles remain visible until ready.
+     */
+    public void onAcceptedGpsPoint() {
+        long now = SystemClock.uptimeMillis();
+        if (now - lastGpsRefreshAt < 15_000L) return;
+        lastGpsRefreshAt = now;
+        onCoverageChanged(false);
     }
 
     /** History updates are monotonic except when a backup resets coverage. */
