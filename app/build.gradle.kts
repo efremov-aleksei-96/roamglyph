@@ -21,7 +21,8 @@ val hasReleaseSigning =
 
 // Every tested source revision gets a visible dev build identity, while the
 // integer versionCode increases across user-distributed development builds.
-val devRevision = System.getenv("GITHUB_SHA")
+val devRevision = (System.getenv("ROAMGLYPH_SOURCE_SHA")
+    ?: System.getenv("GITHUB_SHA"))
     ?.take(8)
     ?.lowercase()
     ?: "local"
