@@ -493,11 +493,10 @@ public final class FogOverlayView extends View {
                 // Include predecessors/successors for any allowable 140m
                 // GPS join plus the 11m clear corridor and a safety margin.
                 // Longitude degrees are latitude-dependent, unlike lat.
-                final double haloMeters = 190.0;
-                final double latPad = haloMeters / 111_000.0;
-                final double lngPad = haloMeters / (111_000.0 *
-                        Math.max(0.01, Math.cos(
-                                Math.toRadians(centerLat))));
+                final double latPad =
+                        GpsCorridorJoinPolicy.tileHaloLatitudeDegrees();
+                final double lngPad =
+                        GpsCorridorJoinPolicy.tileHaloLongitudeDegrees(centerLat);
                 List<GpsPointEntity> routePoints =
                         gpsRepository.loadAcceptedGpsPointsInBounds(
                                 Math.max(-85.0, FogWorldTileScheme.south(key) - latPad),
