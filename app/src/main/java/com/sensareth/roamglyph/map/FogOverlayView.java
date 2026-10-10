@@ -99,6 +99,10 @@ public final class FogOverlayView extends View {
     private static final class TileJob {
         final FogWorldTileScheme.Key key;
         final int epoch;
+        // Sticky: the camera may leave and re-enter this tile before the
+        // worker posts its result. Never reinterpret an aborted job as
+        // a deterministic empty H3 tile.
+        volatile boolean wasCancelled;
         TileJob(FogWorldTileScheme.Key key, int epoch) {
             this.key = key;
             this.epoch = epoch;
@@ -260,9 +264,11 @@ public final class FogOverlayView extends View {
         try {
             org.maplibre.android.camera.CameraPosition camera = map.getCameraPosition();
             if (camera == null) return;
+            int suggestedZoom = FogWorldTileScheme.zoomLevel(camera.zoom);
             if (requestedZoom < 0 ||
-                    Math.abs(camera.zoom - requestedZoom) > 1.10) {
-                requestedZoom = FogWorldTileScheme.zoomLevel(camera.zoom);
+                    (suggestedZoom != requestedZoom &&
+                            Math.abs(camera.zoom - requestedZoom) >= 0.85)) {
+                requestedZoom = suggestedZoom;
             }
             org.maplibre.android.geometry.LatLngBounds b =
                     map.getProjection().getVisibleRegion().latLngBounds;
@@ -280,7 +286,7 @@ public final class FogOverlayView extends View {
             // a corner that is actually on screen.
             java.util.LinkedHashSet<FogWorldTileScheme.Key> prioritized =
                     new java.util.LinkedHashSet<>(newVisible);
-            for (FogWorldTileScheme.Key key : prioritized) {
+            for (FogWorldTileScheme.Key key : preload) {
                 if (prioritized.size() >= MAX_DEMAND) break;
                 prioritized.add(key);
             }
@@ -299,7 +305,7 @@ public final class FogOverlayView extends View {
             // An older completed tile remains visible while its updated
             // version renders, preventing area flashing during movement.
             int epoch = coverageEpoch;
-            for (FogWorldTileScheme.Key key : preload) {
+            for (FogWorldTileScheme.Key key : prioritized) {
                 Tile current = cache.get(key);
                 if ((current == null || current.epoch != epoch) && pending.add(key)) {
                     jobs.add(new TileJob(key, epoch));
@@ -349,9 +355,11 @@ public final class FogOverlayView extends View {
     }
 
     private boolean cancelled(TileJob job) {
-        return Thread.currentThread().isInterrupted() || disposed
+        boolean aborted = Thread.currentThread().isInterrupted() || disposed
                 || !enabled || job.epoch != coverageEpoch
                 || !wanted.contains(job.key);
+        if (aborted) job.wasCancelled = true;
+        return aborted;
     }
 
     private Tile buildTile(TileJob job) {
@@ -423,17 +431,18 @@ public final class FogOverlayView extends View {
 
     private void finishTile(TileJob job, Tile tile) {
         pending.remove(job.key);
-        if (disposed || !enabled || job.epoch != coverageEpoch
+        if (job.wasCancelled || disposed || !enabled || job.epoch != coverageEpoch
                 || !wanted.contains(job.key)) {
             if (tile != null) tile.recycle();
-            // A stale worker must not block a current key.
+            // A cancelled tile can become wanted again during a rapid
+            // back-and-forth pan. Requeue only when it is genuinely wanted,
+            // never cache an aborted result as a terminal blank tile.
             if (!disposed && enabled && wanted.contains(job.key)) requestTiles(true);
             return;
         }
         if (tile == null) {
-            // Missing/over-budget/cancelled geometry fails DARK. Record a
-            // blank tile for this coverage epoch to avoid a tight retry
-            // loop that drains the battery while the camera is idle.
+            // Only a genuine over-budget/OOM/raster failure is terminal.
+            // Fail dark until the next coverage version; no CPU spin.
             tile = new Tile(job.key, new Path(), new Bitmap[0], job.epoch);
         }
         Tile old = cache.put(job.key, tile);
