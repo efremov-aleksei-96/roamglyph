@@ -100,6 +100,19 @@ public final class ExplorationRepository {
         return dao.countSessions();
     }
 
+    public HistoryStatsSnapshot loadHistoryStats(int recentSessionLimit, long nowMs) {
+        return new HistoryStatsSnapshot(
+                dao.countVisitedCells(),
+                dao.countDiscoveries(),
+                dao.countSessions(),
+                dao.countGpsPoints(),
+                dao.sumSessionDistanceMeters(),
+                dao.sumAcceptedPoints(),
+                dao.sumTrackedDurationMs(nowMs),
+                dao.loadRecentSessions(recentSessionLimit)
+        );
+    }
+
     public List<VisitedCellEntity> loadVisitedCellsPage(int limit, int offset) {
         return dao.loadVisitedCellsPage(limit, offset);
     }

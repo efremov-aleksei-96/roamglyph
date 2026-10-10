@@ -771,18 +771,19 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         PopupMenu popup = new PopupMenu(this, anchor);
         boolean localMapAvailable = OfflineMapStore.hasValidMap(this);
 
-        popup.getMenu().add(0, 1, 0, R.string.menu_export_history);
-        popup.getMenu().add(0, 2, 1, R.string.menu_import_history);
+        popup.getMenu().add(0, 11, 0, R.string.menu_history);
+        popup.getMenu().add(0, 1, 1, R.string.menu_export_history);
+        popup.getMenu().add(0, 2, 2, R.string.menu_import_history);
         popup.getMenu().add(
                 0,
                 6,
-                2,
+                3,
                 store.isFogEnabled() ? R.string.menu_fog_on : R.string.menu_fog_off
         );
         popup.getMenu().add(
                 0,
                 7,
-                3,
+                4,
                 store.isDiscoveriesEnabled()
                         ? R.string.menu_discoveries_on
                         : R.string.menu_discoveries_off
@@ -792,22 +793,26 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             popup.getMenu().add(
                     0,
                     8,
-                    4,
+                    5,
                     store.isOfflineMapEnabled()
                             ? R.string.menu_use_online_map
                             : R.string.menu_use_local_map
             );
         }
-        popup.getMenu().add(0, 9, 5, R.string.menu_import_local_map);
+        popup.getMenu().add(0, 9, 6, R.string.menu_import_local_map);
         if (localMapAvailable) {
-            popup.getMenu().add(0, 10, 6, R.string.menu_remove_local_map);
+            popup.getMenu().add(0, 10, 7, R.string.menu_remove_local_map);
         }
 
-        popup.getMenu().add(0, 3, 7, R.string.menu_refresh_location);
-        popup.getMenu().add(0, 4, 8, R.string.menu_source_code);
-        popup.getMenu().add(0, 5, 9, R.string.menu_privacy);
+        popup.getMenu().add(0, 3, 8, R.string.menu_refresh_location);
+        popup.getMenu().add(0, 4, 9, R.string.menu_source_code);
+        popup.getMenu().add(0, 5, 10, R.string.menu_privacy);
 
         popup.setOnMenuItemClickListener(item -> {
+            if (item.getItemId() == 11) {
+                startActivity(new Intent(this, HistoryActivity.class));
+                return true;
+            }
             if (item.getItemId() == 1) {
                 if (tracking) {
                     Toast.makeText(
