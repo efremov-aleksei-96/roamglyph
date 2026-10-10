@@ -42,6 +42,7 @@ import com.sensareth.roamglyph.data.DiscoveryEntity;
 import com.sensareth.roamglyph.data.ExplorationRepository;
 import com.sensareth.roamglyph.map.DiscoveryClassifier;
 import com.sensareth.roamglyph.map.DiscoveryEngine;
+import com.sensareth.roamglyph.map.DiscoveryHitPolicy;
 import com.sensareth.roamglyph.map.DiscoveryOverlayBuilder;
 import com.sensareth.roamglyph.map.ExplorationCoverageIndex;
 import com.sensareth.roamglyph.map.FogOverlayView;
@@ -1553,7 +1554,14 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             float dx = screen.x - screenPoint.x;
             float dy = screen.y - screenPoint.y;
             float distanceSquared = dx * dx + dy * dy;
-            if (distanceSquared <= closestDistanceSquared) {
+            if (DiscoveryHitPolicy.shouldReplace(
+                    distanceSquared,
+                    "discovered".equals(candidate.getStringProperty("state")),
+                    closestDistanceSquared,
+                    feature != null
+                            && "discovered".equals(feature.getStringProperty("state")),
+                    feature != null,
+                    touchRadius * touchRadius)) {
                 feature = candidate;
                 closestDistanceSquared = distanceSquared;
             }
