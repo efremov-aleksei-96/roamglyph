@@ -8,7 +8,15 @@ Roamglyph-operated server.
 
 ## Status
 
-Current development version: **0.5.0**
+Current test line: **0.5.0-dev.18** (the future **0.5.0** release is not yet published).
+
+Inside the application, open **⋮ → Check for updates** and choose either
+[Official releases](https://github.com/efremov-aleksei-96/roamglyph/releases)
+or [Development builds](https://github.com/efremov-aleksei-96/roamglyph/actions/workflows/android.yml?query=branch%3Amain).
+The latter lists CI runs; open a successful Android CI run and download the
+`roamglyph-dev18-debug-apk` artifact. These are website links, not an
+automatic updater. Development versions include a source-specific commit
+identifier in **Version & Changelog**.
 
 This is still an early project. The original GPS/background flow has been tested on
 a physical Android device. The 0.5.0 development line now includes Room/SQLite
@@ -35,8 +43,8 @@ work.
 - Portable streaming JSON backup/restore for cells, sessions, GPS points, and discoveries.
 - Backward-compatible import of legacy 0.4.x cell-only JSON exports.
 - Adaptive Fog of War with exact res-13 reveal geometry at normal street zoom.
-- Coarser H3 overview rendering only when zooming out, bounded to the visible
-  viewport for predictable performance.
+- Exact H3 resolution 13 visited geometry at all zoom levels, bounded to the
+  visible viewport for predictable performance.
 - Persistent Fog of War on/off switch.
 - Incremental on-screen H3 updates while tracking instead of reloading the entire
   visited-cell table for each newly explored cell.
