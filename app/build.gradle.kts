@@ -19,6 +19,13 @@ val hasReleaseSigning =
     !releaseKeyAlias.isNullOrBlank() &&
     !releaseKeyPassword.isNullOrBlank()
 
+// Every tested source revision gets a visible dev build identity, while the
+// integer versionCode increases across user-distributed development builds.
+val devRevision = System.getenv("GITHUB_SHA")
+    ?.take(8)
+    ?.lowercase()
+    ?: "local"
+
 val requireReleaseSigning =
     signingValue("ROAMGLYPH_REQUIRE_KEYSTORE")?.lowercase() in setOf("1", "true", "yes")
 
@@ -43,8 +50,8 @@ android {
         applicationId = "com.sensareth.roamglyph"
         minSdk = 29
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.5.0"
+        versionCode = 16
+        versionName = "0.5.0-dev.16+g$devRevision"
 
         javaCompileOptions {
             annotationProcessorOptions {
