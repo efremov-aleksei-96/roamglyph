@@ -73,6 +73,7 @@ public final class FogOverlayView extends View {
     private volatile int coverageEpoch = 1;
     private volatile Set<FogWorldTileScheme.Key> wanted = Collections.emptySet();
     private List<FogWorldTileScheme.Key> visible = Collections.emptyList();
+    private volatile float latestRasterDemand = 1.0f;
     private int requestedZoom = -1;
     private int displayZoom = -1;
     private long lastDemandAt;
@@ -343,6 +344,7 @@ public final class FogOverlayView extends View {
             // rather than silently dropping on-screen geography or OOMing.
             float rasterScale =
                     FogWorldTileScheme.rasterScaleForVisibleTiles(newVisible.size());
+            latestRasterDemand = rasterScale;
             // Resizing or rotating can raise the number of visible tiles.
             // Previously cached full-resolution bitmaps must shrink with
             // the new generation; otherwise mixed scales break the byte
@@ -509,6 +511,19 @@ public final class FogOverlayView extends View {
         }
         cacheBytes += tile.bytes();
         trimCacheToBudget();
+        // A low-scale job can have been queued BEFORE the camera returned
+        // to a smaller viewport. pending.add() then suppressed a sharper
+        // request. Install the conservative older bitmap now, but schedule
+        // one newer replacement without waiting for another user gesture.
+        // Comparing the original job budget avoids retry loops when memory
+        // pressure makes the desired scale physically unattainable.
+        float desired = latestRasterDemand;
+        if (tile.mipmaps.length > 0 && wanted.contains(job.key)
+                && job.rasterScale < desired * 0.78f
+                && pending.add(job.key)) {
+            jobs.add(new TileJob(job.key, job.epoch, desired));
+            startWorker();
+        }
         invalidate();
     }
 
