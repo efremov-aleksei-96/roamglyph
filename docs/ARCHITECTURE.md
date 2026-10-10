@@ -49,7 +49,9 @@ coverage index.
 Explored polygon contours are projected only on the viewport worker's
 geometry updates. Closed-ring Douglas-Peucker removes minor H3 staircase
 zigzags from the DISPLAY path while keeping longer straight edges; short
-quadratic arcs round major bends. Crucially, both the smoothed silhouette and
+quadratic arcs round major bends. A solitary regular hexagon is presented
+as a fully inscribed circular island rather than as a pseudo-hexagon, and
+the gradient width is bounded so a one-cell trail keeps a clear center. Crucially, both the smoothed silhouette and
 the five progressively darker inward border bands are clipped to the
 original exact resolution-13 H3 footprint. No simplification changes stored
 visited cells, and no unknown region becomes transparent.
