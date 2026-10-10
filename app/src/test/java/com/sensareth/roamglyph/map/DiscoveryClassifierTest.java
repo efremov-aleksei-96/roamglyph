@@ -38,6 +38,59 @@ public class DiscoveryClassifierTest {
     }
 
     @Test
+    public void acceptsArchitectureHistoryAndInformation() {
+        assertEquals(
+                "architecture",
+                DiscoveryClassifier.classify(
+                        "town_hall",
+                        "townhall",
+                        "City Hall",
+                        5
+                ).category
+        );
+        assertEquals(
+                "history",
+                DiscoveryClassifier.classify(
+                        "cemetery",
+                        "cemetery",
+                        "Old Cemetery",
+                        8
+                ).category
+        );
+        assertEquals(
+                "information",
+                DiscoveryClassifier.classify(
+                        "information",
+                        "guidepost",
+                        null,
+                        12
+                ).category
+        );
+    }
+
+    @Test
+    public void acceptsArtsCentreAndCinema() {
+        assertEquals(
+                "culture",
+                DiscoveryClassifier.classify(
+                        "arts_centre",
+                        "arts_centre",
+                        "Arts Centre",
+                        6
+                ).category
+        );
+        assertEquals(
+                "culture",
+                DiscoveryClassifier.classify(
+                        "cinema",
+                        "cinema",
+                        "Cinema",
+                        6
+                ).category
+        );
+    }
+
+    @Test
     public void genericParkRequiresAName() {
         assertNull(DiscoveryClassifier.classify("park", "park", null, 1));
         assertEquals(
