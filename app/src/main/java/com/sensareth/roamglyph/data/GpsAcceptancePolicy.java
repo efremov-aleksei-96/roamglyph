@@ -26,14 +26,20 @@ public final class GpsAcceptancePolicy {
             return "invalid_coordinate";
         }
 
-        if (Float.isFinite(accuracyM) && accuracyM > MAX_ACCEPTED_ACCURACY_M) {
+        // A location without a usable horizontal accuracy estimate must not reveal
+        // new H3 cells. Android returns 0 when Location.hasAccuracy() is false.
+        if (!Float.isFinite(accuracyM)
+                || accuracyM <= 0f
+                || accuracyM > MAX_ACCEPTED_ACCURACY_M) {
             return "accuracy";
         }
 
         if (previousAccepted == null) return null;
 
+        // Network/GPS callbacks may arrive out of order. Ignore stale or
+        // duplicate timestamps rather than adding phantom distance and cells.
         long elapsedMs = timestampMs - previousAccepted.timestampMs;
-        if (elapsedMs <= 0L) return null;
+        if (elapsedMs <= 0L) return "stale";
 
         double distanceM = distanceMeters(
                 previousAccepted.latitude,
