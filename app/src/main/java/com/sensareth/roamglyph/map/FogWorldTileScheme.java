@@ -89,6 +89,23 @@ public final class FogWorldTileScheme {
         return Math.max(0, Math.min(20, (int) Math.round(zoom)));
     }
 
+    /**
+     * Camera-centred, well-conditioned Mercator origin for a shared screen
+     * projection. Stay within legal tile bounds on both sides of the anchor;
+     * avoid projecting across the +/-180 longitude wrap.
+     */
+    public static Key projectionAnchor(double lat, double lon, int zoom) {
+        if (zoom < 1 || zoom > 20 || !Double.isFinite(lat)
+                || !Double.isFinite(lon) || Math.abs(lat) > MAX_LAT
+                || lon < -180.0 || lon > 180.0) return null;
+        int lastAnchor = (1 << zoom) - 2;
+        int x = Math.max(0, Math.min(lastAnchor,
+                (int) Math.floor(longitudeX(lon, zoom) / TILE_PX)));
+        int y = Math.max(0, Math.min(lastAnchor,
+                (int) Math.floor(latitudeY(lat, zoom) / TILE_PX)));
+        return new Key(zoom, x, y);
+    }
+
     public static double longitudeX(double longitude, int zoom) {
         return (longitude + 180.0) / 360.0 * TILE_PX * (1 << zoom);
     }
