@@ -46,25 +46,32 @@ and reloads the complete explored set only at lifecycle/restore boundaries. Duri
 active tracking, newly inserted H3 IDs are broadcast incrementally to the visible
 coverage index.
 
-Fog rendering is serialized on a dedicated worker. MapLibre begins with a
-world-covering dark mask rather than an empty GeoJSON source, eliminating
-the exposure of unexplored map tiles while the viewport changes. As the map
-moves, already rendered cutouts remain geographically anchored until the next
-mask arrives.
+### Exact-coverage, screen-space Fog of War
 
-Explored areas are merged into contiguous H3 outlines and cut as transparent
-holes in the dark mask. Two larger H3 neighbourhoods form progressively darker
-transition bands around explored territory. There are no individual hex-tile
-outlines or uniform green overlays. The renderer keeps exact resolution-13
-cells until their projected diameter falls below approximately one map pixel,
-then chooses the smallest H3 parent that is still visible. A 0.1-degree indexed
-spatial lookup selects explored cells from padded viewport bounds rather than
-polyfilling every unknown candidate. A hard per-pass limit may force a coarser
-view-only resolution to avoid pathological native triangulation costs. No
-rendering operation modifies recorded H3 history.
+Fog is composited by a full-screen transparent Android View above the
+MapLibre map, not by a viewport-clipped global GeoJSON fill. The View draws
+a dark screen-sized mask every frame and cuts out only actual explored
+resolution-13 H3 geographic polygons, reprojected using the *current* map
+camera. The opaque baseline exists before history loads, during map motion,
+and while the overlay worker is busy: no uncovered strip can arise at a
+viewport or vector-tile boundary.
 
-At polar or antimeridian extremes, failed/incompatible geometry is handled
-conservatively by keeping those areas dark rather than exposing unknown places.
+The overlay worker queries a 0.1-degree spatial index for exact res-13 cells
+near the viewport, then merges their edges into connected H3 multipolygons.
+**No parent aggregation or zoom-based area enlargement is allowed.** A
+subpixel visited footprint is drawn with ordinary Android anti-aliasing
+rather than expanded to an entire parent hexagon. Visible gradients are
+screen-space strokes that darken the edge of visited territory; they never
+subtract more area from the black mask. Rounded line joins visually soften
+tiny H3 corners. During fast motion an uncached visited area may briefly
+remain dark until its exact geometry arrives, but unknown land stays dark.
+
+The renderer caps its native H3 polygon union at 20,000 exact cells per
+viewport. Exceeding that safety limit is conservatively rendered dark,
+never replaced by larger fake visited regions. This high-density fallback
+requires physical performance testing; future optimization can use exact
+tile-based raster masks without changing the permanent user history.
+The old nested H3-gradient-band GeoJSON sources have been removed.
 
 ## Storage model
 
