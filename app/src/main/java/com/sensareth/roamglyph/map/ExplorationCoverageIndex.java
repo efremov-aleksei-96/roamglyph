@@ -200,7 +200,6 @@ public final class ExplorationCoverageIndex {
     private void trimCache() {
         while (parentCache.size() > MAX_CACHED_RESOLUTIONS) {
             Iterator<Map.Entry<Integer, Set<String>>> it = parentCache.entrySet().iterator();
-            it.next();
             Map.Entry<Integer, Set<String>> oldest = it.next();
             // Evict only an LRU parent entry and its dependent spatial index.
             int resolution = oldest.getKey();
