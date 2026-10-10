@@ -12,6 +12,7 @@
 - Straightens short H3 zigzags on long explored borders using closed-ring
   line simplification, then rounds corners without falsely revealing
   any unknown area outside the original exact res-13 coverage.
+  Single isolated H3 cells appear as inscribed circles rather than hexagons.
 - Restored five visible inward fog gradation levels of progressively
   greater darkness along curved contours.
 - No migration or change to persisted GPS, H3, discoveries or backups.
