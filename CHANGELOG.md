@@ -9,7 +9,10 @@
   cell opens, including while the cached mask is zoomed or panned.
 - Build masks off the main thread with one coalesced latest-viewport task.
   Keep the previous validated fog snapshot until the new mask is ready;
-  cap temporary pixels to avoid extreme high-DPI allocations.
+  cancel detached-view work and cap raster pixels even on huge displays.
+- Precompute area-filtered 2× mip levels so thin explored traces do not
+  flicker or vanish from bilinear-only sampling during rapid zoom-out.
+  At wide zoom, adapt feather width down to the scale of real H3 pixels.
 - Add unit tests for boundary safety, interior gradation, and narrow paths.
 - Still requires visual and performance validation on a physical phone.
 - Exploration data, history and JSON backup format are unchanged.
