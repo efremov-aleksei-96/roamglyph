@@ -493,6 +493,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         map = mapLibreMap;
         fogOverlayView.attachMap(map);
         if (h3 != null) fogOverlayView.attachCoverage(h3, coverageIndex);
+        fogOverlayView.attachGpsRepository(repository);
 
         map.addOnCameraMoveListener(() -> {
             // Existing world tiles move synchronously with MapLibre;
