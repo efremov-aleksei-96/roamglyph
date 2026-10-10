@@ -10,6 +10,7 @@ import android.content.pm.PackageManager;
 import android.content.pm.PackageInfo;
 import android.graphics.Color;
 import android.graphics.PointF;
+import android.graphics.RectF;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.location.Location;
@@ -1530,14 +1531,34 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         if (map == null || map.getStyle() == null) return false;
 
         PointF screenPoint = map.getProjection().toScreenLocation(point);
+        float touchRadius = dp(15);
         List<Feature> features = map.queryRenderedFeatures(
-                screenPoint,
+                new RectF(
+                        screenPoint.x - touchRadius, screenPoint.y - touchRadius,
+                        screenPoint.x + touchRadius, screenPoint.y + touchRadius),
                 DISCOVERED_LAYER_ID,
                 DISCOVERY_HINT_LAYER_ID
         );
-        if (features.isEmpty()) return false;
-
-        Feature feature = features.get(0);
+        // The visible emoji disc is 13.5 dp across its radius while the
+        // MapLibre hit layer is smaller. Match the touch area to the actual
+        // emoji icon, and prefer the closest place when several overlap.
+        Feature feature = null;
+        float closestDistanceSquared = touchRadius * touchRadius;
+        for (Feature candidate : features) {
+            if (!(candidate.geometry() instanceof Point)) continue;
+            Point poi = (Point) candidate.geometry();
+            PointF screen = map.getProjection().toScreenLocation(
+                    new org.maplibre.android.geometry.LatLng(
+                            poi.latitude(), poi.longitude()));
+            float dx = screen.x - screenPoint.x;
+            float dy = screen.y - screenPoint.y;
+            float distanceSquared = dx * dx + dy * dy;
+            if (distanceSquared <= closestDistanceSquared) {
+                feature = candidate;
+                closestDistanceSquared = distanceSquared;
+            }
+        }
+        if (feature == null) return false;
         String state = feature.getStringProperty("state");
 
         if ("discovered".equals(state)) {
