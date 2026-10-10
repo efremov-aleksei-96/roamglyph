@@ -1,5 +1,13 @@
 ROAMGLYPH · WHAT'S NEW
 
+0.5.0-dev.16 — TEST BUILD (2026-10-10)
+
+• Every test APK has an identifiable dev version and source revision.
+• Explored trails remain visible while zooming: vector outlines replace the old raster mask that went dark during zoom-in.
+• Straightened long H3 zigzags with smooth curved bends, limited to true visited territory.
+• Restored five distinct shades of fog along the visited border.
+• GPS, discoveries, Room data and backup format remain unchanged.
+
 0.5.0 — DEVELOPMENT VERSION (NOT YET RELEASED)
 
 EXPLORATION
