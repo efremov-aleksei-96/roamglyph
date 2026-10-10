@@ -85,12 +85,15 @@ public final class FogOverlayView extends View {
         mask.addRect(0, 0, getWidth(), getHeight(), Path.Direction.CW);
 
         Path outlines = new Path();
+        Path explored = new Path();
+        explored.setFillType(Path.FillType.EVEN_ODD);
         try {
             for (List<List<LatLng>> polygon : polygons) {
                 for (List<LatLng> ring : polygon) {
                     if (ring.size() < 3) continue;
                     Path projected = projectRing(ring);
                     mask.addPath(projected);
+                    explored.addPath(projected);
                     outlines.addPath(projected);
                 }
             }
@@ -123,12 +126,18 @@ public final class FogOverlayView extends View {
         // outside it. At city zoom a cell may be smaller than one pixel.
         float maxWidthPx = Math.max(0.4f, Math.min(4.0f * density,
                 0.38f * cellDiameterPx));
-        int passes = cellDiameterPx >= 1.0f ? 8 : 2;
+        int passes = cellDiameterPx >= 1.0f ? 12 : 3;
+        canvas.save();
+        // Apply the entire darkening gradient INSIDE explored polygons only.
+        // The final ~200/255 opacity at the contour matches the outer fog
+        // (~210/255); there is no bright jump and no revealed fringe outside.
+        canvas.clipPath(explored);
         for (int pass = passes; pass >= 1; pass--) {
             edgePaint.setStrokeWidth(maxWidthPx * pass / passes);
-            edgePaint.setColor(Color.argb(12, 17, 20, 24));
+            edgePaint.setColor(Color.argb(passes == 12 ? 31 : 100, 17, 20, 24));
             canvas.drawPath(outlines, edgePaint);
         }
+        canvas.restore();
     }
 
     @NonNull
