@@ -15,6 +15,8 @@
   Single isolated H3 cells appear as inscribed circles rather than hexagons.
 - Restored five visible inward fog gradation levels of progressively
   greater darkness along curved contours.
+- Wide-zoom H3 budget overflow now preserves already rendered exact routes
+  instead of blanking them until the next viewport update.
 - No migration or change to persisted GPS, H3, discoveries or backups.
 
 ## 0.5.0 - unreleased
