@@ -215,6 +215,16 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     refreshVisitedFromDatabase();
                 }
             }
+            // Accepted fixes can extend a smooth route without adding a new
+            // H3 cell (e.g., cycling inside an already visited corridor).
+            // Refresh at a bounded cadence while preserving completed tiles.
+            if (accepted && intent.hasExtra(TrackingService.EXTRA_LAT)
+                    && intent.hasExtra(TrackingService.EXTRA_LNG)
+                    && !intent.getBooleanExtra(
+                            TrackingService.EXTRA_CELLS_CHANGED, false)
+                    && fogOverlayView != null) {
+                fogOverlayView.onAcceptedGpsPoint();
+            }
             updateUi(accepted);
         }
     };
@@ -492,8 +502,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     public void onMapReady(@NonNull MapLibreMap mapLibreMap) {
         map = mapLibreMap;
         fogOverlayView.attachMap(map);
-        if (h3 != null) fogOverlayView.attachCoverage(h3, coverageIndex);
+        // Install the GPS source BEFORE attachCoverage starts tile jobs.
         fogOverlayView.attachGpsRepository(repository);
+        if (h3 != null) fogOverlayView.attachCoverage(h3, coverageIndex);
 
         map.addOnCameraMoveListener(() -> {
             // Existing world tiles move synchronously with MapLibre;
@@ -1144,6 +1155,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 store.setDiscoveryCountCache(repository.countDiscoveries());
 
                 runOnUiThread(() -> {
+                    if (result.newGpsPoints > 0 && fogOverlayView != null) {
+                        // Imported GPS may be new even if the H3 set wasn't.
+                        fogOverlayView.onCoverageChanged(false);
+                    }
                     refreshVisitedFromDatabase();
                     requestDiscoveryScan();
                     Toast.makeText(
