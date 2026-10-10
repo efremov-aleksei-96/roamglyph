@@ -18,7 +18,10 @@ import androidx.room.PrimaryKey;
         ),
         indices = {
                 @Index("session_id"),
-                @Index(value = {"session_id", "timestamp_ms"})
+                @Index(value = {"session_id", "timestamp_ms"}),
+                @Index(value = {
+                        "accepted_for_exploration", "latitude", "longitude"
+                })
         }
 )
 public final class GpsPointEntity {

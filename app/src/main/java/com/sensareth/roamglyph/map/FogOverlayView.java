@@ -17,6 +17,8 @@ import android.view.View;
 import androidx.annotation.NonNull;
 
 import com.uber.h3core.H3Core;
+import com.sensareth.roamglyph.data.ExplorationRepository;
+import com.sensareth.roamglyph.data.GpsPointEntity;
 import com.uber.h3core.util.LatLng;
 
 import org.maplibre.android.maps.MapLibreMap;
@@ -68,6 +70,8 @@ public final class FogOverlayView extends View {
     private MapLibreMap map;
     private H3Core h3;
     private ExplorationCoverageIndex coverage;
+    private volatile ExplorationRepository gpsRepository;
+    private long lastGpsRefreshAt;
     private volatile boolean disposed;
     private volatile boolean enabled = true;
     private volatile int coverageEpoch = 1;
@@ -181,6 +185,23 @@ public final class FogOverlayView extends View {
         h3 = attachedH3;
         coverage = attachedCoverage;
         requestTiles(true);
+    }
+
+    /** All route-point reads run on the existing off-UI tile worker. */
+    public void attachGpsRepository(@NonNull ExplorationRepository repository) {
+        gpsRepository = repository;
+    }
+
+    /**
+     * GPS fixes sometimes add no new H3 cells. Refresh the local visual
+     * corridor periodically anyway, but do not start a multi-tile rebuild
+     * for every 2-second fix. Old cached tiles remain visible until ready.
+     */
+    public void onAcceptedGpsPoint() {
+        long now = SystemClock.uptimeMillis();
+        if (now - lastGpsRefreshAt < 15_000L) return;
+        lastGpsRefreshAt = now;
+        onCoverageChanged(false);
     }
 
     /** History updates are monotonic except when a backup resets coverage. */
@@ -474,8 +495,42 @@ public final class FogOverlayView extends View {
                 Math.cos(Math.toRadians(centerLat))
                 / (FogWorldTileScheme.TILE_PX * Math.pow(2, key.z));
         float diameter = (float) (8.2 / Math.max(0.000001, mpp));
+
+        // Smooth only genuinely accepted GPS trails. The actual storage
+        // remains the exact H3 set; this affects visual presentation only.
+        // If a tile lacks GPS history (legacy/import), retain H3 rendering.
+        Path smoothRoute = null;
+        if (gpsRepository != null && !cancelled(job)) {
+            try {
+                final int maxPoints = 2_500;
+                // Include predecessors/successors for any allowable 140m
+                // GPS join plus the 11m clear corridor and a safety margin.
+                // Longitude degrees are latitude-dependent, unlike lat.
+                final double latPad =
+                        GpsCorridorJoinPolicy.tileHaloLatitudeDegrees();
+                final double lngPad =
+                        GpsCorridorJoinPolicy.tileHaloLongitudeDegrees(centerLat);
+                List<GpsPointEntity> routePoints =
+                        gpsRepository.loadAcceptedGpsPointsInBounds(
+                                Math.max(-85.0, FogWorldTileScheme.south(key) - latPad),
+                                Math.min(85.0, FogWorldTileScheme.north(key) + latPad),
+                                Math.max(-180.0, FogWorldTileScheme.west(key) - lngPad),
+                                Math.min(180.0, FogWorldTileScheme.east(key) + lngPad),
+                                maxPoints + 1);
+                if (routePoints.size() <= maxPoints) {
+                    smoothRoute = FogGpsCorridorBuilder.build(
+                            routePoints, key, (float) mpp);
+                }
+            } catch (RuntimeException ignored) {
+                // No path points, old database, or query failure: use the
+                // existing H3 shape instead of losing visited coverage.
+                smoothRoute = null;
+            }
+        }
+        if (cancelled(job)) return null;
         Bitmap[] masks = FogRasterFeather.createPyramid(
-                exact, FogWorldTileScheme.TILE_PX, FogWorldTileScheme.TILE_PX,
+                exact, smoothRoute,
+                FogWorldTileScheme.TILE_PX, FogWorldTileScheme.TILE_PX,
                 diameter, density, () -> cancelled(job), job.rasterScale);
         if (cancelled(job)) {
             for (Bitmap bitmap : masks) bitmap.recycle();

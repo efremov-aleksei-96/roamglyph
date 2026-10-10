@@ -50,9 +50,23 @@ final class FogRasterFeather {
     static Bitmap[] createPyramid(Path exact, int viewWidth, int viewHeight,
                                   float cellDiameterPx, float density,
                                   BooleanSupplier cancelled, float maxScale) {
+        return createPyramid(exact, null, viewWidth, viewHeight,
+                cellDiameterPx, density, cancelled, maxScale);
+    }
+
+    /**
+     * routeFootprint is optional. When present its smooth GPS corridor
+     * replaces the jagged H3 display silhouette but is raster-clipped to
+     * exact stored H3 polygons, so no new terrain is ever revealed.
+     */
+    static Bitmap[] createPyramid(Path exact, Path routeFootprint,
+                                  int viewWidth, int viewHeight,
+                                  float cellDiameterPx, float density,
+                                  BooleanSupplier cancelled, float maxScale) {
         List<Bitmap> levels = new ArrayList<>();
         try {
-            Bitmap current = create(exact, viewWidth, viewHeight,
+            Bitmap current = create(exact, routeFootprint,
+                    viewWidth, viewHeight,
                     cellDiameterPx, density, cancelled, maxScale);
             if (current == null) return new Bitmap[0];
             levels.add(current);
@@ -88,6 +102,14 @@ final class FogRasterFeather {
     }
 
     static Bitmap create(Path exact, int viewWidth, int viewHeight,
+                         float cellDiameterPx, float density,
+                         BooleanSupplier cancelled, float maxScale) {
+        return create(exact, null, viewWidth, viewHeight,
+                cellDiameterPx, density, cancelled, maxScale);
+    }
+
+    static Bitmap create(Path exact, Path routeFootprint,
+                         int viewWidth, int viewHeight,
                          float cellDiameterPx, float density,
                          BooleanSupplier cancelled, float maxScale) {
         if (viewWidth <= 0 || viewHeight <= 0) return null;
@@ -145,13 +167,49 @@ final class FogRasterFeather {
             Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
             paint.setColor(Color.WHITE);
             paint.setStyle(Paint.Style.FILL);
-            canvas.drawPath(exact, paint);
+            int[] originalH3 = null;
+            int[] h3Feathered = null;
+            if (routeFootprint != null) {
+                // First preserve exact H3 source alpha and its normal
+                // conservative feather. This keeps unrelated imported or
+                // historical visits visible in a tile containing GPS too.
+                canvas.drawPath(exact, paint);
+                originalH3 = new int[workWidth * workHeight];
+                work.getPixels(originalH3, 0, workWidth, 0, 0,
+                        workWidth, workHeight);
+                h3Feathered = originalH3.clone();
+                FogSilhouetteField.renderInPlace(
+                        h3Feathered, workWidth, workHeight,
+                        blur, feather, cancelled);
+                checkCancelled(cancelled);
+                work.eraseColor(Color.TRANSPARENT);
+
+                // GPS shape is still constrained to exact H3 coverage
+                // in the SOURCE raster, not merely at the UI draw layer.
+                int clipped = canvas.save();
+                canvas.clipPath(exact);
+                canvas.drawPath(routeFootprint, paint);
+                canvas.restoreToCount(clipped);
+            } else {
+                canvas.drawPath(exact, paint);
+            }
 
             checkCancelled(cancelled);
             int[] pixels = new int[workWidth * workHeight];
-            work.getPixels(pixels, 0, workWidth, 0, 0, workWidth, workHeight);
+            work.getPixels(pixels, 0, workWidth, 0, 0,
+                    workWidth, workHeight);
+            int[] rawGps = routeFootprint == null ? null : pixels.clone();
             FogSilhouetteField.renderInPlace(
                     pixels, workWidth, workHeight, blur, feather, cancelled);
+            if (rawGps != null) {
+                // Near the actual GPS line, only the rounded corridor
+                // determines visibility. Separate H3 islands farther
+                // away keep their own fade. All results are min-clamped
+                // against original exact-H3 coverage.
+                FogGpsBlend.blend(originalH3, h3Feathered, pixels, rawGps,
+                        workWidth, workHeight,
+                        cellDiameterPx * (float) width / viewWidth, cancelled);
+            }
             checkCancelled(cancelled);
             work.setPixels(pixels, 0, workWidth, 0, 0,
                     workWidth, workHeight);

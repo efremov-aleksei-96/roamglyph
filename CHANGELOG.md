@@ -1,5 +1,37 @@
 # Changelog
 
+## 0.5.0-dev.22 — 2026-10-10 (experimental GPS shape test)
+
+- Preserve the geographic fog tile cache and exact H3-13 history from
+  dev.21, but change the VISUAL silhouette when accepted GPS samples exist.
+- Query accepted GPS fixes locally, grouped by tracking session/time; draw
+  round 11-meter-radius corridors and joins between nearby consecutive
+  fixes, producing smooth route edges rather than H3 cell-tooth outlines.
+- Clip each smooth GPS corridor INSIDE exact persisted H3 geography before
+  raster feathering, and retain the exact H3 vector clip during map drawing.
+  No interpolated stroke may reveal new terrain outside visited cells.
+- Preserve independent visited H3 islands in mixed GPS/import tiles:
+  the smooth GPS mask dominates only its local corridor; farther away
+  the normal exact H3 gradient returns. Both sources remain bounded by
+  the same authoritative H3 stencil.
+- Fall back entirely to existing H3 rendering when no GPS points are
+  available or a tile's bounded query is truncated/fails. Legacy,
+  imported history and JSON backup representation are unchanged.
+- Attach GPS repository before starting tile work. Rebuild local route
+  masks when accepted fixes appear inside already explored H3 cells
+  (throttled to 15 seconds), or a backup adds GPS without changing H3.
+- Regression tests reject jumps between sessions, long GPS outages,
+  large physical jumps and invalid fixes.
+- Physical QA required: compare the same real traveled street in dev.21
+  and dev.22 and check that all expected visited terrain is visible.
+- Add a **non-destructive Room v2→v3 index-only migration** for
+  accepted GPS latitude/longitude so per-tile local queries avoid
+  full-history table scans. No GPS points or H3 visits are rewritten.
+  Export JSON backup before testing: older dev.21 cannot automatically
+  open a database upgraded to v3 if you downgrade the APK.
+- No new permissions, network service, or account data.
+
+
 ## 0.5.0-dev.21 — 2026-10-10 (experimental test build)
 
 - Respond to physical-device reports of a rectangular hard cutout and
