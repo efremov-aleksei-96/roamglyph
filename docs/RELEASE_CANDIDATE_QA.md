@@ -37,14 +37,14 @@ matrix or exact restored counts. Those remain required below.
 | Bicycle | Ride at varying speeds, including hill climbs | Reasonable route with no systematic false reveals |
 | Accuracy | Temporarily obstruct GPS / go indoors | Poor fixes do not produce remote clusters |
 | Location toggle | Disable Android Location; re-enable later | UI shows `Location disabled`, then resumes |
-| Fog | Throw/pan/zoom rapidly near explored and unexplored cells | The screen-space dark mask covers all unknown geography with no uncovered strip or flash; visited polygons stay geographically registered |
+| Fog | Throw/pan/zoom rapidly near explored and unexplored cells | Geographic fog tiles track the basemap synchronously; no rectangular cutout from the former viewport image, no false reveal, and no conspicuous tile seams |
 | Zoom accuracy | Compare a thin discovered trail at street/city/country zoom | Never expand partial H3 parents; visited area gets smaller in screen pixels as expected and can become subpixel |
 | Screen-space edge smoothing | Inspect boundaries including sparse isolated visited areas | Supersampled, softly fading cutouts without conspicuous hexagonal sawteeth; narrow routes remain visible |
 | Rounded silhouette | Inspect isolated explored H3 cells and long connected trails while zooming | Corners visibly curved, not just blurred straight hex edges; no unvisited area opens |
 | Zigzag simplification | Inspect long cycle paths at street and overview zoom | Unneeded hex sawteeth straightened with curved bends; true visited area is not exaggerated |
 | Smoothed occupancy silhouette | Compare the same visited junction on dev.19 and dev.20 at identical map zoom | H3 corners do not form a repeating sawtooth outline; broad areas have a clearly visible smooth multi-pixel inward gradient, and thin routes remain distinguishable without outward reveal |
 | Continuous pinch zoom | Pinch rapidly both in and out repeatedly around an explored route | Cached inward-feather mask follows actual map coordinates, never reveals beyond the exact H3 footprint, and never exposes a lateral strip |
-| APK version identity | Inspect installed About screen and APK filename | Distinct 0.5.0-dev.20+g&lt;commit&gt; displayed; downloadable artifact filename contains same commit |
+| APK version identity | Inspect installed About screen and APK filename | Distinct 0.5.0-dev.21+g&lt;commit&gt; displayed; downloadable artifact filename contains same commit |
 | Check for updates dialog | Tap ⋮ → Check for updates, then repeat from Version & Changelog | Installed dev.18 version in title and both clickable website choices (not just a text-only message) |
 | Update destinations | Select each website choice with internet | Official releases link opens GitHub Releases; test builds link opens main-branch Android CI runs, which contain downloadable development APKs under Artifacts; no auto-install |
 | Discovery emoji | Inspect museum, nature, landmark and hint POIs | Category-specific emojis visible above fog, tappable POI details preserved; icons also visible with Fog off |
