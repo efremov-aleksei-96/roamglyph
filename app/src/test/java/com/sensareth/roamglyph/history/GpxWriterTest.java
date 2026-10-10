@@ -47,7 +47,7 @@ public class GpxWriterTest {
     public void filtersInvalidXmlCharactersInTrackName() throws Exception {
         ByteArrayOutputStream output = new ByteArrayOutputStream();
         try (GpxWriter writer = new GpxWriter(
-                output, "Ride & " + '\u0001' + "<test>" + '\uD800', 1_000L
+                output, "Ride & " + (char) 1 + "<test>" + (char) 0xD800, 1_000L
         )) {
             writer.append(point("p1", 1_000L, 40.18, 44.51, true));
         }
