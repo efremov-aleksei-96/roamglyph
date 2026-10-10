@@ -246,6 +246,11 @@ public final class ExplorationRepository {
                 ? location.getTime()
                 : System.currentTimeMillis();
         float accuracyM = location.hasAccuracy() ? location.getAccuracy() : 0f;
+        // Keep rejected fixes JSON-backup-safe even if a provider reports NaN
+        // or a negative accuracy value. Zero means accuracy unavailable.
+        if (!Float.isFinite(accuracyM) || accuracyM < 0f) {
+            accuracyM = 0f;
+        }
 
         GpsPointEntity previous = dao.getLatestAcceptedPoint(sessionId);
         String rejectionReason = GpsAcceptancePolicy.rejectionReason(
