@@ -345,7 +345,15 @@ public final class FogOverlayView extends View {
             trimCacheToBudget();
             for (FogWorldTileScheme.Key key : prioritized) {
                 Tile current = cache.get(key);
-                if ((current == null || current.epoch != epoch) && pending.add(key)) {
+                // Zooming back into a normal-size viewport can restore a
+                // higher raster budget after visible mipmaps were coarsened.
+                // Rebuild such cells asynchronously; retain the old tile
+                // until the sharper replacement is ready.
+                boolean undersampled = current != null
+                        && current.mipmaps.length > 0
+                        && current.effectiveScale() < rasterScale * 0.78f;
+                if ((current == null || current.epoch != epoch || undersampled)
+                        && pending.add(key)) {
                     jobs.add(new TileJob(key, epoch, rasterScale));
                 }
             }
@@ -568,26 +576,28 @@ public final class FogOverlayView extends View {
             if (ready) displayZoom = requestedZoom;
         }
         try {
-            // O(visible tiles), not O(entire LRU). The view may hold hundreds
-            // of geographic tiles from earlier locations or zoom levels,
-            // but only tiles intersecting the *current* camera are projected.
+            // Enumerate EXISTING resident geographic tiles rather than
+            // enumerating (and inadvertently truncating) a capped list
+            // of old-grid keys. A cached explored road at an outer edge
+            // must remain visible during even a very large zoom handoff.
             org.maplibre.android.geometry.LatLngBounds b =
                     map.getProjection().getVisibleRegion().latLngBounds;
-            List<FogWorldTileScheme.Key> screenKeys =
-                    FogWorldTileScheme.covering(
-                            b.getLatNorth(), b.getLonEast(),
-                            b.getLatSouth(), b.getLonWest(),
-                            displayZoom, 0, 512);
             double currentZoom = map.getCameraPosition().zoom;
-            for (FogWorldTileScheme.Key key : screenKeys) {
-                Tile tile = cache.get(key);
-                if (tile == null || tile.mipmaps.length == 0) continue;
-                if (!tileTransform(key)) continue;
+            for (Tile tile : cache.values()) {
+                if (tile.key.z != displayZoom || tile.mipmaps.length == 0) continue;
+                if (!FogWorldTileScheme.intersectsBounds(tile.key,
+                        b.getLatNorth(), b.getLonEast(),
+                        b.getLatSouth(), b.getLonWest())) continue;
+                if (!tileTransform(tile.key)) continue;
                 int saved = canvas.save();
                 canvas.concat(tileMatrix);
                 canvas.clipPath(tile.exactPath);
+                // The first retained mip may itself already be a 0.5x or
+                // 0.25x area-filtered level. Subtract that level offset,
+                // otherwise zoom-out minification is applied twice.
                 int level = FogMipLevel.forZoomDelta(
-                        key.z - currentZoom, tile.mipmaps.length);
+                        tile.key.z - currentZoom, tile.effectiveScale(),
+                        tile.mipmaps.length);
                 canvas.drawBitmap(tile.mipmaps[level], null,
                         new RectF(0, 0, FogWorldTileScheme.TILE_PX,
                                 FogWorldTileScheme.TILE_PX), cutoutPaint);
