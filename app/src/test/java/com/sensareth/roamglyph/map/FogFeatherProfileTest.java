@@ -69,6 +69,16 @@ public class FogFeatherProfileTest {
     }
 
     @Test
+    public void twoRasterPixelTrailSurvivesCityZoom() {
+        // Codex review reproduction: 2x supersampled trail occupies only
+        // ~2 raster pixels, with a 3px box blur and a 4px inward feather.
+        int alpha = FogFeatherProfile.cutoutAlpha(255, 73, 3, 4);
+        assertTrue("A real one-screen-pixel trail must remain legible",
+                alpha >= 35);
+        assertEquals(0, FogFeatherProfile.cutoutAlpha(0, 73, 3, 4));
+    }
+
+    @Test
     public void oneCellWideCorridorKeepsVisibleCenterDuringBroadFade() {
         int middle = FogFeatherProfile.cutoutAlpha(255, 105, 30, 38);
         int edge = FogFeatherProfile.cutoutAlpha(255, 105, 3, 38);
