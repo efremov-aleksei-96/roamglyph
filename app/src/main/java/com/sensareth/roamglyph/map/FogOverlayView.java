@@ -115,7 +115,7 @@ public final class FogOverlayView extends View {
     private static final class Tile {
         final FogWorldTileScheme.Key key;
         final Path exactPath;
-        final Bitmap[] mipmaps;
+        Bitmap[] mipmaps;
         final int epoch;
 
         Tile(FogWorldTileScheme.Key key, Path exactPath,
@@ -124,6 +124,22 @@ public final class FogOverlayView extends View {
             this.exactPath = exactPath;
             this.mipmaps = mipmaps;
             this.epoch = epoch;
+        }
+
+        /** Drop the highest-res bitmap, retaining its already area-filtered mip. */
+        boolean reduceOneLevel() {
+            if (mipmaps.length <= 1) return false;
+            Bitmap old = mipmaps[0];
+            Bitmap[] remaining = new Bitmap[mipmaps.length - 1];
+            System.arraycopy(mipmaps, 1, remaining, 0, remaining.length);
+            mipmaps = remaining;
+            old.recycle();
+            return true;
+        }
+
+        float effectiveScale() {
+            return mipmaps.length == 0 ? 0f
+                    : mipmaps[0].getWidth() / (float) FogWorldTileScheme.TILE_PX;
         }
 
         long bytes() {
@@ -300,8 +316,10 @@ public final class FogOverlayView extends View {
             // during a transition. Halo tiles may be evicted first.
             Set<FogWorldTileScheme.Key> keep = new HashSet<>(newVisible);
             if (displayZoom >= 0 && displayZoom != requestedZoom) {
+                // Pin the COMPLETE previously displayed zoom, not just
+                // 32 keys: otherwise a large tablet loses old tiles mid-handoff.
                 keep.addAll(FogWorldTileScheme.covering(
-                        north, east, south, west, displayZoom, 0, MAX_DEMAND));
+                        north, east, south, west, displayZoom, 0, MAX_VISIBLE));
             }
             pinned = keep;
 
@@ -314,6 +332,12 @@ public final class FogOverlayView extends View {
             // rather than silently dropping on-screen geography or OOMing.
             float rasterScale =
                     FogWorldTileScheme.rasterScaleForVisibleTiles(newVisible.size());
+            // Resizing or rotating can raise the number of visible tiles.
+            // Previously cached full-resolution bitmaps must shrink with
+            // the new generation; otherwise mixed scales break the byte
+            // budget and lead to eviction of visible content.
+            coarsenCachedTilesTo(rasterScale);
+            trimCacheToBudget();
             for (FogWorldTileScheme.Key key : prioritized) {
                 Tile current = cache.get(key);
                 if ((current == null || current.epoch != epoch) && pending.add(key)) {
@@ -464,26 +488,51 @@ public final class FogOverlayView extends View {
         invalidate();
     }
 
+    private void coarsenCachedTilesTo(float targetScale) {
+        for (Tile tile : cache.values()) {
+            // A tile that is already area-minified does not need a new H3
+            // union; its next mipmap is the same source-alpha-bounded field.
+            while (tile.effectiveScale() > targetScale * 1.1f
+                    && tile.mipmaps.length > 1) {
+                long oldSize = tile.bytes();
+                if (!tile.reduceOneLevel()) break;
+                cacheBytes -= oldSize - tile.bytes();
+            }
+        }
+    }
+
     private void trimCacheToBudget() {
-        // Never make the visible route disappear just to retain prefetch
-        // tiles. The rasterization cap is set so two camera generations
-        // of truly visible tile bitmaps usually fit together.
+        // First discard off-camera tiles; never evict visible ones because
+        // the zoom handoff requires every visible tile to be resident.
         while ((cache.size() > MAX_CACHE || cacheBytes > MAX_CACHE_BYTES)
                 && !cache.isEmpty()) {
             FogWorldTileScheme.Key victim = null;
             for (FogWorldTileScheme.Key key : cache.keySet()) {
                 if (!pinned.contains(key)) { victim = key; break; }
             }
-            if (victim == null) {
-                // A device with an unusually huge viewport may exceed
-                // the budget even with visible-only tiles: bound memory.
-                victim = cache.keySet().iterator().next();
+            if (victim != null) {
+                Tile removed = cache.remove(victim);
+                if (removed != null) {
+                    cacheBytes -= removed.bytes();
+                    removed.recycle();
+                }
+                continue;
             }
-            Tile removed = cache.remove(victim);
-            if (removed != null) {
-                cacheBytes -= removed.bytes();
-                removed.recycle();
+
+            // If two very large visible generations alone exceed the byte
+            // budget, lower their already-filtered raster resolution.
+            // Preserve all their geographic extents and exact vector clips.
+            Tile largest = null;
+            for (Tile tile : cache.values()) {
+                if (tile.mipmaps.length > 1 &&
+                        (largest == null || tile.bytes() > largest.bytes())) {
+                    largest = tile;
+                }
             }
+            if (largest == null) break; // all tiles already minimum resolution
+            long before = largest.bytes();
+            largest.reduceOneLevel();
+            cacheBytes -= before - largest.bytes();
         }
     }
 
