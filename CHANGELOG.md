@@ -10,9 +10,13 @@
 - Clip each smooth GPS corridor INSIDE exact persisted H3 geography before
   raster feathering, and retain the exact H3 vector clip during map drawing.
   No interpolated stroke may reveal new terrain outside visited cells.
-- Fall back to existing H3 silhouette when no GPS points are available,
-  or a tile's bounded query is truncated/fails; legacy and imported
-  visited history and JSON backup representation remain unchanged.
+- Preserve independent visited H3 islands in mixed GPS/import tiles:
+  the smooth GPS mask dominates only its local corridor; farther away
+  the normal exact H3 gradient returns. Both sources remain bounded by
+  the same authoritative H3 stencil.
+- Fall back entirely to existing H3 rendering when no GPS points are
+  available or a tile's bounded query is truncated/fails. Legacy,
+  imported history and JSON backup representation are unchanged.
 - Regression tests reject jumps between sessions, long GPS outages,
   large physical jumps and invalid fixes.
 - Physical QA required: compare the same real traveled street in dev.21
