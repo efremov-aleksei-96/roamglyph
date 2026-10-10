@@ -37,6 +37,9 @@ public final class FogGpsCorridorBuilder {
                 || diameterMetersPerPixel <= 0) return null;
 
         float radius = (float) (ROUTE_RADIUS_M / diameterMetersPerPixel);
+        // At high zoom 190m is far more than 512 world pixels.
+        // Keep all queried join endpoints even when off tile.
+        float haloPixels = Math.max(512f, 190f / diameterMetersPerPixel);
         Path path = new Path();
         Path centerline = new Path();
         GpsPointEntity previous = null;
@@ -49,8 +52,8 @@ public final class FogGpsCorridorBuilder {
             float x = FogWorldTileScheme.localX(point.longitude, key);
             float y = FogWorldTileScheme.localY(point.latitude, key);
             if (!Float.isFinite(x) || !Float.isFinite(y)) continue;
-            if (x < -512 || x > FogWorldTileScheme.TILE_PX + 512
-                    || y < -512 || y > FogWorldTileScheme.TILE_PX + 512) {
+            if (x < -haloPixels || x > FogWorldTileScheme.TILE_PX + haloPixels
+                    || y < -haloPixels || y > FogWorldTileScheme.TILE_PX + haloPixels) {
                 previous = null;
                 continue;
             }
