@@ -2,6 +2,7 @@ package com.sensareth.roamglyph.data;
 
 import android.content.Context;
 import android.location.Location;
+import android.os.SystemClock;
 
 import com.sensareth.roamglyph.VisitedStore;
 
@@ -21,6 +22,8 @@ public final class ExplorationRepository {
 
     private final RoamglyphDatabase database;
     private final ExplorationDao dao;
+    private long lastAcceptedElapsedNanos;
+    @Nullable private String lastAcceptedSessionId;
 
     public ExplorationRepository(Context context) {
         database = RoamglyphDatabase.get(context);
@@ -253,7 +256,15 @@ public final class ExplorationRepository {
         }
 
         GpsPointEntity previous = dao.getLatestAcceptedPoint(sessionId);
-        String rejectionReason = GpsAcceptancePolicy.rejectionReason(
+        long fixElapsedNanos = location.getElapsedRealtimeNanos();
+        long previousElapsedNanos = sessionId.equals(lastAcceptedSessionId)
+                ? lastAcceptedElapsedNanos
+                : 0L;
+        String rejectionReason = GpsAcceptancePolicy.isStaleFix(
+                fixElapsedNanos,
+                SystemClock.elapsedRealtimeNanos(),
+                previousElapsedNanos
+        ) ? "stale" : GpsAcceptancePolicy.rejectionReason(
                 timestampMs,
                 location.getLatitude(),
                 location.getLongitude(),
@@ -306,7 +317,8 @@ public final class ExplorationRepository {
         }
 
         double distanceDeltaM = 0.0;
-        if (previous != null) {
+        // A wall-clock rollback must not inflate the persisted distance.
+        if (previous != null && timestampMs > previous.timestampMs) {
             distanceDeltaM = GpsAcceptancePolicy.distanceMeters(
                     previous.latitude,
                     previous.longitude,
@@ -337,6 +349,9 @@ public final class ExplorationRepository {
                     inserted
             );
         });
+
+        lastAcceptedSessionId = sessionId;
+        lastAcceptedElapsedNanos = fixElapsedNanos;
 
         return new TrackingResult(
                 true,
