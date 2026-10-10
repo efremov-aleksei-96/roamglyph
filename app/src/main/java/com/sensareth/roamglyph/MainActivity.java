@@ -1747,6 +1747,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     @Override
     public void onLowMemory() {
         super.onLowMemory();
+        if (fogOverlayView != null) fogOverlayView.trimForLowMemory();
         mapView.onLowMemory();
     }
 
