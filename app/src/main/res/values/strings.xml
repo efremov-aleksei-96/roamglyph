@@ -3,6 +3,8 @@
     <string name="menu_description">Menu</string>
     <string name="tracking_button_description">Start or stop exploration</string>
     <string name="locate_button_description">Show my location</string>
+    <string name="zoom_in_description">Zoom in</string>
+    <string name="zoom_out_description">Zoom out</string>
 
     <string name="menu_export_history">Export backup</string>
     <string name="menu_import_history">Import backup</string>
