@@ -366,7 +366,7 @@ public final class FogOverlayView extends View {
         float diameter = (float) (8.2 / Math.max(0.000001, mpp));
         Bitmap[] masks = FogRasterFeather.createPyramid(
                 exact, FogWorldTileScheme.TILE_PX, FogWorldTileScheme.TILE_PX,
-                diameter, density, () -> cancelled(work));
+                diameter, density, () -> cancelled(job));
         if (cancelled(job)) {
             for (Bitmap bitmap : masks) bitmap.recycle();
             return null;
