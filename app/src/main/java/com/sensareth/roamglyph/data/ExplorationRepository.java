@@ -46,6 +46,14 @@ public final class ExplorationRepository {
         return dao.loadGpsPoints();
     }
 
+    /** Tile worker only; bounded local Room read, no data modification. */
+    public List<GpsPointEntity> loadAcceptedGpsPointsInBounds(
+            double south, double north, double west, double east, int limit
+    ) {
+        return dao.loadAcceptedGpsPointsInBounds(
+                south, north, west, east, limit);
+    }
+
     public int countVisitedCells() {
         return dao.countVisitedCells();
     }
