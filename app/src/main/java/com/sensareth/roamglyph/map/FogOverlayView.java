@@ -110,13 +110,23 @@ public final class FogOverlayView extends View {
         // At overview zoom the exact geometry is too small for a wide halo.
         double zoom = map.getCameraPosition() == null
                 ? 15.0 : map.getCameraPosition().zoom;
-        float maxWidth = zoom >= 16.0 ? 10.0f : zoom >= 14.0 ? 5.0f : 1.0f;
-        int passes = zoom >= 14.0 ? 8 : 2;
+        double latitude = map.getCameraPosition() == null
+                || map.getCameraPosition().target == null
+                ? 40.0 : map.getCameraPosition().target.getLatitude();
+        double metersPerPixel = 156543.03392
+                * Math.cos(Math.toRadians(Math.max(-85.0, Math.min(85.0, latitude))))
+                / Math.pow(2.0, zoom);
+        float cellDiameterPx = (float) (8.2 / Math.max(0.000001, metersPerPixel));
+
+        // Never let feathering swallow narrow visited trails. A screen-space
+        // blur may darken inside the real coverage, but cannot reveal pixels
+        // outside it. At city zoom a cell may be smaller than one pixel.
+        float maxWidthPx = Math.max(0.4f, Math.min(4.0f * density,
+                0.38f * cellDiameterPx));
+        int passes = cellDiameterPx >= 1.0f ? 8 : 2;
         for (int pass = passes; pass >= 1; pass--) {
-            edgePaint.setStrokeWidth(maxWidth * density * pass / passes);
-            edgePaint.setColor(Color.argb(
-                    zoom >= 14.0 ? 12 : 9, 17, 20, 24
-            ));
+            edgePaint.setStrokeWidth(maxWidthPx * pass / passes);
+            edgePaint.setColor(Color.argb(12, 17, 20, 24));
             canvas.drawPath(outlines, edgePaint);
         }
     }
