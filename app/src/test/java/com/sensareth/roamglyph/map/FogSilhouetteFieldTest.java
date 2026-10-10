@@ -2,6 +2,8 @@ package com.sensareth.roamglyph.map;
 
 import org.junit.Test;
 
+import java.util.concurrent.CancellationException;
+
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertTrue;
 
@@ -22,6 +24,15 @@ public class FogSilhouetteFieldTest {
 
     private static int alpha(int[] pixels, int width, int x, int y) {
         return pixels[y * width + x] >>> 24;
+    }
+
+    @Test(expected = CancellationException.class)
+    public void supersededViewportComputationCanCancelBeforeCompletion() {
+        int width = 144, height = 96;
+        int[] image = blank(width, height);
+        rect(image, width, 8, 8, 130, 82);
+        FogSilhouetteField.renderInPlace(
+                image, width, height, 7, 18, () -> true);
     }
 
     @Test
