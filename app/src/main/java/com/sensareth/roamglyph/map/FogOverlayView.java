@@ -358,6 +358,7 @@ public final class FogOverlayView extends View {
                 canvas.drawCircle(pos.x, pos.y, 16f * density, markerPaint);
                 markerPaint.setColor(0xFF1A73E8);
                 canvas.drawCircle(pos.x, pos.y, 7f * density, markerPaint);
+                markerOutline.setColor(Color.WHITE);
                 canvas.drawCircle(pos.x, pos.y, 7f * density, markerOutline);
             }
         }
