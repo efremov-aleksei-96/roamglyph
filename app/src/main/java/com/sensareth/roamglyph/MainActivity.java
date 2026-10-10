@@ -18,6 +18,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Looper;
+import android.text.format.Formatter;
 import android.view.Gravity;
 import android.view.View;
 import android.widget.Button;
@@ -40,6 +41,8 @@ import com.sensareth.roamglyph.map.DiscoveryClassifier;
 import com.sensareth.roamglyph.map.DiscoveryEngine;
 import com.sensareth.roamglyph.map.DiscoveryOverlayBuilder;
 import com.sensareth.roamglyph.map.ExplorationCoverageIndex;
+import com.sensareth.roamglyph.map.OfflineMapStore;
+import com.sensareth.roamglyph.map.OfflineMapStyle;
 import com.sensareth.roamglyph.map.PoiDiscoveryCandidate;
 import com.sensareth.roamglyph.map.ViewportOverlayBuilder;
 import com.uber.h3core.H3Core;
@@ -135,6 +138,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private ExplorationRepository repository;
     private ExecutorService dataExecutor;
     private ExecutorService overlayExecutor;
+    private ExecutorService mapIoExecutor;
     private H3Core h3;
     private LocationManager locationManager;
 
@@ -144,6 +148,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private boolean hasLocation;
     private boolean locationEnabled;
     private boolean autoCentered;
+    private boolean initialMapCameraSet;
     private boolean pendingStartAfterLocationPermission;
 
     private double lastLat;
@@ -258,6 +263,14 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     }
             );
 
+    private final ActivityResultLauncher<String[]> offlineMapLauncher =
+            registerForActivityResult(
+                    new ActivityResultContracts.OpenDocument(),
+                    uri -> {
+                        if (uri != null) importOfflineMap(uri);
+                    }
+            );
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -273,6 +286,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         repository = new ExplorationRepository(this);
         dataExecutor = Executors.newSingleThreadExecutor();
         overlayExecutor = Executors.newSingleThreadExecutor();
+        mapIoExecutor = Executors.newSingleThreadExecutor();
         locationManager = getSystemService(LocationManager.class);
         locationEnabled = isSystemLocationEnabled();
         tracking = store.isTrackingActive();
@@ -397,81 +411,125 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     public void onMapReady(@NonNull MapLibreMap mapLibreMap) {
         map = mapLibreMap;
 
-        map.setStyle(new Style.Builder().fromUri(MAP_STYLE_URI), style -> {
-            style.addSource(new GeoJsonSource(
-                    FOG_SOURCE_ID,
-                    FeatureCollection.fromFeatures(new Feature[]{})
-            ));
-            style.addLayer(new FillLayer(FOG_LAYER_ID, FOG_SOURCE_ID).withProperties(
-                    fillColor("#111418"),
-                    fillOpacity(0.58f),
-                    fillOutlineColor("#111418")
-            ));
+        map.addOnCameraIdleListener(() -> {
+            scheduleViewportOverlay();
+            requestDiscoveryScan();
+        });
+        map.addOnMapClickListener(this::onMapClickForDiscovery);
+        mapView.addOnSourceChangedListener(sourceId -> {
+            if (BASE_MAP_SOURCE_ID.equals(sourceId)) {
+                requestDiscoveryScan();
+            }
+        });
+        mapView.addOnDidBecomeIdleListener(this::requestDiscoveryScan);
 
-            style.addSource(new GeoJsonSource(
-                    VISITED_SOURCE_ID,
-                    FeatureCollection.fromFeatures(new Feature[]{})
-            ));
-            style.addLayer(new FillLayer(VISITED_LAYER_ID, VISITED_SOURCE_ID).withProperties(
-                    fillColor("#1B5E20"),
-                    fillOpacity(0.12f),
-                    fillOutlineColor("#176A20")
-            ));
+        loadActiveMapStyle();
+    }
 
-            style.addSource(new GeoJsonSource(
-                    DISCOVERY_HINT_SOURCE_ID,
-                    FeatureCollection.fromFeatures(new Feature[]{})
-            ));
-            style.addLayer(new CircleLayer(
-                    DISCOVERY_HINT_LAYER_ID,
-                    DISCOVERY_HINT_SOURCE_ID
-            ).withProperties(
-                    circleColor("#F9AB00"),
-                    circleRadius(7f),
-                    circleOpacity(0.88f),
-                    circleStrokeColor("#FFFFFF"),
-                    circleStrokeWidth(2f)
-            ));
+    private void loadActiveMapStyle() {
+        if (map == null) return;
 
-            style.addSource(new GeoJsonSource(
-                    DISCOVERED_SOURCE_ID,
-                    FeatureCollection.fromFeatures(new Feature[]{})
-            ));
-            style.addLayer(new CircleLayer(
-                    DISCOVERED_LAYER_ID,
-                    DISCOVERED_SOURCE_ID
-            ).withProperties(
-                    circleColor("#34A853"),
-                    circleRadius(8f),
-                    circleOpacity(0.96f),
-                    circleStrokeColor("#FFFFFF"),
-                    circleStrokeWidth(2.5f)
-            ));
+        Style.Builder builder;
+        if (store.isOfflineMapEnabled()) {
+            if (OfflineMapStore.hasValidMap(this)) {
+                try {
+                    builder = new Style.Builder().fromJson(
+                            OfflineMapStyle.build(
+                                    this,
+                                    OfflineMapStore.mapFile(this)
+                            )
+                    );
+                } catch (Exception error) {
+                    store.setOfflineMapEnabled(false);
+                    builder = new Style.Builder().fromUri(MAP_STYLE_URI);
+                }
+            } else {
+                store.setOfflineMapEnabled(false);
+                builder = new Style.Builder().fromUri(MAP_STYLE_URI);
+            }
+        } else {
+            builder = new Style.Builder().fromUri(MAP_STYLE_URI);
+        }
 
-            style.addSource(new GeoJsonSource(
-                    LOCATION_SOURCE_ID,
-                    FeatureCollection.fromFeatures(new Feature[]{})
-            ));
-            style.addLayer(new CircleLayer(
-                    LOCATION_HALO_LAYER_ID,
-                    LOCATION_SOURCE_ID
-            ).withProperties(
-                    circleColor("#4285F4"),
-                    circleRadius(16f),
-                    circleOpacity(0.22f)
-            ));
-            style.addLayer(new CircleLayer(
-                    LOCATION_LAYER_ID,
-                    LOCATION_SOURCE_ID
-            ).withProperties(
-                    circleColor("#1A73E8"),
-                    circleRadius(7f),
-                    circleStrokeColor("#FFFFFF"),
-                    circleStrokeWidth(3f)
-            ));
+        map.setStyle(builder, this::configureLoadedMapStyle);
+    }
 
-            renderCurrentLocation();
+    private void configureLoadedMapStyle(@NonNull Style style) {
+        style.addSource(new GeoJsonSource(
+                FOG_SOURCE_ID,
+                FeatureCollection.fromFeatures(new Feature[]{})
+        ));
+        style.addLayer(new FillLayer(FOG_LAYER_ID, FOG_SOURCE_ID).withProperties(
+                fillColor("#111418"),
+                fillOpacity(0.58f),
+                fillOutlineColor("#111418")
+        ));
 
+        style.addSource(new GeoJsonSource(
+                VISITED_SOURCE_ID,
+                FeatureCollection.fromFeatures(new Feature[]{})
+        ));
+        style.addLayer(new FillLayer(VISITED_LAYER_ID, VISITED_SOURCE_ID).withProperties(
+                fillColor("#1B5E20"),
+                fillOpacity(0.12f),
+                fillOutlineColor("#176A20")
+        ));
+
+        style.addSource(new GeoJsonSource(
+                DISCOVERY_HINT_SOURCE_ID,
+                FeatureCollection.fromFeatures(new Feature[]{})
+        ));
+        style.addLayer(new CircleLayer(
+                DISCOVERY_HINT_LAYER_ID,
+                DISCOVERY_HINT_SOURCE_ID
+        ).withProperties(
+                circleColor("#F9AB00"),
+                circleRadius(7f),
+                circleOpacity(0.88f),
+                circleStrokeColor("#FFFFFF"),
+                circleStrokeWidth(2f)
+        ));
+
+        style.addSource(new GeoJsonSource(
+                DISCOVERED_SOURCE_ID,
+                FeatureCollection.fromFeatures(new Feature[]{})
+        ));
+        style.addLayer(new CircleLayer(
+                DISCOVERED_LAYER_ID,
+                DISCOVERED_SOURCE_ID
+        ).withProperties(
+                circleColor("#34A853"),
+                circleRadius(8f),
+                circleOpacity(0.96f),
+                circleStrokeColor("#FFFFFF"),
+                circleStrokeWidth(2.5f)
+        ));
+
+        style.addSource(new GeoJsonSource(
+                LOCATION_SOURCE_ID,
+                FeatureCollection.fromFeatures(new Feature[]{})
+        ));
+        style.addLayer(new CircleLayer(
+                LOCATION_HALO_LAYER_ID,
+                LOCATION_SOURCE_ID
+        ).withProperties(
+                circleColor("#4285F4"),
+                circleRadius(16f),
+                circleOpacity(0.22f)
+        ));
+        style.addLayer(new CircleLayer(
+                LOCATION_LAYER_ID,
+                LOCATION_SOURCE_ID
+        ).withProperties(
+                circleColor("#1A73E8"),
+                circleRadius(7f),
+                circleStrokeColor("#FFFFFF"),
+                circleStrokeWidth(3f)
+        ));
+
+        renderCurrentLocation();
+
+        if (!initialMapCameraSet) {
             if (hasLocation) {
                 map.setCameraPosition(
                         new CameraPosition.Builder()
@@ -488,22 +546,11 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                                 .build()
                 );
             }
+            initialMapCameraSet = true;
+        }
 
-            map.addOnCameraIdleListener(() -> {
-                scheduleViewportOverlay();
-                requestDiscoveryScan();
-            });
-            map.addOnMapClickListener(this::onMapClickForDiscovery);
-            mapView.addOnSourceChangedListener(sourceId -> {
-                if (BASE_MAP_SOURCE_ID.equals(sourceId)) {
-                    requestDiscoveryScan();
-                }
-            });
-            mapView.addOnDidBecomeIdleListener(this::requestDiscoveryScan);
-
-            scheduleViewportOverlay();
-            requestDiscoveryScan();
-        });
+        scheduleViewportOverlay();
+        requestDiscoveryScan();
     }
 
     private void requestLocationPermission(boolean forTracking) {
@@ -1415,6 +1462,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         }
         if (overlayExecutor != null) {
             overlayExecutor.shutdownNow();
+        }
+        if (mapIoExecutor != null) {
+            mapIoExecutor.shutdownNow();
         }
         super.onDestroy();
     }
