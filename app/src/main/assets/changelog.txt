@@ -1,5 +1,12 @@
 ROAMGLYPH · WHAT'S NEW
 
+0.5.0-dev.17 — TEST BUILD (2026-10-10)
+
+• The explored map now fades continuously into the fog instead of showing five dark outline strokes.
+• A softened, up-to-2×-sampled mask reduces visible H3 hexagon teeth. The exact visited-cell boundary still limits what can be uncovered.
+• New mask calculations run in the background to keep pan/zoom responsive.
+• This is a visual test build: check close-up edges, narrow trails and fast zooming on your phone. No exploration history or backup format changes.
+
 0.5.0-dev.16 — TEST BUILD (2026-10-10)
 
 • Every test APK has an identifiable dev version and source revision.

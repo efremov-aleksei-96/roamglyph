@@ -39,12 +39,12 @@ matrix or exact restored counts. Those remain required below.
 | Location toggle | Disable Android Location; re-enable later | UI shows `Location disabled`, then resumes |
 | Fog | Throw/pan/zoom rapidly near explored and unexplored cells | The screen-space dark mask covers all unknown geography with no uncovered strip or flash; visited polygons stay geographically registered |
 | Zoom accuracy | Compare a thin discovered trail at street/city/country zoom | Never expand partial H3 parents; visited area gets smaller in screen pixels as expected and can become subpixel |
-| Screen-space edge smoothing | Inspect boundaries including sparse isolated visited areas | Anti-aliased cutouts and graduated soft dark borders, without obvious block outlines |
+| Screen-space edge smoothing | Inspect boundaries including sparse isolated visited areas | Supersampled, softly fading cutouts without conspicuous hexagonal sawteeth; narrow routes remain visible |
 | Rounded silhouette | Inspect isolated explored H3 cells and long connected trails while zooming | Corners visibly curved, not just blurred straight hex edges; no unvisited area opens |
 | Zigzag simplification | Inspect long cycle paths at street and overview zoom | Unneeded hex sawteeth straightened with curved bends; true visited area is not exaggerated |
-| Gradient levels | Observe explored/unexplored contour | Five inward increasingly dark bands remain visible instead of a single sharp edge |
-| Continuous pinch zoom | Pinch rapidly both in and out repeatedly around an explored route | Explored line never disappears entirely due to raster-cache safety thresholds, no lateral naked-map flash |
-| APK version identity | Inspect installed About screen and APK filename | Distinct 0.5.0-dev.16+g&lt;commit&gt; displayed; downloadable artifact filename contains same commit |
+| Smooth inward gradient | Observe explored/unexplored contour at several zoom levels | Continuous rasterized fade from darkness into explored area, not five visible strokes or isolated hex edges |
+| Continuous pinch zoom | Pinch rapidly both in and out repeatedly around an explored route | Cached inward-feather mask follows actual map coordinates, never reveals beyond the exact H3 footprint, and never exposes a lateral strip |
+| APK version identity | Inspect installed About screen and APK filename | Distinct 0.5.0-dev.17+g&lt;commit&gt; displayed; downloadable artifact filename contains same commit |
 | Discovery emoji | Inspect museum, nature, landmark and hint POIs | Category-specific emojis visible above fog, tappable POI details preserved; icons also visible with Fog off |
 | Offline changelog | Open menu ⋮ → Version & Changelog without internet | Installed version shown dynamically, bundled 0.5.0 release notes readable without GitHub |
 | Fog edge quality | Inspect a visited border at multiple zooms | No repeated grid, rounded softly shaded border, and no artificially opened unvisited pixels |
