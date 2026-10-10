@@ -11,7 +11,6 @@ import android.graphics.PointF;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffXfermode;
 import android.graphics.RectF;
-import android.graphics.RenderNode;
 import android.os.Handler;
 import android.os.Looper;
 import android.view.View;
@@ -37,12 +36,13 @@ import java.util.concurrent.atomic.AtomicReference;
  *
  * The worker prepares snapshots without blocking camera animations. The
  * last complete snapshot remains visible until the latest one is ready.
+ * Only one bitmap draw and exact-geometry GPU clip run per camera frame;
+ * geographic vertices are never reprojected in the draw loop.
  */
 public final class FogOverlayView extends View {
     private static final int FOG_ALPHA = 210;
 
     private final Paint cutoutPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
-    private final Paint clearPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint markerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint markerOutline = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Matrix transform = new Matrix();
@@ -57,7 +57,8 @@ public final class FogOverlayView extends View {
     private boolean cacheDirty = true;
     private boolean disposed;
     private int revision;
-    private RenderNode fogDisplayList;
+    private int snapshotWidth;
+    private int snapshotHeight;
     private Bitmap maskBitmap;
     private Path snapshotExactPath;
     private final LatLng[] referenceGeo = new LatLng[4];
@@ -117,7 +118,6 @@ public final class FogOverlayView extends View {
         cutoutPaint.setColor(Color.WHITE);
         cutoutPaint.setStyle(Paint.Style.FILL);
         cutoutPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_OUT));
-        clearPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.CLEAR));
         markerOutline.setStyle(Paint.Style.STROKE);
         markerOutline.setStrokeWidth(2.0f * density);
         markerOutline.setColor(Color.WHITE);
@@ -207,19 +207,17 @@ public final class FogOverlayView extends View {
         // because its recorded mask is clipped to exact H3 geometry.
         int fogLayer = canvas.saveLayer(0f, 0f, getWidth(), getHeight(), null);
         canvas.drawColor(Color.argb(FOG_ALPHA, 17, 20, 24));
-        if (map != null && fogDisplayList != null
-                && fogDisplayList.hasDisplayList()
-                && transformedMaskIsSafe()) {
+        if (map != null && maskBitmap != null
+                && snapshotExactPath != null && transformedMaskIsSafe()) {
             int saved = canvas.save();
             canvas.concat(transform);
-            canvas.drawRect(0, 0, fogDisplayList.getWidth(),
-                    fogDisplayList.getHeight(), clearPaint);
-            if (canvas.isHardwareAccelerated()) {
-                canvas.drawRenderNode(fogDisplayList);
-            } else if (maskBitmap != null && snapshotExactPath != null) {
-                renderBitmapFog(canvas, snapshotExactPath, maskBitmap,
-                        fogDisplayList.getWidth(), fogDisplayList.getHeight());
-            }
+            // Exact vector clipping occurs at the CURRENT zoom, not
+            // in a cached source-resolution display-list texture.
+            // Bilinear magnification cannot reveal outside H3 cells.
+            canvas.clipPath(snapshotExactPath);
+            canvas.drawBitmap(maskBitmap, null,
+                    new RectF(0f, 0f, snapshotWidth, snapshotHeight),
+                    cutoutPaint);
             canvas.restoreToCount(saved);
         }
         canvas.restoreToCount(fogLayer);
@@ -230,25 +228,10 @@ public final class FogOverlayView extends View {
     private void clearVectorSnapshot() {
         revision++;
         queuedJob.set(null);
-        if (fogDisplayList != null) fogDisplayList.discardDisplayList();
-        fogDisplayList = null;
         if (maskBitmap != null) maskBitmap.recycle();
         maskBitmap = null;
         snapshotExactPath = null;
         for (int i = 0; i < referenceGeo.length; i++) referenceGeo[i] = null;
-    }
-
-    private void renderBitmapFog(Canvas canvas, Path exact, Bitmap mask,
-                                 int width, int height) {
-        canvas.drawColor(Color.argb(FOG_ALPHA, 17, 20, 24));
-        int saved = canvas.save();
-        canvas.clipPath(exact);
-        // Smooth, variable-alpha cutout is precomputed off the UI thread.
-        // The exact vector clipping prevents resampling from extending it
-        // past visited geometry at ANY camera zoom.
-        canvas.drawBitmap(mask, null, new RectF(0f, 0f, width, height),
-                cutoutPaint);
-        canvas.restoreToCount(saved);
     }
 
     /** Project exact H3 geography once per refreshed viewport. */
@@ -349,29 +332,14 @@ public final class FogOverlayView extends View {
             }
             return;
         }
-        try {
-            RenderNode node = new RenderNode("RoamGlyph feathered exact fog");
-            node.setPosition(0, 0, job.width, job.height);
-            Canvas recording = node.beginRecording(job.width, job.height);
-            try {
-                renderBitmapFog(recording, job.exact, bitmap,
-                        job.width, job.height);
-            } finally {
-                node.endRecording();
-            }
-            if (fogDisplayList != null) fogDisplayList.discardDisplayList();
-            if (maskBitmap != null) maskBitmap.recycle();
-            fogDisplayList = node;
-            maskBitmap = bitmap;
-            snapshotExactPath = job.exact;
-            System.arraycopy(job.geoCorners, 0, referenceGeo, 0, 4);
-            System.arraycopy(job.pixelCorners, 0, referencePixels, 0, 8);
-            invalidate();
-        } catch (RuntimeException | OutOfMemoryError failure) {
-            bitmap.recycle();
-            clearVectorSnapshot();
-            invalidate();
-        }
+        if (maskBitmap != null) maskBitmap.recycle();
+        maskBitmap = bitmap;
+        snapshotExactPath = job.exact;
+        snapshotWidth = job.width;
+        snapshotHeight = job.height;
+        System.arraycopy(job.geoCorners, 0, referenceGeo, 0, 4);
+        System.arraycopy(job.pixelCorners, 0, referencePixels, 0, 8);
+        invalidate();
     }
 
     private boolean transformedMaskIsSafe() {
