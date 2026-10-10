@@ -17,6 +17,17 @@ public final class FogWorldTileScheme {
      * Reserve 35% of the budget for one full visible set, leaving a
      * 30% allowance for halo tiles, intermediates and LRU hysteresis.
      */
+    /**
+     * A completed low-resolution mask should be sharpened when a newer
+     * viewport allows substantially more raster detail. The threshold also
+     * avoids redundant retries for identical or marginally different jobs.
+     */
+    public static boolean needsSharperRaster(float availableScale, float demandScale) {
+        return Float.isFinite(availableScale) && availableScale > 0f
+                && Float.isFinite(demandScale) && demandScale > 0f
+                && availableScale < demandScale * 0.78f;
+    }
+
     public static float rasterScaleForVisibleTiles(int count) {
         int tiles = Math.max(1, count);
         double approximateBaseBytes = (double) TILE_PX * TILE_PX * 4.0 * 1.34;
@@ -121,6 +132,26 @@ public final class FogWorldTileScheme {
 
     public static float localY(double lat, Key key) {
         return (float) (latitudeY(lat, key.z) - (double) key.y * TILE_PX);
+    }
+
+    /**
+     * Test only existing, already-cached tiles against the current viewport.
+     * Unlike covering(), this has NO output limit or center cropping: an old
+     * zoom tile at the viewport edge must remain drawable during a handoff.
+     */
+    public static boolean intersectsBounds(Key key, double north, double east,
+                                           double south, double west) {
+        if (!Double.isFinite(north) || !Double.isFinite(east)
+                || !Double.isFinite(south) || !Double.isFinite(west)
+                || north <= south || east <= west || east - west > 180) {
+            return false;
+        }
+        int left = (int) Math.floor(longitudeX(west, key.z) / TILE_PX);
+        int right = (int) Math.floor(longitudeX(east, key.z) / TILE_PX);
+        int top = (int) Math.floor(latitudeY(north, key.z) / TILE_PX);
+        int bottom = (int) Math.floor(latitudeY(south, key.z) / TILE_PX);
+        return key.x >= left && key.x <= right
+                && key.y >= top && key.y <= bottom;
     }
 
     /**
