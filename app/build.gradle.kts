@@ -51,8 +51,8 @@ android {
         applicationId = "com.sensareth.roamglyph"
         minSdk = 29
         targetSdk = 36
-        versionCode = 19
-        versionName = "0.5.0-dev.19+g$devRevision"
+        versionCode = 20
+        versionName = "0.5.0-dev.20+g$devRevision"
 
         javaCompileOptions {
             annotationProcessorOptions {
