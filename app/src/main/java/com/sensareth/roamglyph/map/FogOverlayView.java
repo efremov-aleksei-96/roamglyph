@@ -359,7 +359,8 @@ public final class FogOverlayView extends View {
                 // until the sharper replacement is ready.
                 boolean undersampled = current != null
                         && current.mipmaps.length > 0
-                        && current.effectiveScale() < rasterScale * 0.78f;
+                        && FogWorldTileScheme.needsSharperRaster(
+                                current.effectiveScale(), rasterScale);
                 if ((current == null || current.epoch != epoch || undersampled)
                         && pending.add(key)) {
                     jobs.add(new TileJob(key, epoch, rasterScale));
@@ -519,7 +520,7 @@ public final class FogOverlayView extends View {
         // pressure makes the desired scale physically unattainable.
         float desired = latestRasterDemand;
         if (tile.mipmaps.length > 0 && wanted.contains(job.key)
-                && job.rasterScale < desired * 0.78f
+                && FogWorldTileScheme.needsSharperRaster(job.rasterScale, desired)
                 && pending.add(job.key)) {
             jobs.add(new TileJob(job.key, job.epoch, desired));
             startWorker();
