@@ -82,6 +82,25 @@ public final class FogWorldTileSchemeTest {
         assertEquals("Do not degrade ordinary map detail", 17, zoom);
     }
 
+    @Test public void oldZoomEdgeTileIsNotDiscardedByCappedEnumeration() {
+        double north = 40.30, east = 44.80, south = 39.90, west = 44.30;
+        int z = 20;
+        FogWorldTileScheme.Key edge = new FogWorldTileScheme.Key(z,
+                (int) Math.floor(FogWorldTileScheme.longitudeX(44.31, z)
+                        / FogWorldTileScheme.TILE_PX),
+                (int) Math.floor(FogWorldTileScheme.latitudeY(40.29, z)
+                        / FogWorldTileScheme.TILE_PX));
+        assertTrue("An old cached tile near the screen corner is visible",
+                FogWorldTileScheme.intersectsBounds(
+                        edge, north, east, south, west));
+        assertFalse("The previous center-limited key enumeration missed it",
+                FogWorldTileScheme.covering(north, east, south, west,
+                        z, 0, 512).contains(edge));
+        assertFalse(FogWorldTileScheme.intersectsBounds(
+                new FogWorldTileScheme.Key(z, 0, 0),
+                north, east, south, west));
+    }
+
     @Test public void unsupportedAntimeridianViewFailsDark() {
         assertTrue(FogWorldTileScheme.covering(
                 40.2, -179.8, 40.1, 179.8, 16, 1, 34).isEmpty());
