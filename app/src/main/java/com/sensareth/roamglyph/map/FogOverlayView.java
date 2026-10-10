@@ -1,12 +1,16 @@
 package com.sensareth.roamglyph.map;
 
 import android.content.Context;
+import android.graphics.Bitmap;
 import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.CornerPathEffect;
+import android.graphics.Matrix;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PointF;
+import android.graphics.PorterDuff;
+import android.graphics.PorterDuffXfermode;
 import android.view.View;
 
 import androidx.annotation.NonNull;
@@ -19,41 +23,68 @@ import java.util.Collections;
 import java.util.List;
 
 /**
- * Screen-attached, fail-dark Fog of War.
+ * Screen-attached, fail-dark fog. A single raster mask is built from exact
+ * resolution-13 visited geometry when a worker publishes new coverage.
+ * During camera gestures only a 4-corner projective bitmap transform is
+ * updated; the UI thread never reprojects thousands of H3 vertices per frame.
  *
- * Unlike viewport GeoJSON world polygons, the full-screen dark mask is never
- * clipped at a tile or viewport edge. Map camera motion reprojects the SAME
- * geographic res-13 visited geometry before drawing each frame. A pending
- * background computation may hide an explored cell, but cannot reveal unknown
- * land or enlarge a narrow explored trail at low zoom.
+ * The full-screen dark fill is drawn BEFORE subtracting the transformed
+ * visited mask, so moving outside the cached area cannot reveal side strips.
  */
 public final class FogOverlayView extends View {
     private static final int FOG_COLOR = Color.rgb(17, 20, 24);
+    private static final int FOG_ALPHA = 210;
 
     private final Paint fogPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint cutoutPaint = new Paint(
+            Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
+    private final Paint maskPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint edgePaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint markerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint markerOutline = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Matrix transform = new Matrix();
     private final float density;
 
     private MapLibreMap map;
     private boolean enabled = true;
+    private boolean cacheDirty = true;
+    private Bitmap maskBitmap;
+    private final LatLng[] referenceGeo = new LatLng[4];
+    private final float[] referencePixels = new float[8];
+    private final float[] currentPixels = new float[8];
     private List<List<List<LatLng>>> polygons = Collections.emptyList();
+
+    private boolean hasLocation;
+    private double locationLat;
+    private double locationLng;
+    private List<LatLng> discoveredMarkers = Collections.emptyList();
+    private List<LatLng> hintMarkers = Collections.emptyList();
 
     public FogOverlayView(@NonNull Context context) {
         super(context);
         density = getResources().getDisplayMetrics().density;
         setClickable(false);
         setWillNotDraw(false);
+
         fogPaint.setStyle(Paint.Style.FILL);
         fogPaint.setColor(FOG_COLOR);
-        fogPaint.setAlpha(210);
+        fogPaint.setAlpha(FOG_ALPHA);
+        maskPaint.setColor(Color.WHITE);
+        maskPaint.setStyle(Paint.Style.FILL);
+        cutoutPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_OUT));
         edgePaint.setStyle(Paint.Style.STROKE);
         edgePaint.setStrokeJoin(Paint.Join.ROUND);
         edgePaint.setStrokeCap(Paint.Cap.ROUND);
         edgePaint.setPathEffect(new CornerPathEffect(2.0f * density));
+        edgePaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_OUT));
+        markerOutline.setStyle(Paint.Style.STROKE);
+        markerOutline.setStrokeWidth(2.0f * density);
+        markerOutline.setColor(Color.WHITE);
     }
 
     public void attachMap(@NonNull MapLibreMap map) {
         this.map = map;
+        cacheDirty = true;
         invalidate();
     }
 
@@ -63,9 +94,31 @@ public final class FogOverlayView extends View {
     }
 
     public void setGeometry(@NonNull List<List<List<LatLng>>> newPolygons) {
-        // Worker-built geometry is immutable after publication on the UI thread.
         polygons = newPolygons;
+        cacheDirty = true;
         invalidate();
+    }
+
+    public void setCurrentLocation(boolean available, double lat, double lng) {
+        hasLocation = available;
+        locationLat = lat;
+        locationLng = lng;
+        invalidate();
+    }
+
+    public void setDiscoveries(
+            @NonNull List<LatLng> discovered,
+            @NonNull List<LatLng> hints
+    ) {
+        discoveredMarkers = discovered;
+        hintMarkers = hints;
+        invalidate();
+    }
+
+    @Override
+    protected void onSizeChanged(int w, int h, int oldw, int oldh) {
+        super.onSizeChanged(w, h, oldw, oldh);
+        cacheDirty = true;
     }
 
     @Override
@@ -73,44 +126,61 @@ public final class FogOverlayView extends View {
         super.onDraw(canvas);
         if (!enabled) return;
 
-        // Even before the map initializes or Room finishes loading, every
-        // visible pixel stays covered by a screen-space dark fill.
-        if (map == null || polygons.isEmpty()) {
-            canvas.drawColor(Color.argb(210, 17, 20, 24));
+        if (cacheDirty) {
+            cacheDirty = false;
+            try {
+                buildMaskSnapshot();
+            } catch (RuntimeException | OutOfMemoryError error) {
+                maskBitmap = null;
+            }
+        }
+
+        // Compose into a separate layer so DST_OUT removes fog alpha only,
+        // not previously rendered MapLibre map pixels.
+        int layer = canvas.saveLayer(
+                0, 0, getWidth(), getHeight(), null);
+        canvas.drawColor(Color.argb(FOG_ALPHA, 17, 20, 24));
+        if (maskBitmap != null && map != null && transformedMaskIsSafe()) {
+            canvas.drawBitmap(maskBitmap, transform, cutoutPaint);
+        }
+        canvas.restoreToCount(layer);
+
+        // MapLibre GL annotations are below this Android overlay; redraw
+        // lightweight location and discovery markers above it.
+        if (map != null) drawForegroundMarkers(canvas);
+    }
+
+    /** Build full-resolution geometry just once per changed viewport. */
+    private void buildMaskSnapshot() {
+        if (map == null || getWidth() <= 0 || getHeight() <= 0
+                || polygons.isEmpty()) {
+            maskBitmap = null;
             return;
         }
 
-        Path mask = new Path();
-        mask.setFillType(Path.FillType.EVEN_ODD);
-        mask.addRect(0, 0, getWidth(), getHeight(), Path.Direction.CW);
+        if (maskBitmap == null || maskBitmap.getWidth() != getWidth()
+                || maskBitmap.getHeight() != getHeight()) {
+            maskBitmap = Bitmap.createBitmap(
+                    getWidth(), getHeight(), Bitmap.Config.ARGB_8888);
+        }
+        maskBitmap.eraseColor(Color.TRANSPARENT);
 
-        Path outlines = new Path();
+        Canvas snapshot = new Canvas(maskBitmap);
         Path explored = new Path();
         explored.setFillType(Path.FillType.EVEN_ODD);
-        try {
-            for (List<List<LatLng>> polygon : polygons) {
-                for (List<LatLng> ring : polygon) {
-                    if (ring.size() < 3) continue;
-                    Path projected = projectRing(ring);
-                    mask.addPath(projected);
-                    explored.addPath(projected);
-                    outlines.addPath(projected);
-                }
+        Path outlines = new Path();
+
+        for (List<List<LatLng>> polygon : polygons) {
+            for (List<LatLng> ring : polygon) {
+                if (ring.size() < 3) continue;
+                Path projected = projectRing(ring);
+                explored.addPath(projected);
+                outlines.addPath(projected);
             }
-        } catch (RuntimeException error) {
-            // Projection failure must never expose unknown map tiles.
-            canvas.drawColor(Color.argb(210, 17, 20, 24));
-            return;
         }
+        // Mask is opaque only where the user truly visited.
+        snapshot.drawPath(explored, maskPaint);
 
-        // The only pixels that show through are inside exact res-13 H3
-        // footprints. Anti-aliased subpixel footprints stay subpixel.
-        canvas.drawPath(mask, fogPaint);
-
-        // A feathered edge is made by faint progressively narrower strokes.
-        // Crucially this DARKENS the border rather than expanding the
-        // transparent/explored footprint (no false exploration).
-        // At overview zoom the exact geometry is too small for a wide halo.
         double zoom = map.getCameraPosition() == null
                 ? 15.0 : map.getCameraPosition().zoom;
         double latitude = map.getCameraPosition() == null
@@ -120,24 +190,49 @@ public final class FogOverlayView extends View {
                 * Math.cos(Math.toRadians(Math.max(-85.0, Math.min(85.0, latitude))))
                 / Math.pow(2.0, zoom);
         float cellDiameterPx = (float) (8.2 / Math.max(0.000001, metersPerPixel));
-
-        // Never let feathering swallow narrow visited trails. A screen-space
-        // blur may darken inside the real coverage, but cannot reveal pixels
-        // outside it. At city zoom a cell may be smaller than one pixel.
-        float maxWidthPx = Math.max(0.4f, Math.min(4.0f * density,
-                0.38f * cellDiameterPx));
+        float maxWidthPx = Math.max(0.4f,
+                Math.min(4.0f * density, 0.38f * cellDiameterPx));
         int passes = cellDiameterPx >= 1.0f ? 12 : 3;
-        canvas.save();
-        // Apply the entire darkening gradient INSIDE explored polygons only.
-        // The final ~200/255 opacity at the contour matches the outer fog
-        // (~210/255); there is no bright jump and no revealed fringe outside.
-        canvas.clipPath(explored);
-        for (int pass = passes; pass >= 1; pass--) {
-            edgePaint.setStrokeWidth(maxWidthPx * pass / passes);
-            edgePaint.setColor(Color.argb(passes == 12 ? 31 : 100, 17, 20, 24));
-            canvas.drawPath(outlines, edgePaint);
+
+        // Feathering subtracts mask alpha INSIDE explored areas only.
+        // It never creates extra transparent pixels in unknown territory.
+        snapshot.save();
+        snapshot.clipPath(explored);
+        for (int i = passes; i >= 1; i--) {
+            edgePaint.setStrokeWidth(maxWidthPx * i / passes);
+            edgePaint.setColor(Color.argb(passes == 12 ? 45 : 150, 0, 0, 0));
+            snapshot.drawPath(outlines, edgePaint);
         }
-        canvas.restore();
+        snapshot.restore();
+
+        // Sample four visible screen corners. Camera transitions on a flat
+        // Mercator map are representable by a projective 2D matrix.
+        float width = getWidth();
+        float height = getHeight();
+        float[] corners = {0f, 0f, width, 0f, width, height, 0f, height};
+        System.arraycopy(corners, 0, referencePixels, 0, 8);
+        for (int i = 0; i < 4; i++) {
+            org.maplibre.android.geometry.LatLng geo =
+                    map.getProjection().fromScreenLocation(
+                            new PointF(corners[i * 2], corners[i * 2 + 1]));
+            referenceGeo[i] = new LatLng(geo.getLatitude(), geo.getLongitude());
+        }
+    }
+
+    private boolean transformedMaskIsSafe() {
+        for (int i = 0; i < 4; i++) {
+            LatLng point = referenceGeo[i];
+            if (point == null) return false;
+            PointF screen = map.getProjection().toScreenLocation(
+                    new org.maplibre.android.geometry.LatLng(point.lat, point.lng));
+            if (!Float.isFinite(screen.x) || !Float.isFinite(screen.y)
+                    || Math.abs(screen.x) > 10_000_000f
+                    || Math.abs(screen.y) > 10_000_000f) return false;
+            currentPixels[2 * i] = screen.x;
+            currentPixels[2 * i + 1] = screen.y;
+        }
+        return transform.setPolyToPoly(
+                referencePixels, 0, currentPixels, 0, 4);
     }
 
     @NonNull
@@ -147,9 +242,7 @@ public final class FogOverlayView extends View {
             LatLng coordinate = ring.get(i);
             PointF screen = map.getProjection().toScreenLocation(
                     new org.maplibre.android.geometry.LatLng(
-                            coordinate.lat, coordinate.lng
-                    )
-            );
+                            coordinate.lat, coordinate.lng));
             if (!Float.isFinite(screen.x) || !Float.isFinite(screen.y)) {
                 throw new IllegalArgumentException("Non-finite map projection");
             }
@@ -158,5 +251,51 @@ public final class FogOverlayView extends View {
         }
         path.close();
         return path;
+    }
+
+    private void drawForegroundMarkers(Canvas canvas) {
+        for (LatLng coordinate : hintMarkers) {
+            drawMarker(canvas, coordinate.lat, coordinate.lng, 0xFFF9AB00, 7f);
+        }
+        for (LatLng coordinate : discoveredMarkers) {
+            drawMarker(canvas, coordinate.lat, coordinate.lng, 0xFF34A853, 8f);
+        }
+        if (hasLocation) {
+            PointF pos = projectPoint(locationLat, locationLng);
+            if (pos != null && insideView(pos, 25f * density)) {
+                markerPaint.setStyle(Paint.Style.FILL);
+                markerPaint.setColor(0x444285F4);
+                canvas.drawCircle(pos.x, pos.y, 16f * density, markerPaint);
+                markerPaint.setColor(0xFF1A73E8);
+                canvas.drawCircle(pos.x, pos.y, 7f * density, markerPaint);
+                canvas.drawCircle(pos.x, pos.y, 7f * density, markerOutline);
+            }
+        }
+    }
+
+    private void drawMarker(Canvas canvas, double lat, double lng,
+                            int color, float radiusDp) {
+        PointF pos = projectPoint(lat, lng);
+        if (pos == null || !insideView(pos, 20f * density)) return;
+        markerPaint.setStyle(Paint.Style.FILL);
+        markerPaint.setColor(color);
+        canvas.drawCircle(pos.x, pos.y, radiusDp * density, markerPaint);
+        canvas.drawCircle(pos.x, pos.y, radiusDp * density, markerOutline);
+    }
+
+    private PointF projectPoint(double latitude, double longitude) {
+        try {
+            PointF point = map.getProjection().toScreenLocation(
+                    new org.maplibre.android.geometry.LatLng(latitude, longitude));
+            return Float.isFinite(point.x) && Float.isFinite(point.y) ? point : null;
+        } catch (RuntimeException error) {
+            return null;
+        }
+    }
+
+    private boolean insideView(PointF point, float margin) {
+        return point.x >= -margin && point.y >= -margin
+                && point.x <= getWidth() + margin
+                && point.y <= getHeight() + margin;
     }
 }
