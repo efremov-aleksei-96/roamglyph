@@ -1,6 +1,7 @@
 package com.sensareth.roamglyph.map;
 
 import java.util.concurrent.CancellationException;
+import java.util.function.BooleanSupplier;
 
 /**
  * CPU-only fog silhouette builder. Unlike stroking the original H3 edges,
@@ -14,14 +15,21 @@ import java.util.concurrent.CancellationException;
 final class FogSilhouetteField {
     private FogSilhouetteField() {}
 
-    private static void checkInterrupted() {
-        if (Thread.currentThread().isInterrupted()) {
+    private static void checkInterrupted(BooleanSupplier cancelled) {
+        if (Thread.currentThread().isInterrupted() || cancelled.getAsBoolean()) {
             throw new CancellationException("Superseded fog silhouette");
         }
     }
 
     static void renderInPlace(int[] argb, int width, int height,
                               int blurRadius, int featherRadius) {
+        renderInPlace(argb, width, height, blurRadius, featherRadius,
+                () -> false);
+    }
+
+    static void renderInPlace(int[] argb, int width, int height,
+                              int blurRadius, int featherRadius,
+                              BooleanSupplier cancelled) {
         if (width <= 0 || height <= 0 || (long) width * height != argb.length
                 || blurRadius < 1 || featherRadius < 1) {
             throw new IllegalArgumentException("Invalid fog mask dimensions");
@@ -37,7 +45,7 @@ final class FogSilhouetteField {
             distance[i] = (byte) ((argb[i] >>> 24) >= 24 ? 255 : 0);
         }
         for (int y = 0; y < height; y++) {
-            if ((y & 31) == 0) checkInterrupted();
+            if ((y & 31) == 0) checkInterrupted(cancelled);
             int row = y * width;
             for (int x = 0; x < width; x++) {
                 int i = row + x;
@@ -53,7 +61,7 @@ final class FogSilhouetteField {
             }
         }
         for (int y = height - 1; y >= 0; y--) {
-            if ((y & 31) == 0) checkInterrupted();
+            if ((y & 31) == 0) checkInterrupted(cancelled);
             int row = y * width;
             for (int x = width - 1; x >= 0; x--) {
                 int i = row + x;
@@ -72,13 +80,13 @@ final class FogSilhouetteField {
         // Smooth the SHAPE, not its hard outline. Multiple filtering passes
         // soften changes in boundary direction (H3 teeth) over neighbouring
         // cells before the actual cutout transparency is chosen.
-        horizontalFromArgb(argb, horizontal, width, height, blurRadius);
-        verticalFromByte(horizontal, blurred, width, height, blurRadius);
-        horizontalFromByte(blurred, horizontal, width, height, blurRadius);
-        verticalFromByte(horizontal, blurred, width, height, blurRadius);
+        horizontalFromArgb(argb, horizontal, width, height, blurRadius, cancelled);
+        verticalFromByte(horizontal, blurred, width, height, blurRadius, cancelled);
+        horizontalFromByte(blurred, horizontal, width, height, blurRadius, cancelled);
+        verticalFromByte(horizontal, blurred, width, height, blurRadius, cancelled);
 
         for (int y = 0; y < height; y++) {
-            if ((y & 31) == 0) checkInterrupted();
+            if ((y & 31) == 0) checkInterrupted(cancelled);
             int row = y * width;
             for (int x = 0; x < width; x++) {
                 int i = row + x;
@@ -88,14 +96,15 @@ final class FogSilhouetteField {
                 argb[i] = (alpha << 24) | 0xFFFFFF;
             }
         }
-        checkInterrupted();
+        checkInterrupted(cancelled);
     }
 
     private static void horizontalFromArgb(int[] input, byte[] out,
-                                           int width, int height, int radius) {
+                                           int width, int height, int radius,
+                                           BooleanSupplier cancelled) {
         int span = radius * 2 + 1;
         for (int y = 0; y < height; y++) {
-            if ((y & 31) == 0) checkInterrupted();
+            if ((y & 31) == 0) checkInterrupted(cancelled);
             int row = y * width;
             long sum = 0;
             for (int dx = -radius; dx <= radius; dx++) {
@@ -113,10 +122,11 @@ final class FogSilhouetteField {
     }
 
     private static void horizontalFromByte(byte[] input, byte[] out,
-                                           int width, int height, int radius) {
+                                           int width, int height, int radius,
+                                           BooleanSupplier cancelled) {
         int span = radius * 2 + 1;
         for (int y = 0; y < height; y++) {
-            if ((y & 31) == 0) checkInterrupted();
+            if ((y & 31) == 0) checkInterrupted(cancelled);
             int row = y * width;
             long sum = 0;
             for (int dx = -radius; dx <= radius; dx++) {
@@ -134,10 +144,11 @@ final class FogSilhouetteField {
     }
 
     private static void verticalFromByte(byte[] input, byte[] out,
-                                         int width, int height, int radius) {
+                                         int width, int height, int radius,
+                                           BooleanSupplier cancelled) {
         int span = radius * 2 + 1;
         for (int x = 0; x < width; x++) {
-            if ((x & 31) == 0) checkInterrupted();
+            if ((x & 31) == 0) checkInterrupted(cancelled);
             long sum = 0;
             for (int dy = -radius; dy <= radius; dy++) {
                 int y = Math.max(0, Math.min(height - 1, dy));
