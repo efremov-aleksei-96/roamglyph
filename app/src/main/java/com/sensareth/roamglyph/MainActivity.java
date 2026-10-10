@@ -1106,7 +1106,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         } else if (!locationEnabled) {
             gpsText.setText(R.string.location_disabled);
         } else if (hasLocation) {
-            String gps = "GPS ±" + Math.round(lastAccuracy) + " m";
+            String gps = Float.isFinite(lastAccuracy) && lastAccuracy > 0f
+                    ? "GPS ±" + Math.round(lastAccuracy) + " m"
+                    : "GPS accuracy unavailable";
             if (!accepted) gps += " · fix ignored";
             gpsText.setText(gps);
         } else if (tracking) {
