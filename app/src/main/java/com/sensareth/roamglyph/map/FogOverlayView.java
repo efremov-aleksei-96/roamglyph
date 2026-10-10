@@ -595,10 +595,8 @@ public final class FogOverlayView extends View {
                 // The first retained mip may itself already be a 0.5x or
                 // 0.25x area-filtered level. Subtract that level offset,
                 // otherwise zoom-out minification is applied twice.
-                double baseLog2 = Math.log(Math.max(0.001f,
-                        tile.effectiveScale())) / Math.log(2.0);
                 int level = FogMipLevel.forZoomDelta(
-                        tile.key.z - currentZoom + baseLog2,
+                        tile.key.z - currentZoom, tile.effectiveScale(),
                         tile.mipmaps.length);
                 canvas.drawBitmap(tile.mipmaps[level], null,
                         new RectF(0, 0, FogWorldTileScheme.TILE_PX,
