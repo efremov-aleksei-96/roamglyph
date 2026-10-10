@@ -10,8 +10,14 @@
 - Request exact stored H3-13 cells independently for each tile, rather
   than redoing a viewport-wide H3 native polygon union after 400 ms.
 - Keep a byte-capped (64 MiB) LRU cache of completed fog tiles; protect
-  both visible zoom generations during transitions and dynamically size
-  rasters to the visible tile count, including very large external displays.
+  the complete visible set at both zoom generations during transitions,
+  dynamically size raster resolutions to the visible tile count, and
+  downsample *already cached* mipmaps as viewport size grows, including
+  on large external displays.
+- During extreme tile-count/memory pressure, coarsen cached mip levels
+  instead of evicting visited geography currently visible on the screen.
+  Project/draw only the currently visible geographic keys per camera frame
+  rather than reprojection of the complete LRU cache.
 - Enumerate visible geographic tiles before limiting optional neighbour
   prefetch, preserving on-screen coverage when the viewport is tall.
 - Rebuild tiles on resume if Android trimmed the cache for low memory.
