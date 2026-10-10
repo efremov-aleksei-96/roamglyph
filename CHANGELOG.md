@@ -15,8 +15,12 @@
   vector geometry during pan and zoom.
 - Add pure JVM synthetic-image tests for a broad-area gradient, narrow
   routes, protruding H3-like tips, and no outward mask expansion.
-- Keep mask jobs cancellable and off the UI thread; no history, JSON
-  backup, discoveries, permissions or storage migration.
+- Filter into an off-screen padded work mask (support of both blur passes)
+  before cropping the viewport, eliminating false seams during panning.
+- Cancel superseded mask jobs during distance and filter passes instead of
+  finishing stale multi-megapixel computations. Work area including the
+  padding remains under the bounded memory budget.
+- No history, JSON backup, discoveries, permissions or storage migration.
 - Requires physical-device visual verification before release.
 
 
