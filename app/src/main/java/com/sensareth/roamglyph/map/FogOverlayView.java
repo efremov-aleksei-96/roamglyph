@@ -562,18 +562,34 @@ public final class FogOverlayView extends View {
             }
             if (ready) displayZoom = requestedZoom;
         }
-        for (Tile tile : new ArrayList<>(cache.values())) {
-            if (tile.key.z != displayZoom || tile.mipmaps.length == 0) continue;
-            if (!tileTransform(tile.key)) continue;
-            int s = canvas.save();
-            canvas.concat(tileMatrix);
-            canvas.clipPath(tile.exactPath);
-            int level = FogMipLevel.forZoomDelta(
-                    tile.key.z - map.getCameraPosition().zoom, tile.mipmaps.length);
-            canvas.drawBitmap(tile.mipmaps[level], null,
-                    new RectF(0, 0, FogWorldTileScheme.TILE_PX,
-                            FogWorldTileScheme.TILE_PX), cutoutPaint);
-            canvas.restoreToCount(s);
+        try {
+            // O(visible tiles), not O(entire LRU). The view may hold hundreds
+            // of geographic tiles from earlier locations or zoom levels,
+            // but only tiles intersecting the *current* camera are projected.
+            org.maplibre.android.geometry.LatLngBounds b =
+                    map.getProjection().getVisibleRegion().latLngBounds;
+            List<FogWorldTileScheme.Key> screenKeys =
+                    FogWorldTileScheme.covering(
+                            b.getLatNorth(), b.getLonEast(),
+                            b.getLatSouth(), b.getLonWest(),
+                            displayZoom, 0, MAX_VISIBLE);
+            double currentZoom = map.getCameraPosition().zoom;
+            for (FogWorldTileScheme.Key key : screenKeys) {
+                Tile tile = cache.get(key);
+                if (tile == null || tile.mipmaps.length == 0) continue;
+                if (!tileTransform(key)) continue;
+                int saved = canvas.save();
+                canvas.concat(tileMatrix);
+                canvas.clipPath(tile.exactPath);
+                int level = FogMipLevel.forZoomDelta(
+                        key.z - currentZoom, tile.mipmaps.length);
+                canvas.drawBitmap(tile.mipmaps[level], null,
+                        new RectF(0, 0, FogWorldTileScheme.TILE_PX,
+                                FogWorldTileScheme.TILE_PX), cutoutPaint);
+                canvas.restoreToCount(saved);
+            }
+        } catch (RuntimeException ignored) {
+            // Incomplete projection: full-screen fog remains in place.
         }
     }
 
