@@ -63,7 +63,9 @@ public final class DiscoveryClassifier {
 
             case "museum":
             case "gallery":
+            case "arts_centre":
             case "theatre":
+            case "cinema":
             case "planetarium":
             case "observatory":
                 return candidate("culture", 105, true);
@@ -90,7 +92,19 @@ public final class DiscoveryClassifier {
                 return candidate("culture", 65, true);
 
             case "place_of_worship":
+            case "townhall":
+            case "town_hall":
+            case "public_building":
                 return candidate("architecture", 62, true);
+
+            case "cemetery":
+            case "grave_yard":
+                return candidate("history", 58, true);
+
+            case "information":
+            case "guidepost":
+            case "map":
+                return candidate("information", 50, false);
 
             default:
                 return null;
@@ -106,7 +120,11 @@ public final class DiscoveryClassifier {
                 return candidate("landmark", 118, false);
             case "museum":
                 return candidate("culture", 108, true);
+            case "monument":
+                return candidate("landmark", 120, false);
             case "art_gallery":
+            case "arts_centre":
+            case "gallery":
                 return candidate("art", 100, true);
             case "zoo":
                 return candidate("nature", 95, true);
@@ -114,6 +132,11 @@ public final class DiscoveryClassifier {
                 return candidate("nature", 65, true);
             case "library":
                 return candidate("culture", 62, true);
+            case "town_hall":
+            case "townhall":
+                return candidate("architecture", 75, true);
+            case "cemetery":
+                return candidate("history", 58, true);
             case "stadium":
                 return candidate("landmark", 55, true);
             default:
@@ -148,6 +171,13 @@ public final class DiscoveryClassifier {
             case "peak": return "Peak";
             case "fountain": return "Fountain";
             case "drinking_water": return "Drinking water";
+            case "arts_centre": return "Arts centre";
+            case "cinema": return "Cinema";
+            case "townhall":
+            case "town_hall": return "Town hall";
+            case "cemetery":
+            case "grave_yard": return "Historic cemetery";
+            case "guidepost": return "Guidepost";
             default:
                 return humanize(category);
         }
