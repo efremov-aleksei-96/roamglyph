@@ -2,6 +2,13 @@
 
 ## 0.5.0 - unreleased
 
+### Added
+
+- Adaptive H3 Fog of War with viewport-aware rendering and a persistent visibility toggle.
+- Local-first Discoveries derived from already-loaded OpenMapTiles POI data.
+- Persistent discovery history with Room storage and portable backup format v3.
+- Discovery progress in the status card and anonymous nearby POI hints before visit.
+
 ### Changed
 
 - Replaced Google Fused Location Provider with Android's open platform
