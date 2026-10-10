@@ -1,10 +1,9 @@
 package com.sensareth.roamglyph.map;
 
 /**
- * A raster mask may be translated, rotated, or reduced in scale, but
- * significantly magnifying a screen-quantized visited mask can create false
- * explored pixels outside the true H3 footprint. Fail dark until a new
- * exact-resolution mask is built at the requested zoom.
+ * Allows bitmap reuse only while image magnification cannot expand an H3
+ * footprint by more than half of one physical display pixel. Source cells
+ * are never enlarged by changing their H3 parent resolution.
  */
 public final class FogMaskReusePolicy {
     public static final double MAX_ZOOM_IN_DELTA = 0.05;
@@ -13,13 +12,25 @@ public final class FogMaskReusePolicy {
     private FogMaskReusePolicy() {
     }
 
+    public static double safeZoomDelta(double snapshotCellDiameterPx) {
+        if (!Double.isFinite(snapshotCellDiameterPx)
+                || snapshotCellDiameterPx <= 0.0) return 0.0;
+        double safePixelDiameter = Math.max(1.0, snapshotCellDiameterPx);
+        double deltaForHalfPixel = Math.log1p(0.5 / safePixelDiameter)
+                / Math.log(2.0);
+        return Math.min(MAX_ZOOM_IN_DELTA, deltaForHalfPixel);
+    }
+
     public static boolean mayReuse(
             double snapshotZoom, double currentZoom,
-            double snapshotTilt, double currentTilt
+            double snapshotTilt, double currentTilt,
+            double snapshotCellDiameterPx
     ) {
         return Double.isFinite(snapshotZoom) && Double.isFinite(currentZoom)
                 && Double.isFinite(snapshotTilt) && Double.isFinite(currentTilt)
-                && currentZoom <= snapshotZoom + MAX_ZOOM_IN_DELTA
+                && Double.isFinite(snapshotCellDiameterPx)
+                && snapshotCellDiameterPx > 0.0
+                && currentZoom <= snapshotZoom + safeZoomDelta(snapshotCellDiameterPx)
                 && Math.abs(currentTilt - snapshotTilt) <= MAX_TILT_DELTA;
     }
 }
