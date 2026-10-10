@@ -1714,6 +1714,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     protected void onResume() {
         super.onResume();
         mapView.onResume();
+        // A live Activity can survive onLowMemory without detaching the
+        // fog view. Restart geographic tile demand even if the camera
+        // never moves after the user returns to the app.
+        scheduleViewportOverlay();
 
         tracking = store.isTrackingActive();
         locationEnabled = isSystemLocationEnabled();
