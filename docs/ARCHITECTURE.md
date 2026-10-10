@@ -46,6 +46,18 @@ and reloads the complete explored set only at lifecycle/restore boundaries. Duri
 active tracking, newly inserted H3 IDs are broadcast incrementally to the visible
 coverage index.
 
+Explored polygon contours are softened by quadratic corner interpolation
+in projected screen space. The resulting mask is intersected with exact
+resolution-13 H3 coverage before any fog is removed. Curvature may hide
+a fraction of a visited corner but can never claim unvisited pixels.
+The edge opacity ramp is applied to the curved contour.
+
+Discoveries use category-appropriate emoji rendered from the Android system
+font fallback, above the fog overlay. The emoji mapping comes from existing
+OpenMapTiles attributes; no network call or new POI service is introduced.
+The installed version and a bundled text changelog are available in the
+on-map menu without connectivity.
+
 ### Exact-coverage, screen-space Fog of War
 
 Fog is composited by a full-screen transparent Android View above the
