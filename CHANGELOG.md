@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.5.0-dev.18 — 2026-10-10 (test build, not released)
+
+- Add `⋮ → Check for updates` directly inside the Android application.
+  Shows the installed source-specific version and offers two website links:
+  official GitHub Releases and development APKs in the main-branch Android
+  CI workflow. Public releases are not available yet.
+- Add the same action to the offline About / Version & Changelog dialog.
+  No automatic update checking, APK installation, new permissions or
+  remote telemetry. The user explicitly opens the website.
+- Distinct build identity: versionCode 18, versionName
+  `0.5.0-dev.18+g<commit>` and named GitHub Actions APK artifact.
+
 ## 0.5.0-dev.17 — 2026-10-10 (test build, not released)
 
 - Replace visibly hexagonal vector contour strokes with a continuous,
