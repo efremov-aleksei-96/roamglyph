@@ -46,11 +46,13 @@ and reloads the complete explored set only at lifecycle/restore boundaries. Duri
 active tracking, newly inserted H3 IDs are broadcast incrementally to the visible
 coverage index.
 
-Explored polygon contours are softened by quadratic corner interpolation
-in projected screen space. The resulting mask is intersected with exact
-resolution-13 H3 coverage before any fog is removed. Curvature may hide
-a fraction of a visited corner but can never claim unvisited pixels.
-The edge opacity ramp is applied to the curved contour.
+Explored polygon contours are projected only on the viewport worker's
+geometry updates. Closed-ring Douglas-Peucker removes minor H3 staircase
+zigzags from the DISPLAY path while keeping longer straight edges; short
+quadratic arcs round major bends. Crucially, both the smoothed silhouette and
+the five progressively darker inward border bands are clipped to the
+original exact resolution-13 H3 footprint. No simplification changes stored
+visited cells, and no unknown region becomes transparent.
 
 Discoveries use category-appropriate emoji rendered from the Android system
 font fallback, above the fog overlay. The emoji mapping comes from existing
@@ -78,14 +80,17 @@ subtract more area from the black mask. Rounded line joins visually soften
 tiny H3 corners. During fast motion an uncached visited area may briefly
 remain dark until its exact geometry arrives, but unknown land stays dark.
 
-A cached raster mask is reused only when estimated bitmap magnification
-would shift the projected H3 cell diameter by at most half a screen pixel
-(hard maximum of 0.05 zoom levels), and the camera tilt changes by no more
-than one degree. At close zoom the threshold becomes much stricter.
-Otherwise the overlay temporarily fails dark until
-an exact, newly rasterized H3 mask becomes available. This prevents
-magnifying subpixel anti-aliased visited footprints into false discoveries
-during abrupt pinch zoom.
+The overlay caches *vector paths*, not a screen-quantized bitmap. During
+camera movement MapLibre provides a four-corner projective transform for
+the cached paths; the native renderer rasterizes at the CURRENT zoom, so
+even a large pinch-zoom has no anti-aliased pixel magnification and cannot
+cause the former bitmap safety policy to hide a visited trail. A new viewport
+may still be dark until its precise H3 geometry loads; the previous traced
+path stays spatially anchored through the camera transform.
+
+Each dev test build is explicitly labelled `0.5.0-dev.16+g<sha>` using
+the GitHub commit SHA, with an incremented Android versionCode. The
+uploaded APK artifact name contains the same commit identity.
 
 The renderer caps its native H3 polygon union at 20,000 exact cells per
 viewport. Exceeding that safety limit is conservatively rendered dark,
