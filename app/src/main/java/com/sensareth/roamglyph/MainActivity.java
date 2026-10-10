@@ -130,6 +130,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private final AtomicBoolean refreshPending = new AtomicBoolean(false);
     private final AtomicBoolean discoveryScanScheduled = new AtomicBoolean(false);
     private final AtomicBoolean fogMoveUpdatePending = new AtomicBoolean(false);
+    private final AtomicBoolean fogBuildRunning = new AtomicBoolean(false);
     private final AtomicLong overlayGeneration = new AtomicLong(0L);
     private final AtomicLong discoveryScanGeneration = new AtomicLong(0L);
     private final ExplorationCoverageIndex coverageIndex = new ExplorationCoverageIndex();
@@ -1220,6 +1221,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         VisibleRegion region = map.getProjection().getVisibleRegion();
         LatLngBounds bounds = region.latLngBounds;
         long generation = overlayGeneration.incrementAndGet();
+        // Never queue dozens of expensive H3 native unions while dragging
+        // the map. The currently running job will trigger one latest-view
+        // refresh when finished if the camera has moved again.
+        if (!fogBuildRunning.compareAndSet(false, true)) return;
 
         double north = bounds.getLatNorth();
         double east = bounds.getLonEast();
@@ -1239,8 +1244,12 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
             final ViewportOverlayBuilder.Result completed = result;
             runOnUiThread(() -> {
-                if (generation != overlayGeneration.get() || isDestroyed()
-                        || fogOverlayView == null) return;
+                fogBuildRunning.set(false);
+                if (isDestroyed() || fogOverlayView == null) return;
+                if (generation != overlayGeneration.get()) {
+                    scheduleViewportOverlay();
+                    return;
+                }
                 // Pure geographic res-13 geometry: zoom cannot enlarge it.
                 // Unknown space remains covered even if this callback is late.
                 fogOverlayView.setGeometry(completed.polygons);
