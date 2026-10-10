@@ -203,8 +203,10 @@ public final class FogOverlayView extends View {
         // clip never changes. Long straight stretches stay straight.
         float simplificationPx = Math.max(1.8f * density,
                 Math.min(17.0f * density, cellDiameterPx * 0.42f));
-        bandWidthPx = Math.max(2.5f * density,
-                Math.min(28.0f * density, cellDiameterPx * 1.15f));
+        // Do not let the inward gradient from opposite edges swallow a
+        // single-cell-width visited trail. Leave a clear central corridor.
+        bandWidthPx = Math.max(1.5f * density,
+                Math.min(20.0f * density, cellDiameterPx * 0.72f));
 
         Path exact = new Path();
         Path smoothed = new Path();
@@ -294,6 +296,14 @@ public final class FogOverlayView extends View {
         }
         exact.close();
 
+        // An isolated H3 cell should never look like a small rounded
+        // hexagon. Display it as an inscribed smooth circle instead. It stays
+        // entirely inside the exact hex footprint and cannot over-reveal.
+        if (n == 6) {
+            Path circle = inscribedSingleCellCircle(screenPoints);
+            if (circle != null) return new ProjectedRing(exact, circle);
+        }
+
         List<FogContourSmoother.Vertex> simplified =
                 FogContourSmoother.simplifyClosed(screenPoints, tolerancePx);
         int size = simplified.size();
@@ -321,6 +331,40 @@ public final class FogOverlayView extends View {
         }
         rounded.close();
         return new ProjectedRing(exact, rounded);
+    }
+
+    private Path inscribedSingleCellCircle(
+            List<FogContourSmoother.Vertex> vertices) {
+        float centerX = 0f, centerY = 0f;
+        float shortestSide = Float.MAX_VALUE, longestSide = 0f;
+        for (int i = 0; i < 6; i++) {
+            FogContourSmoother.Vertex p = vertices.get(i);
+            FogContourSmoother.Vertex next = vertices.get((i + 1) % 6);
+            centerX += p.x / 6f;
+            centerY += p.y / 6f;
+            float side = (float) Math.hypot(next.x - p.x, next.y - p.y);
+            shortestSide = Math.min(shortestSide, side);
+            longestSide = Math.max(longestSide, side);
+        }
+        // Reject heavily skewed polygons: these might not represent a
+        // regular single cell in the current tilted camera projection.
+        if (shortestSide < 0.01f || longestSide > shortestSide * 1.8f)
+            return null;
+
+        float radius = Float.MAX_VALUE;
+        for (int i = 0; i < 6; i++) {
+            FogContourSmoother.Vertex a = vertices.get(i);
+            FogContourSmoother.Vertex b = vertices.get((i + 1) % 6);
+            float dx = b.x - a.x, dy = b.y - a.y;
+            float length = (float) Math.hypot(dx, dy);
+            float distance = Math.abs(
+                    (centerX - a.x) * dy - (centerY - a.y) * dx) / length;
+            radius = Math.min(radius, distance);
+        }
+        if (!Float.isFinite(radius) || radius <= 0) return null;
+        Path circle = new Path();
+        circle.addCircle(centerX, centerY, 0.98f * radius, Path.Direction.CW);
+        return circle;
     }
 
     private static float lerp(float a, float b, float factor) {
