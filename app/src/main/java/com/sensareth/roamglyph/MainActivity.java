@@ -41,6 +41,7 @@ import com.sensareth.roamglyph.map.DiscoveryClassifier;
 import com.sensareth.roamglyph.map.DiscoveryEngine;
 import com.sensareth.roamglyph.map.DiscoveryOverlayBuilder;
 import com.sensareth.roamglyph.map.ExplorationCoverageIndex;
+import com.sensareth.roamglyph.map.FogOverlayView;
 import com.sensareth.roamglyph.map.OfflineMapStore;
 import com.sensareth.roamglyph.map.OfflineMapStyle;
 import com.sensareth.roamglyph.map.PoiDiscoveryCandidate;
@@ -104,12 +105,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private static final String PRIVACY_URL =
             "https://github.com/efremov-aleksei-96/roamglyph/blob/main/PRIVACY.md";
 
-    private static final String FOG_SOURCE_ID = "roamglyph-fog-source";
-    private static final String FOG_LAYER_ID = "roamglyph-fog-layer";
-    private static final String FOG_MID_SOURCE_ID = "roamglyph-fog-mid-source";
-    private static final String FOG_MID_LAYER_ID = "roamglyph-fog-mid-layer";
-    private static final String FOG_FAR_SOURCE_ID = "roamglyph-fog-far-source";
-    private static final String FOG_FAR_LAYER_ID = "roamglyph-fog-far-layer";
     private static final String DISCOVERY_HINT_SOURCE_ID = "roamglyph-discovery-hint-source";
     private static final String DISCOVERY_HINT_LAYER_ID = "roamglyph-discovery-hint-layer";
     private static final String DISCOVERED_SOURCE_ID = "roamglyph-discovered-source";
@@ -123,6 +118,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private static final String LOCATION_LAYER_ID = "roamglyph-current-location-dot";
 
     private MapView mapView;
+    private FogOverlayView fogOverlayView;
     private MapLibreMap map;
     private Button trackingButton;
     private Button locateButton;
@@ -133,6 +129,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private final Set<String> visited = new HashSet<>();
     private final AtomicBoolean refreshPending = new AtomicBoolean(false);
     private final AtomicBoolean discoveryScanScheduled = new AtomicBoolean(false);
+    private final AtomicBoolean fogMoveUpdatePending = new AtomicBoolean(false);
+    private final AtomicBoolean fogBuildRunning = new AtomicBoolean(false);
     private final AtomicLong overlayGeneration = new AtomicLong(0L);
     private final AtomicLong discoveryScanGeneration = new AtomicLong(0L);
     private final ExplorationCoverageIndex coverageIndex = new ExplorationCoverageIndex();
@@ -143,6 +141,14 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private ExecutorService mapIoExecutor;
     private H3Core h3;
     private LocationManager locationManager;
+    private final Runnable delayedFogRefresh = () -> {
+        fogMoveUpdatePending.set(false);
+        if (!isDestroyed() && store != null && store.isFogEnabled()
+                && overlayExecutor != null && !overlayExecutor.isShutdown()) {
+            scheduleViewportOverlay();
+        }
+    };
+
 
     private boolean tracking;
     private boolean trackingReceiverRegistered;
@@ -307,6 +313,37 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 )
         );
 
+        // Foreground screen-space fog cannot expose a strip during a rapid
+        // gesture while MapLibre updates/clips its world GeoJSON sources.
+        fogOverlayView = new FogOverlayView(this);
+        fogOverlayView.setFogEnabled(store.isFogEnabled());
+        root.addView(
+                fogOverlayView,
+                new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT
+                )
+        );
+
+        // Keep required map attribution bright and accessible above fog.
+        TextView mapAttribution = new TextView(this);
+        mapAttribution.setText("© OpenStreetMap contributors");
+        mapAttribution.setTextColor(Color.WHITE);
+        mapAttribution.setTextSize(11f);
+        mapAttribution.setPadding(dp(5), dp(3), dp(5), dp(3));
+        mapAttribution.setBackgroundColor(0xBB202124);
+        mapAttribution.setOnClickListener(v -> startActivity(
+                new Intent(Intent.ACTION_VIEW,
+                        Uri.parse("https://www.openstreetmap.org/copyright"))
+        ));
+        FrameLayout.LayoutParams attributionLp = new FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.WRAP_CONTENT,
+                FrameLayout.LayoutParams.WRAP_CONTENT
+        );
+        attributionLp.gravity = Gravity.BOTTOM | Gravity.START;
+        attributionLp.setMargins(dp(10), 0, 0, dp(6));
+        root.addView(mapAttribution, attributionLp);
+
         LinearLayout statusCard = new LinearLayout(this);
         statusCard.setOrientation(LinearLayout.VERTICAL);
         statusCard.setPadding(dp(16), dp(12), dp(16), dp(12));
@@ -451,8 +488,19 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     @Override
     public void onMapReady(@NonNull MapLibreMap mapLibreMap) {
         map = mapLibreMap;
+        fogOverlayView.attachMap(map);
 
+        map.addOnCameraMoveListener(() -> {
+            // The exact geographic cutouts are projected on every camera
+            // frame; worker refresh changes only which cells are in memory.
+            fogOverlayView.invalidate();
+            if (store.isFogEnabled()
+                    && fogMoveUpdatePending.compareAndSet(false, true)) {
+                mapView.postDelayed(delayedFogRefresh, 400L);
+            }
+        });
         map.addOnCameraIdleListener(() -> {
+            fogOverlayView.invalidate();
             scheduleViewportOverlay();
             requestDiscoveryScan();
         });
@@ -496,29 +544,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     }
 
     private void configureLoadedMapStyle(@NonNull Style style) {
-        // Always cover unknown geography before the first asynchronous H3
-        // calculation. Old masks stay attached to geographic coordinates during
-        // panning, so moving to a new area never briefly reveals bare map tiles.
-        FeatureCollection initialFog = store.isFogEnabled()
-                ? ViewportOverlayBuilder.initialFog()
-                : FeatureCollection.fromFeatures(new Feature[]{});
-        style.addSource(new GeoJsonSource(FOG_SOURCE_ID, initialFog));
-        style.addLayer(new FillLayer(FOG_LAYER_ID, FOG_SOURCE_ID).withProperties(
-                fillColor("#111418"),
-                fillOpacity(0.24f)
-        ));
-
-        style.addSource(new GeoJsonSource(FOG_MID_SOURCE_ID, initialFog));
-        style.addLayer(new FillLayer(FOG_MID_LAYER_ID, FOG_MID_SOURCE_ID).withProperties(
-                fillColor("#111418"),
-                fillOpacity(0.38f)
-        ));
-
-        style.addSource(new GeoJsonSource(FOG_FAR_SOURCE_ID, initialFog));
-        style.addLayer(new FillLayer(FOG_FAR_LAYER_ID, FOG_FAR_SOURCE_ID).withProperties(
-                fillColor("#111418"),
-                fillOpacity(0.47f)
-        ));
+        // Fog is composited in FogOverlayView above MapLibre. The old
+        // viewport-clipped GeoJSON fog layers are deliberately removed.
+        // MapLibre continues to render POIs and the user's position.
 
         style.addSource(new GeoJsonSource(
                 DISCOVERY_HINT_SOURCE_ID,
@@ -1209,59 +1237,50 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     }
 
     private void scheduleViewportOverlay() {
-        if (h3 == null
-                || map == null
-                || map.getStyle() == null
-                || overlayExecutor == null) {
-            return;
-        }
+        if (h3 == null || map == null || fogOverlayView == null
+                || store == null || !store.isFogEnabled()
+                || overlayExecutor == null || overlayExecutor.isShutdown()
+                || isDestroyed()) return;
 
         CameraPosition camera = map.getCameraPosition();
         if (camera == null) return;
 
-        VisibleRegion visibleRegion = map.getProjection().getVisibleRegion();
-        LatLngBounds bounds = visibleRegion.latLngBounds;
-        double zoom = camera.zoom;
-
+        VisibleRegion region = map.getProjection().getVisibleRegion();
+        LatLngBounds bounds = region.latLngBounds;
         long generation = overlayGeneration.incrementAndGet();
-        boolean fogEnabled = store.isFogEnabled();
+        // Never queue dozens of expensive H3 native unions while dragging
+        // the map. The currently running job will trigger one latest-view
+        // refresh when finished if the camera has moved again.
+        if (!fogBuildRunning.compareAndSet(false, true)) return;
 
         double north = bounds.getLatNorth();
         double east = bounds.getLonEast();
         double south = bounds.getLatSouth();
         double west = bounds.getLonWest();
+        double zoom = camera.zoom;
 
         overlayExecutor.execute(() -> {
             ViewportOverlayBuilder.Result result;
             try {
                 result = ViewportOverlayBuilder.build(
-                        h3,
-                        coverageIndex,
-                        north,
-                        east,
-                        south,
-                        west,
-                        zoom
+                        h3, coverageIndex, north, east, south, west, zoom
                 );
             } catch (Throwable error) {
-                return;
+                result = ViewportOverlayBuilder.Result.dark();
             }
 
+            final ViewportOverlayBuilder.Result completed = result;
             runOnUiThread(() -> {
-                if (generation != overlayGeneration.get()
-                        || isDestroyed()
-                        || map == null
-                        || map.getStyle() == null) {
+                fogBuildRunning.set(false);
+                if (isDestroyed() || fogOverlayView == null
+                        || !store.isFogEnabled()) return;
+                if (generation != overlayGeneration.get()) {
+                    scheduleViewportOverlay();
                     return;
                 }
-
-                FeatureCollection empty = FeatureCollection.fromFeatures(new Feature[]{});
-                GeoJsonSource fogSource = map.getStyle().getSourceAs(FOG_SOURCE_ID);
-                GeoJsonSource midSource = map.getStyle().getSourceAs(FOG_MID_SOURCE_ID);
-                GeoJsonSource farSource = map.getStyle().getSourceAs(FOG_FAR_SOURCE_ID);
-                if (fogSource != null) fogSource.setGeoJson(fogEnabled ? result.fog : empty);
-                if (midSource != null) midSource.setGeoJson(fogEnabled ? result.fogMid : empty);
-                if (farSource != null) farSource.setGeoJson(fogEnabled ? result.fogFar : empty);
+                // Pure geographic res-13 geometry: zoom cannot enlarge it.
+                // Unknown space remains covered even if this callback is late.
+                fogOverlayView.setGeometry(completed.polygons);
             });
         });
     }
@@ -1407,11 +1426,25 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                             DiscoveryOverlayBuilder.hints(result.hints)
                     );
                 }
+                if (fogOverlayView != null) {
+                    ArrayList<LatLng> opened = new ArrayList<>(result.discovered.size());
+                    for (DiscoveryEntity discovery : result.discovered) {
+                        opened.add(new LatLng(discovery.latitude, discovery.longitude));
+                    }
+                    ArrayList<LatLng> hints = new ArrayList<>(result.hints.size());
+                    for (PoiDiscoveryCandidate hint : result.hints) {
+                        hints.add(new LatLng(hint.latitude, hint.longitude));
+                    }
+                    fogOverlayView.setDiscoveries(opened, hints);
+                }
             });
         });
     }
 
     private void clearDiscoveryLayers() {
+        if (fogOverlayView != null) {
+            fogOverlayView.setDiscoveries(Collections.emptyList(), Collections.emptyList());
+        }
         if (map == null || map.getStyle() == null) return;
 
         FeatureCollection empty = FeatureCollection.fromFeatures(new Feature[]{});
@@ -1472,25 +1505,11 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     }
 
     private void showInitialFogLayer() {
-        if (map == null || map.getStyle() == null) return;
-        FeatureCollection world = ViewportOverlayBuilder.initialFog();
-        GeoJsonSource source = map.getStyle().getSourceAs(FOG_SOURCE_ID);
-        GeoJsonSource mid = map.getStyle().getSourceAs(FOG_MID_SOURCE_ID);
-        GeoJsonSource far = map.getStyle().getSourceAs(FOG_FAR_SOURCE_ID);
-        if (source != null) source.setGeoJson(world);
-        if (mid != null) mid.setGeoJson(world);
-        if (far != null) far.setGeoJson(world);
+        if (fogOverlayView != null) fogOverlayView.setFogEnabled(true);
     }
 
     private void clearFogLayer() {
-        if (map == null || map.getStyle() == null) return;
-        FeatureCollection empty = FeatureCollection.fromFeatures(new Feature[]{});
-        GeoJsonSource source = map.getStyle().getSourceAs(FOG_SOURCE_ID);
-        GeoJsonSource mid = map.getStyle().getSourceAs(FOG_MID_SOURCE_ID);
-        GeoJsonSource far = map.getStyle().getSourceAs(FOG_FAR_SOURCE_ID);
-        if (source != null) source.setGeoJson(empty);
-        if (mid != null) mid.setGeoJson(empty);
-        if (far != null) far.setGeoJson(empty);
+        if (fogOverlayView != null) fogOverlayView.setFogEnabled(false);
     }
 
     private void zoomMap(boolean zoomIn) {
@@ -1504,6 +1523,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     }
 
     private void renderCurrentLocation() {
+        if (fogOverlayView != null) {
+            fogOverlayView.setCurrentLocation(hasLocation, lastLat, lastLng);
+        }
         if (!hasLocation || map == null || map.getStyle() == null) return;
 
         GeoJsonSource source = map.getStyle().getSourceAs(LOCATION_SOURCE_ID);
@@ -1650,6 +1672,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     @Override
     protected void onDestroy() {
+        mapView.removeCallbacks(delayedFogRefresh);
+        fogMoveUpdatePending.set(false);
         mapView.onDestroy();
         if (dataExecutor != null) {
             dataExecutor.shutdown();
