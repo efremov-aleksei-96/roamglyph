@@ -17,6 +17,9 @@
 - Fall back entirely to existing H3 rendering when no GPS points are
   available or a tile's bounded query is truncated/fails. Legacy,
   imported history and JSON backup representation are unchanged.
+- Attach GPS repository before starting tile work. Rebuild local route
+  masks when accepted fixes appear inside already explored H3 cells
+  (throttled to 15 seconds), or a backup adds GPS without changing H3.
 - Regression tests reject jumps between sessions, long GPS outages,
   large physical jumps and invalid fixes.
 - Physical QA required: compare the same real traveled street in dev.21
