@@ -125,6 +125,27 @@ public final class ExplorationRepository {
         return dao.loadGpsPointsPage(limit, offset);
     }
 
+    public long countAcceptedGpsPointsForSession(
+            @NonNull String sessionId,
+            long throughTimestampMs
+    ) {
+        return dao.countAcceptedGpsPointsForSession(sessionId, throughTimestampMs);
+    }
+
+    public List<GpsPointEntity> loadAcceptedGpsPointsForSessionPage(
+            @NonNull String sessionId,
+            long throughTimestampMs,
+            int limit,
+            int offset
+    ) {
+        return dao.loadAcceptedGpsPointsForSessionPage(
+                sessionId,
+                throughTimestampMs,
+                limit,
+                offset
+        );
+    }
+
     public int importVisitedCells(List<VisitedCellEntity> cells) {
         if (cells.isEmpty()) return 0;
         long[] rows = dao.insertVisitedCells(cells);
