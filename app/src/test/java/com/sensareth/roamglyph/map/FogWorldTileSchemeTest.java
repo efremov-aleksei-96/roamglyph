@@ -61,6 +61,27 @@ public final class FogWorldTileSchemeTest {
         }
     }
 
+    @Test public void hugeViewportDowngradesTileZoomInsteadOfDroppingVisibleRoads() {
+        double north = 40.25, east = 44.60, south = 40.12, west = 44.40;
+        int z = FogWorldTileScheme.budgetedZoom(
+                north, east, south, west, 20, 96);
+        assertTrue("Huge view must use bigger geographic tiles", z < 20);
+        List<FogWorldTileScheme.Key> allVisible =
+                FogWorldTileScheme.covering(north, east, south, west, z, 0, 96);
+        List<FogWorldTileScheme.Key> uncapped =
+                FogWorldTileScheme.covering(north, east, south, west, z, 0, 512);
+        assertEquals("Every visible tile must fit, not center-crop",
+                uncapped.size(), allVisible.size());
+        assertTrue(allVisible.size() <= 96);
+    }
+
+    @Test public void normalPhoneViewKeepsGeographicTileZoom() {
+        double north = 40.189, east = 44.518, south = 40.186, west = 44.513;
+        int zoom = FogWorldTileScheme.budgetedZoom(
+                north, east, south, west, 17, 96);
+        assertEquals("Do not degrade ordinary map detail", 17, zoom);
+    }
+
     @Test public void unsupportedAntimeridianViewFailsDark() {
         assertTrue(FogWorldTileScheme.covering(
                 40.2, -179.8, 40.1, 179.8, 16, 1, 34).isEmpty());
