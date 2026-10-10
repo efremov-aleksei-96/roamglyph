@@ -490,13 +490,20 @@ public final class FogOverlayView extends View {
         if (gpsRepository != null && !cancelled(job)) {
             try {
                 final int maxPoints = 2_500;
-                final double margin = 0.0008; // Includes joins off tile.
+                // Include predecessors/successors for any allowable 140m
+                // GPS join plus the 11m clear corridor and a safety margin.
+                // Longitude degrees are latitude-dependent, unlike lat.
+                final double haloMeters = 190.0;
+                final double latPad = haloMeters / 111_000.0;
+                final double lngPad = haloMeters / (111_000.0 *
+                        Math.max(0.01, Math.cos(
+                                Math.toRadians(centerLat))));
                 List<GpsPointEntity> routePoints =
                         gpsRepository.loadAcceptedGpsPointsInBounds(
-                                FogWorldTileScheme.south(key) - margin,
-                                FogWorldTileScheme.north(key) + margin,
-                                FogWorldTileScheme.west(key) - margin,
-                                FogWorldTileScheme.east(key) + margin,
+                                Math.max(-85.0, FogWorldTileScheme.south(key) - latPad),
+                                Math.min(85.0, FogWorldTileScheme.north(key) + latPad),
+                                Math.max(-180.0, FogWorldTileScheme.west(key) - lngPad),
+                                Math.min(180.0, FogWorldTileScheme.east(key) + lngPad),
                                 maxPoints + 1);
                 if (routePoints.size() <= maxPoints) {
                     smoothRoute = FogGpsCorridorBuilder.build(
