@@ -5,8 +5,23 @@ import androidx.annotation.Nullable;
 public final class GpsAcceptancePolicy {
     public static final float MAX_ACCEPTED_ACCURACY_M = 35f;
     public static final double MAX_PLAUSIBLE_SPEED_MPS = 55.0;
+    public static final long MAX_FIX_AGE_NS = 30_000_000_000L;
 
     private GpsAcceptancePolicy() {
+    }
+
+    // Location.getElapsedRealtimeNanos() is monotonic within a boot; unlike
+    // Location.getTime(), it is unaffected by wall-clock corrections.
+    public static boolean isStaleFix(
+            long fixElapsedNanos,
+            long nowElapsedNanos,
+            long lastAcceptedElapsedNanos
+    ) {
+        return fixElapsedNanos <= 0L
+                || fixElapsedNanos > nowElapsedNanos
+                || nowElapsedNanos - fixElapsedNanos > MAX_FIX_AGE_NS
+                || (lastAcceptedElapsedNanos > 0L
+                    && fixElapsedNanos <= lastAcceptedElapsedNanos);
     }
 
     @Nullable
@@ -36,10 +51,10 @@ public final class GpsAcceptancePolicy {
 
         if (previousAccepted == null) return null;
 
-        // Network/GPS callbacks may arrive out of order. Ignore stale or
-        // duplicate timestamps rather than adding phantom distance and cells.
+        // Wall-clock timestamps may jump backwards after clock correction.
+        // Monotonic age/ordering is validated separately with isStaleFix.
         long elapsedMs = timestampMs - previousAccepted.timestampMs;
-        if (elapsedMs <= 0L) return "stale";
+        if (elapsedMs <= 0L) return null;
 
         double distanceM = distanceMeters(
                 previousAccepted.latitude,
