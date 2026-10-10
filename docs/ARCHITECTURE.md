@@ -36,7 +36,8 @@ Room visited_cells
         |        +--> viewport explored cells
         |
         +--> MapLibre Fog of War overlay
-        +--> portable backup v2
+        +--> discovery matching against active OpenMapTiles POIs
+        +--> portable backup v3
 ```
 
 The foreground service performs tracking while exploration is explicitly active.
@@ -98,26 +99,34 @@ or retries. The legacy set is removed only after the Room copy succeeds.
 ## Map stack
 
 ```text
-OpenStreetMap data
-        |
-   OpenFreeMap
-        |
- vector style/tiles
-        |
- MapLibre Native
-        |
- Roamglyph overlays
+                         +--> OpenFreeMap online style/tiles
+OpenStreetMap data ------|
+                         +--> local PMTiles v3 (OpenMapTiles schema)
+                                      |
+                                      v
+                               MapLibre Native
+                                      |
+             +------------------------+----------------------+
+             |                        |                      |
+        Fog of War              explored cells        Discoveries
 ```
 
-The default provider is deliberately replaceable.
+The map source is deliberately replaceable. User exploration data is never keyed to
+a provider. The local PMTiles archive is copied into app-private storage and exposed
+to MapLibre through `pmtiles://file://`.
 
-Future offline support should use local vector packages, with PMTiles currently the
-preferred candidate, without changing the exploration database or backup format.
+The bundled offline style intentionally contains only geometry layers and therefore
+needs no remote glyph or sprite requests. The source ID remains `openmaptiles`, so
+the same discovery scanner can query the `poi` source layer online or offline.
 
 ## Backup model
 
-Version 2 backups are streaming JSON and contain all three core data sets: cells,
-sessions, and GPS points. Import validates the complete file before restore and uses
+Version 3 backups are streaming JSON and contain cells, sessions, GPS points, and
+persistent discoveries. Import validates the complete file before restore and uses
 stable IDs plus conflict-ignore inserts so repeated restoration is safe.
+
+The PMTiles basemap itself is intentionally not included in a Roamglyph backup:
+maps can be very large and are replaceable presentation data, while exploration
+history is the portable user-owned data.
 
 See `docs/BACKUP_FORMAT.md`.

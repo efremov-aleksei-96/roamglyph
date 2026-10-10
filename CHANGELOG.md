@@ -8,6 +8,9 @@
 - Local-first Discoveries derived from already-loaded OpenMapTiles POI data.
 - Persistent discovery history with Room storage and portable backup format v3.
 - Discovery progress in the status card and anonymous nearby POI hints before visit.
+- Local PMTiles v3 MVT import using Android's system document picker.
+- A network-independent offline geometry style for OpenMapTiles-compatible archives.
+- Persistent switching between online OpenFreeMap and the local PMTiles basemap.
 
 ### Changed
 
@@ -32,8 +35,8 @@
 - Added persistent exploration sessions and timestamped GPS-point history.
 - Added first-seen timestamps for newly discovered H3 cells.
 - Added a high-speed GPS teleport filter while preserving ordinary cycling.
-- Added streaming portable backup format v2 containing cells, sessions, and GPS
-  points, while retaining import support for version-1 cell-only exports.
+- Added streaming portable backup format v3 containing cells, sessions, GPS points,
+  and discoveries, while retaining import support for versions 1 and 2.
 - Added idempotent migration of existing pre-Room cells into the database.
 
 ### Security and distribution

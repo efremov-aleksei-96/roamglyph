@@ -1,6 +1,6 @@
 # Roamglyph Privacy Policy
 
-Last updated: 2026-10-09
+Last updated: 2026-10-10
 
 Roamglyph is designed as a local-first exploration tracker.
 
@@ -46,8 +46,11 @@ Map data is derived from OpenStreetMap:
 
 https://www.openstreetmap.org/copyright
 
-Future offline-map support is intended to allow map viewing without a map provider,
-but it is not part of version 0.5.0.
+You can alternatively import a local PMTiles v3 vector archive. The selected file
+is copied into Roamglyph's app-private storage through Android's document picker.
+When that local map is active, Roamglyph's bundled geometry style does not need map
+tiles, glyphs, sprites, or POI data from the network. Removing the local map deletes
+that private copy but does not delete exploration history or backups.
 
 ## Discoveries
 
@@ -63,9 +66,10 @@ the local database and portable backup.
 ## Export and import
 
 Export happens only when you explicitly choose **Export backup** and select a
-destination through Android's system document picker. A version-2 backup contains
-explored cells, sessions, and recorded GPS points in a documented JSON format.
-Import likewise happens only after you explicitly select a file.
+destination through Android's system document picker. A version-3 backup contains
+explored cells, sessions, recorded GPS points, and persistent discoveries in a
+documented JSON format. Import likewise happens only after you explicitly select a
+file. Version-2 complete backups remain importable.
 
 Legacy version-1 cell-only JSON exports remain importable.
 
