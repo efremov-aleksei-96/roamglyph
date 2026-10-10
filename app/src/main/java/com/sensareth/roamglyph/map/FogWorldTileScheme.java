@@ -124,6 +124,26 @@ public final class FogWorldTileScheme {
     }
 
     /**
+     * Test only existing, already-cached tiles against the current viewport.
+     * Unlike covering(), this has NO output limit or center cropping: an old
+     * zoom tile at the viewport edge must remain drawable during a handoff.
+     */
+    public static boolean intersectsBounds(Key key, double north, double east,
+                                           double south, double west) {
+        if (!Double.isFinite(north) || !Double.isFinite(east)
+                || !Double.isFinite(south) || !Double.isFinite(west)
+                || north <= south || east <= west || east - west > 180) {
+            return false;
+        }
+        int left = (int) Math.floor(longitudeX(west, key.z) / TILE_PX);
+        int right = (int) Math.floor(longitudeX(east, key.z) / TILE_PX);
+        int top = (int) Math.floor(latitudeY(north, key.z) / TILE_PX);
+        int bottom = (int) Math.floor(latitudeY(south, key.z) / TILE_PX);
+        return key.x >= left && key.x <= right
+                && key.y >= top && key.y <= bottom;
+    }
+
+    /**
      * Return nearest tiles first: visible tiles, then one-tile prefetch halo.
      * Reject the longitude seam rather than mapping the wrong hemisphere.
      */
