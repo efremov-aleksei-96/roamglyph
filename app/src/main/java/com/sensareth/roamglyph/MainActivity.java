@@ -1469,8 +1469,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         String version = installedVersion();
         String header = getString(R.string.about_version, version);
         StringBuilder content = new StringBuilder(header)
-                .append("\\n").append(getString(R.string.about_development_build))
-                .append("\\n\\n");
+                .append("\n").append(getString(R.string.about_development_build))
+                .append("\n\n");
 
         // Keep the release notes bundled in the APK: no browser, network,
         // storage permissions or connected account is needed.
@@ -1479,7 +1479,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                      new InputStreamReader(stream, StandardCharsets.UTF_8))) {
             String line;
             while ((line = reader.readLine()) != null) {
-                content.append(line).append('\\n');
+                content.append(line).append('\n');
             }
         } catch (Exception error) {
             content.append(getString(R.string.about_changelog_unavailable));
