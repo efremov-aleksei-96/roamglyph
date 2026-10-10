@@ -889,7 +889,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             if (item.getItemId() == 6) {
                 boolean enabled = !store.isFogEnabled();
                 store.setFogEnabled(enabled);
-                if (!enabled) {
+                if (enabled) {
+                    showInitialFogLayer();
+                } else {
                     clearFogLayer();
                 }
                 scheduleViewportOverlay();
@@ -1467,6 +1469,17 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 .setPositiveButton(android.R.string.ok, null)
                 .show();
         return true;
+    }
+
+    private void showInitialFogLayer() {
+        if (map == null || map.getStyle() == null) return;
+        FeatureCollection world = ViewportOverlayBuilder.initialFog();
+        GeoJsonSource source = map.getStyle().getSourceAs(FOG_SOURCE_ID);
+        GeoJsonSource mid = map.getStyle().getSourceAs(FOG_MID_SOURCE_ID);
+        GeoJsonSource far = map.getStyle().getSourceAs(FOG_FAR_SOURCE_ID);
+        if (source != null) source.setGeoJson(world);
+        if (mid != null) mid.setGeoJson(world);
+        if (far != null) far.setGeoJson(world);
     }
 
     private void clearFogLayer() {
