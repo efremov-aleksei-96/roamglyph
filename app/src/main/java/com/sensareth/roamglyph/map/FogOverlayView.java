@@ -6,6 +6,7 @@ import android.graphics.Color;
 import android.graphics.Matrix;
 import android.graphics.PorterDuff;
 import android.graphics.PorterDuffXfermode;
+import android.graphics.RenderNode;
 import android.graphics.Paint;
 import android.graphics.Path;
 import android.graphics.PointF;
@@ -37,6 +38,7 @@ public final class FogOverlayView extends View {
 
     private final Paint cutoutPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint gradientPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
+    private final Paint clearPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint markerPaint = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Paint markerOutline = new Paint(Paint.ANTI_ALIAS_FLAG);
     private final Matrix transform = new Matrix();
@@ -48,6 +50,7 @@ public final class FogOverlayView extends View {
     private Path exactPath;
     private Path roundedPath;
     private Path outlinePath;
+    private RenderNode fogDisplayList;
     private final LatLng[] referenceGeo = new LatLng[4];
     private final float[] referencePixels = new float[8];
     private final float[] currentPixels = new float[8];
@@ -83,6 +86,7 @@ public final class FogOverlayView extends View {
         cutoutPaint.setColor(Color.WHITE);
         cutoutPaint.setStyle(Paint.Style.FILL);
         cutoutPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_OUT));
+        clearPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.CLEAR));
 
         gradientPaint.setStyle(Paint.Style.STROKE);
         gradientPaint.setStrokeJoin(Paint.Join.ROUND);
@@ -148,27 +152,25 @@ public final class FogOverlayView extends View {
             }
         }
 
+        // Unknown geography is always covered before a transformed snapshot
+        // is drawn. The exact old viewport may cover only part of the screen.
         int fogLayer = canvas.saveLayer(0f, 0f, getWidth(), getHeight(), null);
         canvas.drawColor(Color.argb(FOG_ALPHA, 17, 20, 24));
-        if (map != null && exactPath != null && roundedPath != null
+        if (map != null && fogDisplayList != null
+                && fogDisplayList.hasDisplayList()
                 && transformedMaskIsSafe()) {
             int saved = canvas.save();
             canvas.concat(transform);
 
-            // Clip must precede any subtractive draw: smoothed curves may
-            // cross the original H3 silhouette at concave turns.
-            canvas.clipPath(exactPath);
-            canvas.drawPath(roundedPath, cutoutPaint);
-
-            // Five distinct, progressively darker zones INSIDE revealed
-            // territory. No alpha is subtracted outside the exact H3 mask.
-            canvas.clipPath(roundedPath);
-            final float[] widths = {1.0f, 0.78f, 0.56f, 0.35f, 0.16f};
-            final int[] alphas = {25, 32, 39, 51, 68};
-            for (int i = 0; i < widths.length; i++) {
-                gradientPaint.setStrokeWidth(bandWidthPx * widths[i]);
-                gradientPaint.setColor(Color.argb(alphas[i], 17, 20, 24));
-                canvas.drawPath(outlinePath, gradientPaint);
+            // Make room for the correctly transformed cached snapshot,
+            // without exposing any pixels not covered by its dark backdrop.
+            canvas.drawRect(0, 0, getWidth(), getHeight(), clearPaint);
+            if (canvas.isHardwareAccelerated()) {
+                // Hardware display list captures five gradient paths once;
+                // only one GPU node draw is issued per camera frame.
+                canvas.drawRenderNode(fogDisplayList);
+            } else {
+                renderVectorFog(canvas);
             }
             canvas.restoreToCount(saved);
         }
@@ -178,9 +180,27 @@ public final class FogOverlayView extends View {
     }
 
     private void clearVectorSnapshot() {
+        if (fogDisplayList != null) fogDisplayList.discardDisplayList();
+        fogDisplayList = null;
         exactPath = null;
         roundedPath = null;
         outlinePath = null;
+    }
+
+    private void renderVectorFog(@NonNull Canvas canvas) {
+        canvas.drawColor(Color.argb(FOG_ALPHA, 17, 20, 24));
+        int saved = canvas.save();
+        canvas.clipPath(exactPath);
+        canvas.drawPath(roundedPath, cutoutPaint);
+        canvas.clipPath(roundedPath);
+        final float[] widths = {1.0f, 0.78f, 0.56f, 0.35f, 0.16f};
+        final int[] alphas = {25, 32, 39, 51, 68};
+        for (int i = 0; i < widths.length; i++) {
+            gradientPaint.setStrokeWidth(bandWidthPx * widths[i]);
+            gradientPaint.setColor(Color.argb(alphas[i], 17, 20, 24));
+            canvas.drawPath(outlinePath, gradientPaint);
+        }
+        canvas.restoreToCount(saved);
     }
 
     /** Project geographic vertices once per new viewport, not per animation frame. */
@@ -241,6 +261,20 @@ public final class FogOverlayView extends View {
         exactPath = exact;
         roundedPath = smoothed;
         outlinePath = outlines;
+
+        // API 29+ RenderNode stores the vector DRAW COMMANDS as a display
+        // list; unlike a bitmap it is not quantized to reference pixels.
+        // Animating the 4-corner matrix doesn't re-issue five huge paths
+        // from the UI draw loop. Android HWUI replays the cached node.
+        RenderNode node = new RenderNode("Roamglyph exact fog");
+        node.setPosition(0, 0, getWidth(), getHeight());
+        Canvas recording = node.beginRecording(getWidth(), getHeight());
+        try {
+            renderVectorFog(recording);
+        } finally {
+            node.endRecording();
+        }
+        fogDisplayList = node;
     }
 
     private boolean transformedMaskIsSafe() {
