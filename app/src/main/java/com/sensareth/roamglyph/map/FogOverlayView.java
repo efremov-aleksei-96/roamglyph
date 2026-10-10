@@ -577,7 +577,7 @@ public final class FogOverlayView extends View {
                     FogWorldTileScheme.covering(
                             b.getLatNorth(), b.getLonEast(),
                             b.getLatSouth(), b.getLonWest(),
-                            displayZoom, 0, MAX_VISIBLE);
+                            displayZoom, 0, 512);
             double currentZoom = map.getCameraPosition().zoom;
             for (FogWorldTileScheme.Key key : screenKeys) {
                 Tile tile = cache.get(key);
