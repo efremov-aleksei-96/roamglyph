@@ -321,10 +321,16 @@ public final class FogOverlayView extends View {
             // during a transition. Halo tiles may be evicted first.
             Set<FogWorldTileScheme.Key> keep = new HashSet<>(newVisible);
             if (displayZoom >= 0 && displayZoom != requestedZoom) {
-                // Pin the COMPLETE previously displayed zoom, not just
-                // 32 keys: otherwise a large tablet loses old tiles mid-handoff.
-                keep.addAll(FogWorldTileScheme.covering(
-                        north, east, south, west, displayZoom, 0, 512));
+                // Pin every resident old-zoom tile intersecting the camera.
+                // An enumerated grid limited to 512 entries can exclude an
+                // edge tile that drawCachedTiles() still intends to show.
+                for (FogWorldTileScheme.Key oldKey : cache.keySet()) {
+                    if (oldKey.z == displayZoom
+                            && FogWorldTileScheme.intersectsBounds(
+                                    oldKey, north, east, south, west)) {
+                        keep.add(oldKey);
+                    }
+                }
             }
             pinned = keep;
 
@@ -487,8 +493,13 @@ public final class FogOverlayView extends View {
             return;
         }
         if (tile == null) {
-            // Only a genuine over-budget/OOM/raster failure is terminal.
-            // Fail dark until the next coverage version; no CPU spin.
+            // A failed attempt to restore lost raster detail must NEVER
+            // overwrite a valid existing tile with a blank fallback.
+            // Retain its exact vector footprint and lower-res bitmap until
+            // a later camera/coverage refresh can retry the upgrade.
+            Tile usable = cache.get(job.key);
+            if (usable != null && usable.epoch == job.epoch) return;
+            // No previous coverage: fail dark without an infinite retry loop.
             tile = new Tile(job.key, new Path(), new Bitmap[0], job.epoch);
         }
         Tile old = cache.put(job.key, tile);
