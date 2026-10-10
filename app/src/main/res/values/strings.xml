@@ -19,6 +19,7 @@
     <string name="action_start">▶ Start exploration</string>
     <string name="action_continue">▶ Continue exploration</string>
     <string name="action_stop">■ Stop exploration</string>
+    <string name="stats_summary">%1$,d cells · %2$,d discoveries · ≈%3$s</string>
 
     <string name="location_permission_prompt">Location permission is required to show your position</string>
     <string name="location_permission_required">Location permission required</string>
