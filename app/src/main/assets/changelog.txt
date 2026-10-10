@@ -4,7 +4,7 @@ ROAMGLYPH · WHAT'S NEW
 
 • Every test APK has an identifiable dev version and source revision.
 • Explored trails remain visible while zooming: vector outlines replace the old raster mask that went dark during zoom-in.
-• Straightened long H3 zigzags with smooth curved bends, limited to true visited territory.
+• Straightened long H3 zigzags with smooth curved bends and isolated round cells, limited to true visited territory.
 • Restored five distinct shades of fog along the visited border.
 • GPS, discoveries, Room data and backup format remain unchanged.
 
