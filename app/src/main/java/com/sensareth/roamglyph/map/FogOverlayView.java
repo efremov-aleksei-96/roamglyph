@@ -320,7 +320,7 @@ public final class FogOverlayView extends View {
                             job.exact, job.width, job.height,
                             job.cellDiameterPx, job.density,
                             () -> disposed || !enabled
-                                    || job.revision != revision);
+                                    || completedJob.revision != revision);
                 } catch (RuntimeException | OutOfMemoryError ignored) {
                     // The main thread will fail dark rather than use a
                     // partial or incorrectly feathered mask.
