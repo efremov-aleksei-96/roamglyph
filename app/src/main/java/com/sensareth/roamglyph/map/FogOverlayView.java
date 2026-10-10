@@ -45,7 +45,7 @@ public final class FogOverlayView extends View {
     private static final int FOG_ALPHA = 210;
     private static final int MAX_CACHE = 1024;
     private static final int MAX_DEMAND = 32;
-    private static final int MAX_VISIBLE = 512;
+    private static final int MAX_VISIBLE = 96;
     private static final long MAX_CACHE_BYTES = 64L * 1024L * 1024L;
     private static final long DEMAND_INTERVAL_MS = 110L;
 
@@ -293,6 +293,11 @@ public final class FogOverlayView extends View {
                     map.getProjection().getVisibleRegion().latLngBounds;
             double north = b.getLatNorth(), south = b.getLatSouth();
             double east = b.getLonEast(), west = b.getLonWest();
+            // Large or pitched viewports must use a coarser *render grid*
+            // rather than dropping any visible geographic tile. H3 cell
+            // storage and the conservative exact cutout are unchanged.
+            requestedZoom = FogWorldTileScheme.budgetedZoom(
+                    north, east, south, west, requestedZoom, MAX_VISIBLE);
             List<FogWorldTileScheme.Key> newVisible =
                     FogWorldTileScheme.covering(
                             north, east, south, west, requestedZoom, 0, MAX_VISIBLE);
@@ -319,7 +324,7 @@ public final class FogOverlayView extends View {
                 // Pin the COMPLETE previously displayed zoom, not just
                 // 32 keys: otherwise a large tablet loses old tiles mid-handoff.
                 keep.addAll(FogWorldTileScheme.covering(
-                        north, east, south, west, displayZoom, 0, MAX_VISIBLE));
+                        north, east, south, west, displayZoom, 0, 512));
             }
             pinned = keep;
 
