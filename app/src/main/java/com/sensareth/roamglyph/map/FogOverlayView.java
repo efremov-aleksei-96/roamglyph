@@ -43,8 +43,9 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public final class FogOverlayView extends View {
     private static final int FOG_ALPHA = 210;
-    private static final int MAX_CACHE = 36;
-    private static final int MAX_DEMAND = 24;
+    private static final int MAX_CACHE = 72;
+    private static final int MAX_DEMAND = 32;
+    private static final long MAX_CACHE_BYTES = 64L * 1024L * 1024L;
     private static final long DEMAND_INTERVAL_MS = 110L;
 
     private final Paint cutoutPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
@@ -58,6 +59,8 @@ public final class FogOverlayView extends View {
             new LinkedHashMap<>(48, 0.75f, true);
     private final ConcurrentLinkedQueue<TileJob> jobs = new ConcurrentLinkedQueue<>();
     private final Set<FogWorldTileScheme.Key> pending = new HashSet<>();
+    private Set<FogWorldTileScheme.Key> pinned = Collections.emptySet();
+    private long cacheBytes;
     private final AtomicBoolean workerRunning = new AtomicBoolean(false);
     private ExecutorService worker = Executors.newSingleThreadExecutor();
 
@@ -114,6 +117,14 @@ public final class FogOverlayView extends View {
             this.exactPath = exactPath;
             this.mipmaps = mipmaps;
             this.epoch = epoch;
+        }
+
+        long bytes() {
+            long total = 0;
+            for (Bitmap mask : mipmaps) if (mask != null && !mask.isRecycled()) {
+                total += mask.getAllocationByteCount();
+            }
+            return total;
         }
 
         void recycle() {
@@ -216,7 +227,17 @@ public final class FogOverlayView extends View {
     private void clearCache() {
         for (Tile tile : cache.values()) tile.recycle();
         cache.clear();
+        cacheBytes = 0L;
         displayZoom = -1;
+        pinned = Collections.emptySet();
+    }
+
+    /** Android memory pressure: discard textures rather than triggering OOM. */
+    public void trimForLowMemory() {
+        jobs.clear();
+        pending.clear();
+        clearCache();
+        invalidate();
     }
 
     /**
@@ -252,8 +273,25 @@ public final class FogOverlayView extends View {
                     FogWorldTileScheme.covering(
                             north, east, south, west, requestedZoom, 1, MAX_DEMAND);
             visible = newVisible;
-            Set<FogWorldTileScheme.Key> newWanted = new HashSet<>(preload);
-            wanted = Collections.unmodifiableSet(newWanted);
+            // Always demand every visible tile before any prefetch halo.
+            // Otherwise sorting a 32-tile cap over the halo could exclude
+            // a corner that is actually on screen.
+            java.util.LinkedHashSet<FogWorldTileScheme.Key> prioritized =
+                    new java.util.LinkedHashSet<>(newVisible);
+            for (FogWorldTileScheme.Key key : prioritized) {
+                if (prioritized.size() >= MAX_DEMAND) break;
+                prioritized.add(key);
+            }
+            wanted = Collections.unmodifiableSet(new HashSet<>(prioritized));
+
+            // Protect both the new visible set and the old visible zoom
+            // during a transition. Halo tiles may be evicted first.
+            Set<FogWorldTileScheme.Key> keep = new HashSet<>(newVisible);
+            if (displayZoom >= 0 && displayZoom != requestedZoom) {
+                keep.addAll(FogWorldTileScheme.covering(
+                        north, east, south, west, displayZoom, 0, MAX_DEMAND));
+            }
+            pinned = keep;
 
             // Tile-local geometry is immutable for a given coverage epoch.
             // An older completed tile remains visible while its updated
@@ -369,7 +407,7 @@ public final class FogOverlayView extends View {
         float diameter = (float) (8.2 / Math.max(0.000001, mpp));
         Bitmap[] masks = FogRasterFeather.createPyramid(
                 exact, FogWorldTileScheme.TILE_PX, FogWorldTileScheme.TILE_PX,
-                diameter, density, () -> cancelled(job));
+                diameter, density, () -> cancelled(job), 1.0f);
         if (cancelled(job)) {
             for (Bitmap bitmap : masks) bitmap.recycle();
             return null;
@@ -393,13 +431,36 @@ public final class FogOverlayView extends View {
             tile = new Tile(job.key, new Path(), new Bitmap[0], job.epoch);
         }
         Tile old = cache.put(job.key, tile);
-        if (old != null) old.recycle();
-        while (cache.size() > MAX_CACHE) {
-            FogWorldTileScheme.Key first = cache.keySet().iterator().next();
-            Tile removed = cache.remove(first);
-            if (removed != null) removed.recycle();
+        if (old != null) {
+            cacheBytes -= old.bytes();
+            old.recycle();
         }
+        cacheBytes += tile.bytes();
+        trimCacheToBudget();
         invalidate();
+    }
+
+    private void trimCacheToBudget() {
+        // Never make the visible route disappear just to retain prefetch
+        // tiles. The rasterization cap is set so two camera generations
+        // of truly visible tile bitmaps usually fit together.
+        while ((cache.size() > MAX_CACHE || cacheBytes > MAX_CACHE_BYTES)
+                && !cache.isEmpty()) {
+            FogWorldTileScheme.Key victim = null;
+            for (FogWorldTileScheme.Key key : cache.keySet()) {
+                if (!pinned.contains(key)) { victim = key; break; }
+            }
+            if (victim == null) {
+                // A device with an unusually huge viewport may exceed
+                // the budget even with visible-only tiles: bound memory.
+                victim = cache.keySet().iterator().next();
+            }
+            Tile removed = cache.remove(victim);
+            if (removed != null) {
+                cacheBytes -= removed.bytes();
+                removed.recycle();
+            }
+        }
     }
 
     @Override protected void onDraw(@NonNull Canvas canvas) {
