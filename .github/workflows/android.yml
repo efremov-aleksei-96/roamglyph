@@ -17,8 +17,12 @@ jobs:
       ROAMGLYPH_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
 
     steps:
-      - name: Checkout
+      - name: Checkout exact advertised source revision
         uses: actions/checkout@v5
+        with:
+          # pull_request normally checks out a synthetic merge SHA.
+          # The versionName and artifact must instead identify this exact tree.
+          ref: ${{ env.ROAMGLYPH_SOURCE_SHA }}
 
       - name: Set up JDK 17
         uses: actions/setup-java@v5
