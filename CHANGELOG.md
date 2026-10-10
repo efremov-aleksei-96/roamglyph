@@ -33,6 +33,12 @@
 - Kept fine H3 detail down to roughly one screen pixel before aggregating,
   and introduced spatially indexed viewport coverage lookups.
 - Added accessible on-map +/− zoom controls.
+- Added curved, conservatively clipped explored-area silhouettes so H3
+  cell corners do not remain visible after edge feathering.
+- Display meaningful emoji icons on Discoveries and hints, derived from
+  local POI categories without external icon or font dependencies.
+- Added an in-app Version & Changelog entry accessible from the map menu;
+  release notes are bundled for offline reading.
 - Replaced the geospatial GeoJSON fog with a screen-space mask tied to
   the live MapLibre camera, to eliminate rapid-pan edge flashes.
 - Removed zoom-based parent aggregation entirely: only true res-13
