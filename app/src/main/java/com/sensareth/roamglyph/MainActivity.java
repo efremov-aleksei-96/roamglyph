@@ -106,8 +106,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     private static final String FOG_SOURCE_ID = "roamglyph-fog-source";
     private static final String FOG_LAYER_ID = "roamglyph-fog-layer";
-    private static final String VISITED_SOURCE_ID = "roamglyph-visited-source";
-    private static final String VISITED_LAYER_ID = "roamglyph-visited-layer";
+    private static final String FOG_MID_SOURCE_ID = "roamglyph-fog-mid-source";
+    private static final String FOG_MID_LAYER_ID = "roamglyph-fog-mid-layer";
+    private static final String FOG_FAR_SOURCE_ID = "roamglyph-fog-far-source";
+    private static final String FOG_FAR_LAYER_ID = "roamglyph-fog-far-layer";
     private static final String DISCOVERY_HINT_SOURCE_ID = "roamglyph-discovery-hint-source";
     private static final String DISCOVERY_HINT_LAYER_ID = "roamglyph-discovery-hint-layer";
     private static final String DISCOVERED_SOURCE_ID = "roamglyph-discovered-source";
@@ -393,6 +395,45 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         locateLp.setMargins(0, 0, dp(16), dp(104));
         root.addView(locateButton, locateLp);
 
+        LinearLayout zoomControls = new LinearLayout(this);
+        zoomControls.setOrientation(LinearLayout.VERTICAL);
+        GradientDrawable zoomBackground = new GradientDrawable();
+        zoomBackground.setColor(0xE6202124);
+        zoomBackground.setCornerRadius(dp(12));
+        zoomControls.setBackground(zoomBackground);
+        zoomControls.setElevation(dp(5));
+
+        Button zoomInButton = new Button(this);
+        zoomInButton.setAllCaps(false);
+        zoomInButton.setText("+");
+        zoomInButton.setTextSize(24f);
+        zoomInButton.setTextColor(Color.WHITE);
+        zoomInButton.setBackgroundColor(Color.TRANSPARENT);
+        zoomInButton.setContentDescription(getString(R.string.zoom_in_description));
+        zoomInButton.setOnClickListener(v -> zoomMap(true));
+        zoomControls.addView(zoomInButton, new LinearLayout.LayoutParams(dp(56), dp(54)));
+
+        View zoomDivider = new View(this);
+        zoomDivider.setBackgroundColor(0x55FFFFFF);
+        zoomControls.addView(zoomDivider, new LinearLayout.LayoutParams(dp(56), dp(1)));
+
+        Button zoomOutButton = new Button(this);
+        zoomOutButton.setAllCaps(false);
+        zoomOutButton.setText("−");
+        zoomOutButton.setTextSize(24f);
+        zoomOutButton.setTextColor(Color.WHITE);
+        zoomOutButton.setBackgroundColor(Color.TRANSPARENT);
+        zoomOutButton.setContentDescription(getString(R.string.zoom_out_description));
+        zoomOutButton.setOnClickListener(v -> zoomMap(false));
+        zoomControls.addView(zoomOutButton, new LinearLayout.LayoutParams(dp(56), dp(54)));
+
+        FrameLayout.LayoutParams zoomLp = new FrameLayout.LayoutParams(
+                dp(56), dp(109)
+        );
+        zoomLp.gravity = Gravity.BOTTOM | Gravity.END;
+        zoomLp.setMargins(0, 0, dp(16), dp(173));
+        root.addView(zoomControls, zoomLp);
+
         setContentView(root);
         setLocateAvailable(hasLocation);
         updateUi(true);
@@ -455,24 +496,28 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     }
 
     private void configureLoadedMapStyle(@NonNull Style style) {
-        style.addSource(new GeoJsonSource(
-                FOG_SOURCE_ID,
-                FeatureCollection.fromFeatures(new Feature[]{})
-        ));
+        // Always cover unknown geography before the first asynchronous H3
+        // calculation. Old masks stay attached to geographic coordinates during
+        // panning, so moving to a new area never briefly reveals bare map tiles.
+        FeatureCollection initialFog = store.isFogEnabled()
+                ? ViewportOverlayBuilder.initialFog()
+                : FeatureCollection.fromFeatures(new Feature[]{});
+        style.addSource(new GeoJsonSource(FOG_SOURCE_ID, initialFog));
         style.addLayer(new FillLayer(FOG_LAYER_ID, FOG_SOURCE_ID).withProperties(
                 fillColor("#111418"),
-                fillOpacity(0.58f),
-                fillOutlineColor("#111418")
+                fillOpacity(0.24f)
         ));
 
-        style.addSource(new GeoJsonSource(
-                VISITED_SOURCE_ID,
-                FeatureCollection.fromFeatures(new Feature[]{})
+        style.addSource(new GeoJsonSource(FOG_MID_SOURCE_ID, initialFog));
+        style.addLayer(new FillLayer(FOG_MID_LAYER_ID, FOG_MID_SOURCE_ID).withProperties(
+                fillColor("#111418"),
+                fillOpacity(0.38f)
         ));
-        style.addLayer(new FillLayer(VISITED_LAYER_ID, VISITED_SOURCE_ID).withProperties(
-                fillColor("#1B5E20"),
-                fillOpacity(0.12f),
-                fillOutlineColor("#176A20")
+
+        style.addSource(new GeoJsonSource(FOG_FAR_SOURCE_ID, initialFog));
+        style.addLayer(new FillLayer(FOG_FAR_LAYER_ID, FOG_FAR_SOURCE_ID).withProperties(
+                fillColor("#111418"),
+                fillOpacity(0.47f)
         ));
 
         style.addSource(new GeoJsonSource(
@@ -1208,20 +1253,13 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     return;
                 }
 
+                FeatureCollection empty = FeatureCollection.fromFeatures(new Feature[]{});
                 GeoJsonSource fogSource = map.getStyle().getSourceAs(FOG_SOURCE_ID);
-                GeoJsonSource visitedSource =
-                        map.getStyle().getSourceAs(VISITED_SOURCE_ID);
-
-                if (fogSource != null) {
-                    fogSource.setGeoJson(
-                            fogEnabled
-                                    ? result.fog
-                                    : FeatureCollection.fromFeatures(new Feature[]{})
-                    );
-                }
-                if (visitedSource != null) {
-                    visitedSource.setGeoJson(result.explored);
-                }
+                GeoJsonSource midSource = map.getStyle().getSourceAs(FOG_MID_SOURCE_ID);
+                GeoJsonSource farSource = map.getStyle().getSourceAs(FOG_FAR_SOURCE_ID);
+                if (fogSource != null) fogSource.setGeoJson(fogEnabled ? result.fog : empty);
+                if (midSource != null) midSource.setGeoJson(fogEnabled ? result.fogMid : empty);
+                if (farSource != null) farSource.setGeoJson(fogEnabled ? result.fogFar : empty);
             });
         });
     }
@@ -1433,10 +1471,23 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     private void clearFogLayer() {
         if (map == null || map.getStyle() == null) return;
+        FeatureCollection empty = FeatureCollection.fromFeatures(new Feature[]{});
         GeoJsonSource source = map.getStyle().getSourceAs(FOG_SOURCE_ID);
-        if (source != null) {
-            source.setGeoJson(FeatureCollection.fromFeatures(new Feature[]{}));
-        }
+        GeoJsonSource mid = map.getStyle().getSourceAs(FOG_MID_SOURCE_ID);
+        GeoJsonSource far = map.getStyle().getSourceAs(FOG_FAR_SOURCE_ID);
+        if (source != null) source.setGeoJson(empty);
+        if (mid != null) mid.setGeoJson(empty);
+        if (far != null) far.setGeoJson(empty);
+    }
+
+    private void zoomMap(boolean zoomIn) {
+        if (map == null) return;
+        map.animateCamera(
+                zoomIn
+                        ? org.maplibre.android.camera.CameraUpdateFactory.zoomIn()
+                        : org.maplibre.android.camera.CameraUpdateFactory.zoomOut(),
+                300
+        );
     }
 
     private void renderCurrentLocation() {
