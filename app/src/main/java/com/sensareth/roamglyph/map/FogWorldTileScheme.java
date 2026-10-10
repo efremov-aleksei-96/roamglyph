@@ -52,6 +52,27 @@ public final class FogWorldTileScheme {
         @Override public String toString() { return z + "/" + x + "/" + y; }
     }
 
+    /**
+     * Do not accept more simultaneous visible tiles than the byte-bounded
+     * two-generation cache can retain. On an unusually large / tilted map
+     * viewport, use larger geographic tiles (a lower tile zoom), never
+     * omit on-screen geographic keys. This changes raster sampling only,
+     * NOT persisted H3 coverage or the exact vector clipping geometry.
+     */
+    public static int budgetedZoom(double north, double east,
+                                   double south, double west,
+                                   int preferredZoom, int maxVisible) {
+        int zoom = Math.max(0, Math.min(20, preferredZoom));
+        int limit = Math.max(1, maxVisible);
+        while (zoom > 0) {
+            List<Key> sample = covering(
+                    north, east, south, west, zoom, 0, limit + 1);
+            if (sample.size() <= limit) break;
+            zoom--;
+        }
+        return zoom;
+    }
+
     public static int zoomLevel(double zoom) {
         if (!Double.isFinite(zoom)) return 0;
         return Math.max(0, Math.min(20, (int) Math.round(zoom)));
