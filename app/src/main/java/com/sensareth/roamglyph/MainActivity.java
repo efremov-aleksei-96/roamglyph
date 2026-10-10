@@ -108,6 +108,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             "https://github.com/efremov-aleksei-96/roamglyph";
     private static final String PRIVACY_URL =
             "https://github.com/efremov-aleksei-96/roamglyph/blob/main/PRIVACY.md";
+    private static final String RELEASES_URL =
+            "https://github.com/efremov-aleksei-96/roamglyph/releases";
+    private static final String DEVELOPMENT_BUILDS_URL =
+            "https://github.com/efremov-aleksei-96/roamglyph/actions/workflows/android.yml?query=branch%3Amain";
 
     private static final String DISCOVERY_HINT_SOURCE_ID = "roamglyph-discovery-hint-source";
     private static final String DISCOVERY_HINT_LAYER_ID = "roamglyph-discovery-hint-layer";
@@ -884,8 +888,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         popup.getMenu().add(0, 3, 8, R.string.menu_refresh_location);
         popup.getMenu().add(0, 12, 9,
                 getString(R.string.menu_version_changelog, installedVersion()));
-        popup.getMenu().add(0, 4, 10, R.string.menu_source_code);
-        popup.getMenu().add(0, 5, 11, R.string.menu_privacy);
+        popup.getMenu().add(0, 13, 10, R.string.menu_check_updates);
+        popup.getMenu().add(0, 4, 11, R.string.menu_source_code);
+        popup.getMenu().add(0, 5, 12, R.string.menu_privacy);
 
         popup.setOnMenuItemClickListener(item -> {
             if (item.getItemId() == 11) {
@@ -981,6 +986,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             }
             if (item.getItemId() == 12) {
                 showVersionAndChangelog();
+                return true;
+            }
+            if (item.getItemId() == 13) {
+                showUpdateSources();
                 return true;
             }
             if (item.getItemId() == 4) {
@@ -1470,6 +1479,23 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         }
     }
 
+    private void showUpdateSources() {
+        // This is a web-link chooser, not a background version check.
+        // GitHub Releases can be empty before our first public release;
+        // the Actions page hosts development APKs under successful runs.
+        String[] choices = {
+                getString(R.string.update_stable_releases),
+                getString(R.string.update_test_builds)
+        };
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.menu_check_updates)
+                .setMessage(getString(R.string.update_installed_version, installedVersion()))
+                .setItems(choices, (dialog, which) -> openUrl(
+                        which == 0 ? RELEASES_URL : DEVELOPMENT_BUILDS_URL))
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
     private void showVersionAndChangelog() {
         String version = installedVersion();
         String header = getString(R.string.about_version, version);
@@ -1503,8 +1529,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         new AlertDialog.Builder(this)
                 .setTitle(R.string.menu_about)
                 .setView(scroll)
-                .setNeutralButton(R.string.menu_source_code,
-                        (dialog, which) -> openUrl(SOURCE_URL))
+                .setNeutralButton(R.string.menu_check_updates,
+                        (dialog, which) -> showUpdateSources())
                 .setPositiveButton(android.R.string.ok, null)
                 .show();
     }
