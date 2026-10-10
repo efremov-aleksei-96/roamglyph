@@ -17,6 +17,22 @@ public class FogMipLevelTest {
         assertEquals(3, FogMipLevel.forZoomDelta(3.3, 11));
     }
 
+    @Test public void retainedHalfResolutionIsNotMinifiedTwice() {
+        assertEquals(0, FogMipLevel.forZoomDelta(1.0, 0.5f, 8));
+        assertEquals(1, FogMipLevel.forZoomDelta(2.0, 0.5f, 8));
+        assertEquals(0, FogMipLevel.forZoomDelta(2.0, 0.25f, 8));
+        assertEquals(0, FogMipLevel.forZoomDelta(0.0, 0.25f, 8));
+    }
+
+    @Test public void reducedResolutionMipAlwaysMonotone() {
+        int previous = 0;
+        for (double delta = 0; delta <= 5.0; delta += .1) {
+            int now = FogMipLevel.forZoomDelta(delta, 0.5f, 8);
+            assertTrue(now >= previous);
+            previous = now;
+        }
+    }
+
     @Test public void clampsUnboundedCameraDelta() {
         assertEquals(10, FogMipLevel.forZoomDelta(100, 11));
         assertEquals(0, FogMipLevel.forZoomDelta(Double.NaN, 11));
