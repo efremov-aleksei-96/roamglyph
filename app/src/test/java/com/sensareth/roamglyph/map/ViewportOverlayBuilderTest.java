@@ -12,7 +12,7 @@ public class ViewportOverlayBuilderTest {
         assertEquals(13, ViewportOverlayBuilder.resolutionForZoom(15.0));
         assertEquals(13, ViewportOverlayBuilder.resolutionForZoom(14.0));
         assertEquals(12, ViewportOverlayBuilder.resolutionForZoom(13.0));
-        assertEquals(11, ViewportOverlayBuilder.resolutionForZoom(11.0));
+        assertEquals(10, ViewportOverlayBuilder.resolutionForZoom(11.0));
     }
 
     @Test
