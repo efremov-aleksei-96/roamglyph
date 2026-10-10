@@ -43,8 +43,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
  */
 public final class FogOverlayView extends View {
     private static final int FOG_ALPHA = 210;
-    private static final int MAX_CACHE = 32;
-    private static final int MAX_DEMAND = 34;
+    private static final int MAX_CACHE = 36;
+    private static final int MAX_DEMAND = 24;
     private static final long DEMAND_INTERVAL_MS = 110L;
 
     private final Paint cutoutPaint = new Paint(Paint.ANTI_ALIAS_FLAG | Paint.FILTER_BITMAP_FLAG);
@@ -380,11 +380,17 @@ public final class FogOverlayView extends View {
     private void finishTile(TileJob job, Tile tile) {
         pending.remove(job.key);
         if (disposed || !enabled || job.epoch != coverageEpoch
-                || tile == null || !wanted.contains(job.key)) {
+                || !wanted.contains(job.key)) {
             if (tile != null) tile.recycle();
-            // Newer requests must not be suppressed by a stale pending key.
-            if (!disposed && enabled) requestTiles(true);
+            // A stale worker must not block a current key.
+            if (!disposed && enabled && wanted.contains(job.key)) requestTiles(true);
             return;
+        }
+        if (tile == null) {
+            // Missing/over-budget/cancelled geometry fails DARK. Record a
+            // blank tile for this coverage epoch to avoid a tight retry
+            // loop that drains the battery while the camera is idle.
+            tile = new Tile(job.key, new Path(), new Bitmap[0], job.epoch);
         }
         Tile old = cache.put(job.key, tile);
         if (old != null) old.recycle();
