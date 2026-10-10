@@ -44,7 +44,7 @@ matrix or exact restored counts. Those remain required below.
 | Zigzag simplification | Inspect long cycle paths at street and overview zoom | Unneeded hex sawteeth straightened with curved bends; true visited area is not exaggerated |
 | Smooth inward gradient | Observe explored/unexplored contour at several zoom levels | Continuous rasterized fade from darkness into explored area, not five visible strokes or isolated hex edges |
 | Continuous pinch zoom | Pinch rapidly both in and out repeatedly around an explored route | Cached inward-feather mask follows actual map coordinates, never reveals beyond the exact H3 footprint, and never exposes a lateral strip |
-| APK version identity | Inspect installed About screen and APK filename | Distinct 0.5.0-dev.17+g&lt;commit&gt; displayed; downloadable artifact filename contains same commit |
+| APK version identity | Inspect installed About screen and APK filename | Distinct 0.5.0-dev.18+g&lt;commit&gt; displayed; downloadable artifact filename contains same commit |
 | Discovery emoji | Inspect museum, nature, landmark and hint POIs | Category-specific emojis visible above fog, tappable POI details preserved; icons also visible with Fog off |
 | Offline changelog | Open menu ⋮ → Version & Changelog without internet | Installed version shown dynamically, bundled 0.5.0 release notes readable without GitHub |
 | Fog edge quality | Inspect a visited border at multiple zooms | No repeated grid, rounded softly shaded border, and no artificially opened unvisited pixels |
