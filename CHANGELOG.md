@@ -38,6 +38,8 @@
 - Added persistent exploration sessions and timestamped GPS-point history.
 - Added first-seen timestamps for newly discovered H3 cells.
 - Added a high-speed GPS teleport filter while preserving ordinary cycling.
+- Reject missing/invalid GPS accuracy and expired or duplicate location fixes
+  using Android's monotonic clock, avoiding false exploration after time changes.
 - Added streaming portable backup format v3 containing cells, sessions, GPS points,
   and discoveries, while retaining import support for versions 1 and 2.
 - Added idempotent migration of existing pre-Room cells into the database.

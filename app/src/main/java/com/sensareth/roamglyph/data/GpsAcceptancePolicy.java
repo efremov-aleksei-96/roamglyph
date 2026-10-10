@@ -5,8 +5,23 @@ import androidx.annotation.Nullable;
 public final class GpsAcceptancePolicy {
     public static final float MAX_ACCEPTED_ACCURACY_M = 35f;
     public static final double MAX_PLAUSIBLE_SPEED_MPS = 55.0;
+    public static final long MAX_FIX_AGE_NS = 30_000_000_000L;
 
     private GpsAcceptancePolicy() {
+    }
+
+    // Location.getElapsedRealtimeNanos() is monotonic within a boot; unlike
+    // Location.getTime(), it is unaffected by wall-clock corrections.
+    public static boolean isStaleFix(
+            long fixElapsedNanos,
+            long nowElapsedNanos,
+            long lastAcceptedElapsedNanos
+    ) {
+        return fixElapsedNanos <= 0L
+                || fixElapsedNanos > nowElapsedNanos
+                || nowElapsedNanos - fixElapsedNanos > MAX_FIX_AGE_NS
+                || (lastAcceptedElapsedNanos > 0L
+                    && fixElapsedNanos <= lastAcceptedElapsedNanos);
     }
 
     @Nullable
@@ -26,12 +41,18 @@ public final class GpsAcceptancePolicy {
             return "invalid_coordinate";
         }
 
-        if (Float.isFinite(accuracyM) && accuracyM > MAX_ACCEPTED_ACCURACY_M) {
+        // A location without a usable horizontal accuracy estimate must not reveal
+        // new H3 cells. Android returns 0 when Location.hasAccuracy() is false.
+        if (!Float.isFinite(accuracyM)
+                || accuracyM <= 0f
+                || accuracyM > MAX_ACCEPTED_ACCURACY_M) {
             return "accuracy";
         }
 
         if (previousAccepted == null) return null;
 
+        // Wall-clock timestamps may jump backwards after clock correction.
+        // Monotonic age/ordering is validated separately with isStaleFix.
         long elapsedMs = timestampMs - previousAccepted.timestampMs;
         if (elapsedMs <= 0L) return null;
 
