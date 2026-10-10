@@ -17,6 +17,17 @@ public final class FogWorldTileScheme {
      * Reserve 35% of the budget for one full visible set, leaving a
      * 30% allowance for halo tiles, intermediates and LRU hysteresis.
      */
+    /**
+     * A completed low-resolution mask should be sharpened when a newer
+     * viewport allows substantially more raster detail. The threshold also
+     * avoids redundant retries for identical or marginally different jobs.
+     */
+    public static boolean needsSharperRaster(float availableScale, float demandScale) {
+        return Float.isFinite(availableScale) && availableScale > 0f
+                && Float.isFinite(demandScale) && demandScale > 0f
+                && availableScale < demandScale * 0.78f;
+    }
+
     public static float rasterScaleForVisibleTiles(int count) {
         int tiles = Math.max(1, count);
         double approximateBaseBytes = (double) TILE_PX * TILE_PX * 4.0 * 1.34;
