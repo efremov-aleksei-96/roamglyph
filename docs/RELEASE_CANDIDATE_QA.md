@@ -37,9 +37,11 @@ matrix or exact restored counts. Those remain required below.
 | Bicycle | Ride at varying speeds, including hill climbs | Reasonable route with no systematic false reveals |
 | Accuracy | Temporarily obstruct GPS / go indoors | Poor fixes do not produce remote clusters |
 | Location toggle | Disable Android Location; re-enable later | UI shows `Location disabled`, then resumes |
-| Fog | Pan/zoom near explored and unexplored cells | Unknown geography stays dark throughout camera motion, no transient bare-map flash, and exploration remains visible without freezing |
-| Soft fog gradient | Inspect a visited border at multiple zooms | No obvious repeated hexagon grid; three smooth darkness zones around explored territory |
-| Fine zoom detail | Zoom from street to city scale | Smallest usable H3 resolution persists until about one screen pixel; zooming out does not suddenly reveal large hex tiles |
+| Fog | Throw/pan/zoom rapidly near explored and unexplored cells | The screen-space dark mask covers all unknown geography with no uncovered strip or flash; visited polygons stay geographically registered |
+| Zoom accuracy | Compare a thin discovered trail at street/city/country zoom | Never expand partial H3 parents; visited area gets smaller in screen pixels as expected and can become subpixel |
+| Screen-space edge smoothing | Inspect boundaries including sparse isolated visited areas | Anti-aliased cutouts and graduated soft dark borders, without obvious block outlines |
+| Fog edge quality | Inspect a visited border at multiple zooms | No repeated grid, rounded softly shaded border, and no artificially opened unvisited pixels |
+| Fine zoom detail | Zoom from street to city scale | All visible explored geometry derives from exact resolution-13 cells; no zoom-dependent parent-cell expansion |
 | Map controls | Tap + and − repeatedly | Camera zoom changes smoothly; controls do not block GPS recenter or tracking |
 | Fog persistence | Toggle Fog off/on; restart app | Setting and explored territory persist |
 | Discoveries | Explore near mapped POIs, pan away and back | Anonymous hints appear before visits; discovered POIs persist after eligible exploration |
