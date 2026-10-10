@@ -69,6 +69,15 @@ public class FogFeatherProfileTest {
     }
 
     @Test
+    public void oneCellWideCorridorKeepsVisibleCenterDuringBroadFade() {
+        int middle = FogFeatherProfile.cutoutAlpha(255, 105, 30, 38);
+        int edge = FogFeatherProfile.cutoutAlpha(255, 105, 3, 38);
+        assertTrue("Narrow trail should not vanish at typical street zoom",
+                middle >= 20);
+        assertTrue("Outer H3 tooth should remain darker", edge < middle / 3);
+    }
+
+    @Test
     public void partiallyCoveredEdgeCannotGainOpacityFromBlur() {
         assertEquals(0, FogFeatherProfile.cutoutAlpha(0, 255, 255, 24));
         assertTrue(FogFeatherProfile.cutoutAlpha(31, 255, 255, 24) <= 31);
