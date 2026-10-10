@@ -1,5 +1,38 @@
 # Changelog
 
+## 0.5.0-dev.21 — 2026-10-10 (experimental test build)
+
+- Respond to physical-device reports of a rectangular hard cutout and
+  a partially darkened visited road during fast map gestures.
+- Replace the one-viewport raster with georeferenced Web Mercator fog
+  tiles. Cached visited regions transform synchronously with MapLibre;
+  neighbouring geographic tiles are prefetched asynchronously.
+- Request exact stored H3-13 cells independently for each tile, rather
+  than redoing a viewport-wide H3 native polygon union after 400 ms.
+- Keep a byte-capped (64 MiB) LRU cache of completed fog tiles; protect
+  the complete visible set at both zoom generations during transitions,
+  dynamically size raster resolutions to the visible tile count, and
+  downsample *already cached* mipmaps as viewport size grows, including
+  on large external displays.
+- During extreme tile-count/memory pressure, coarsen cached mip levels
+  instead of evicting visited geography currently visible on the screen.
+  Project/draw only the currently visible geographic keys per camera frame
+  rather than reprojection of the complete LRU cache.
+- Enumerate visible geographic tiles before limiting optional neighbour
+  prefetch, preserving on-screen coverage when the viewport is tall.
+- Rebuild tiles on resume if Android trimmed the cache for low memory.
+- Reuse cached tiles across pans and delay switching zoom grids until
+  view coverage loads.
+- Synchronize H3 spatial-index reads with GPS/backup updates, and
+  refresh cached tile coverage when new visited cells arrive.
+- Preserve the existing 2D occupancy-based inward fade and exact H3
+  no-outward-reveal clipping, with additional coordinate/tile tests.
+- This remains a test build: physical evaluation of rapid gestures,
+  tile seams, contours and battery usage is required.
+- No changes to saved visited cells, GPS history, JSON backup schema,
+  discoveries, location permissions or release signing.
+
+
 ## 0.5.0-dev.20 — 2026-10-10 (experimental test build)
 
 - Based on direct Pixel screenshots of dev.18/dev.19: soften the

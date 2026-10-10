@@ -40,10 +40,20 @@ final class FogRasterFeather {
     static Bitmap[] createPyramid(Path exact, int viewWidth, int viewHeight,
                                   float cellDiameterPx, float density,
                                   BooleanSupplier cancelled) {
+        return createPyramid(exact, viewWidth, viewHeight,
+                cellDiameterPx, density, cancelled, MAX_SUPERSAMPLE);
+    }
+
+    // The map's persistent tile cache uses 1x raster resolution to keep
+    // many adjacent/multiple-zoom tiles in memory without OOM. The former
+    // viewport renderer retains 2x as an optional offscreen setting.
+    static Bitmap[] createPyramid(Path exact, int viewWidth, int viewHeight,
+                                  float cellDiameterPx, float density,
+                                  BooleanSupplier cancelled, float maxScale) {
         List<Bitmap> levels = new ArrayList<>();
         try {
             Bitmap current = create(exact, viewWidth, viewHeight,
-                    cellDiameterPx, density, cancelled);
+                    cellDiameterPx, density, cancelled, maxScale);
             if (current == null) return new Bitmap[0];
             levels.add(current);
             // Area filtering preserves small legitimate trails on zoom-out.
@@ -73,9 +83,19 @@ final class FogRasterFeather {
     static Bitmap create(Path exact, int viewWidth, int viewHeight,
                          float cellDiameterPx, float density,
                          BooleanSupplier cancelled) {
-        if (viewWidth <= 0 || viewHeight <= 0) return null;
+        return create(exact, viewWidth, viewHeight,
+                cellDiameterPx, density, cancelled, MAX_SUPERSAMPLE);
+    }
 
-        double scale = Math.min(MAX_SUPERSAMPLE,
+    static Bitmap create(Path exact, int viewWidth, int viewHeight,
+                         float cellDiameterPx, float density,
+                         BooleanSupplier cancelled, float maxScale) {
+        if (viewWidth <= 0 || viewHeight <= 0) return null;
+        if (!Float.isFinite(maxScale) || maxScale <= 0) {
+            throw new IllegalArgumentException("Invalid fog sampling scale");
+        }
+
+        double scale = Math.min(Math.min(MAX_SUPERSAMPLE, maxScale),
                 Math.sqrt((double) MAX_RASTER_PIXELS
                         / ((double) viewWidth * viewHeight)));
         int width = 0, height = 0, blur = 0, feather = 0, pad = 0;
