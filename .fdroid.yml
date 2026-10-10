@@ -13,7 +13,7 @@ Repo: https://github.com/efremov-aleksei-96/roamglyph.git
 Builds:
   - versionName: 0.5.0
     versionCode: 6
-    commit: 7f59793d67a45f559a3bd271f3b557fdf15122e7
+    commit: 022af3477bafb495997687d8874280aebe3d0247
     gradle:
       - yes
 
@@ -30,6 +30,11 @@ MaintainerNotes: |-
 
   The default online basemap uses the FLOSS OpenFreeMap service and MapLibre.
   Exploration history is local and does not depend on that service.
+
+  Local PMTiles support uses MapLibre Native's built-in pmtiles://file:// reader.
+  No additional proprietary or binary map SDK is introduced. The user-selected
+  archive is replaceable presentation data and is not part of the portable history
+  backup.
 
   Version 0.5.0 uses AndroidX Room 2.8.5 (Apache-2.0) for local SQLite storage
   and documents its complete portable backup format in docs/BACKUP_FORMAT.md.
