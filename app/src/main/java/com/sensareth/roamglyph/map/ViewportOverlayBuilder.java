@@ -76,23 +76,40 @@ public final class ViewportOverlayBuilder {
         int resolution = resolutionForZoom(zoom, latitude);
         Bounds padded = paddedBounds(north, east, south, west);
         Set<String> visibleExplored;
+        Set<String> band1;
+        Set<String> band2;
 
-        // Only a genuine performance safety override may choose a coarser
-        // resolution than the ~one-pixel floor. It never affects Room data.
+        // All THREE masks must remain bounded. Checking only the visited set
+        // is not enough: sparse cells can generate up to 7 new neighbours each
+        // on expansion, then many more in the outer band.
+        //
+        // Coarsening is a performance-only escape hatch and never touches Room.
         while (true) {
             visibleExplored = coverage.cellsInBounds(
                     h3, resolution,
                     padded.north, padded.east, padded.south, padded.west,
                     MAX_RENDERED_CELLS
             );
-            if (visibleExplored.size() <= MAX_RENDERED_CELLS
-                    || resolution <= MIN_RENDER_RESOLUTION) {
-                break;
+            if (visibleExplored.size() > MAX_RENDERED_CELLS) {
+                if (resolution == MIN_RENDER_RESOLUTION) return Result.dark();
+                resolution--;
+                continue;
             }
-            resolution--;
-        }
-        if (visibleExplored.size() > MAX_RENDERED_CELLS) {
-            return Result.dark();
+
+            band1 = expandBounded(h3, visibleExplored, MAX_RENDERED_CELLS);
+            if (band1.size() > MAX_RENDERED_CELLS) {
+                if (resolution == MIN_RENDER_RESOLUTION) return Result.dark();
+                resolution--;
+                continue;
+            }
+
+            band2 = expandBounded(h3, band1, MAX_RENDERED_CELLS);
+            if (band2.size() > MAX_RENDERED_CELLS) {
+                if (resolution == MIN_RENDER_RESOLUTION) return Result.dark();
+                resolution--;
+                continue;
+            }
+            break;
         }
 
         if (visibleExplored.isEmpty()) {
@@ -100,10 +117,8 @@ public final class ViewportOverlayBuilder {
             return new Result(global, global, global, resolution, 0);
         }
 
-        // Three nested bands generate a visual gradient, not a hex tile grid:
-        // clear in visited cells, light near the edge, darkest far away.
-        Set<String> band1 = expand(h3, visibleExplored, 1);
-        Set<String> band2 = expand(h3, band1, 1);
+        // Three bounded, nested masks form a gentle gradient rather than
+        // visible tile borders.
         return new Result(
                 invertedMask(h3, visibleExplored),
                 invertedMask(h3, band1),
@@ -114,13 +129,14 @@ public final class ViewportOverlayBuilder {
     }
 
     @NonNull
-    private static Set<String> expand(
-            H3Core h3, Set<String> cells, int distance
+    private static Set<String> expandBounded(
+            H3Core h3, Set<String> cells, int maxResults
     ) {
         Set<String> expanded = new HashSet<>(cells);
         for (String cell : cells) {
+            if (expanded.size() > maxResults) break;
             try {
-                expanded.addAll(h3.gridDisk(cell, distance));
+                expanded.addAll(h3.gridDisk(cell, 1));
             } catch (RuntimeException ignored) {
                 // Pentagons or malformed legacy cells cannot remove global fog.
             }
