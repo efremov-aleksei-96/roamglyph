@@ -73,6 +73,11 @@
     <string name="history_session_active">In progress · %1$,d accepted fixes</string>
     <string name="history_session_complete">Completed · %1$,d accepted fixes</string>
     <string name="history_in_progress">In progress</string>
+    <string name="history_export_gpx">Export GPX</string>
+    <string name="history_gpx_track_name">Roamglyph · %1$s</string>
+    <string name="history_gpx_no_points">This session has no accepted GPS points to export.</string>
+    <string name="history_gpx_export_success">GPX exported: %1$,d points · %2$,d segments</string>
+    <string name="history_gpx_export_failed">Could not export this session as GPX.</string>
     <string name="history_session_details">Ended: %1$s\nDuration: %2$s\nDistance: %3$s\nNew cells: %4$,d\nAccepted fixes: %5$,d\nSource: %6$s</string>
 
     <string name="notification_channel_name">Map exploration</string>
