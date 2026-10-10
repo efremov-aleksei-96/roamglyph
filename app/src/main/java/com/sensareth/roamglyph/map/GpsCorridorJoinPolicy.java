@@ -10,6 +10,16 @@ public final class GpsCorridorJoinPolicy {
 
     private GpsCorridorJoinPolicy() {}
 
+    /** Covers the longest permitted segment plus 11m corridor and margin. */
+    public static double tileHaloLatitudeDegrees() {
+        return 190.0 / 111_000.0;
+    }
+
+    public static double tileHaloLongitudeDegrees(double latitude) {
+        return 190.0 / (111_000.0 * Math.max(0.01,
+                Math.cos(Math.toRadians(latitude))));
+    }
+
     public static boolean shouldConnect(String previousSession, long previousMs,
                                         double previousLat, double previousLng,
                                         String currentSession, long currentMs,
