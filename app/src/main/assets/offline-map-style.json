@@ -1,0 +1,108 @@
+{
+  "version": 8,
+  "name": "Roamglyph Offline",
+  "sources": {
+    "openmaptiles": {
+      "type": "vector",
+      "url": __ROAMGLYPH_PMTILES_URL__,
+      "attribution": "© OpenStreetMap contributors"
+    }
+  },
+  "layers": [
+    {
+      "id": "offline-background",
+      "type": "background",
+      "paint": {
+        "background-color": "#f2efe9"
+      }
+    },
+    {
+      "id": "offline-landuse",
+      "type": "fill",
+      "source": "openmaptiles",
+      "source-layer": "landuse",
+      "paint": {
+        "fill-color": "#e7e3dc",
+        "fill-opacity": 0.55
+      }
+    },
+    {
+      "id": "offline-park",
+      "type": "fill",
+      "source": "openmaptiles",
+      "source-layer": "park",
+      "paint": {
+        "fill-color": "#d6e7cf",
+        "fill-opacity": 0.9
+      }
+    },
+    {
+      "id": "offline-water",
+      "type": "fill",
+      "source": "openmaptiles",
+      "source-layer": "water",
+      "paint": {
+        "fill-color": "#a9d5e8"
+      }
+    },
+    {
+      "id": "offline-waterway",
+      "type": "line",
+      "source": "openmaptiles",
+      "source-layer": "waterway",
+      "paint": {
+        "line-color": "#91c6dc",
+        "line-width": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          10, 0.6,
+          16, 2.0
+        ]
+      }
+    },
+    {
+      "id": "offline-building",
+      "type": "fill",
+      "source": "openmaptiles",
+      "source-layer": "building",
+      "minzoom": 13,
+      "paint": {
+        "fill-color": "#d6d0c8",
+        "fill-outline-color": "#bdb5ac",
+        "fill-opacity": 0.86
+      }
+    },
+    {
+      "id": "offline-transportation",
+      "type": "line",
+      "source": "openmaptiles",
+      "source-layer": "transportation",
+      "paint": {
+        "line-color": "#ffffff",
+        "line-width": [
+          "interpolate",
+          ["linear"],
+          ["zoom"],
+          8, 0.5,
+          12, 1.2,
+          16, 3.2,
+          19, 8.0
+        ],
+        "line-opacity": 0.95
+      }
+    },
+    {
+      "id": "offline-boundary",
+      "type": "line",
+      "source": "openmaptiles",
+      "source-layer": "boundary",
+      "paint": {
+        "line-color": "#9b9690",
+        "line-width": 0.7,
+        "line-opacity": 0.55,
+        "line-dasharray": [3, 2]
+      }
+    }
+  ]
+}

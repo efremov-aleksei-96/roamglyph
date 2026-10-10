@@ -18,6 +18,7 @@ public final class VisitedStore {
     private static final String KEY_ACTIVE_SESSION_ID = "active_session_id";
     private static final String KEY_VISITED_COUNT_CACHE = "visited_count_cache";
     private static final String KEY_DISCOVERY_COUNT_CACHE = "discovery_count_cache";
+    private static final String KEY_OFFLINE_MAP_ENABLED = "offline_map_enabled";
     private static final String KEY_FOG_ENABLED = "fog_enabled";
     private static final String KEY_DISCOVERIES_ENABLED = "discoveries_enabled";
     private static final String KEY_HAS_LOCATION = "has_location";
@@ -82,6 +83,14 @@ public final class VisitedStore {
 
     public void setDiscoveryCountCache(int count) {
         prefs.edit().putInt(KEY_DISCOVERY_COUNT_CACHE, Math.max(0, count)).apply();
+    }
+
+    public boolean isOfflineMapEnabled() {
+        return prefs.getBoolean(KEY_OFFLINE_MAP_ENABLED, false);
+    }
+
+    public void setOfflineMapEnabled(boolean enabled) {
+        prefs.edit().putBoolean(KEY_OFFLINE_MAP_ENABLED, enabled).apply();
     }
 
     public boolean isFogEnabled() {

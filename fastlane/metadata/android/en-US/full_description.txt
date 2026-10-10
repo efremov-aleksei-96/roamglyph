@@ -9,6 +9,7 @@ Current features:
 • adaptive Fog of War over unexplored map areas
 • local-first Discoveries from OpenStreetMap/OpenMapTiles points of interest
 • OpenStreetMap-based vector map rendered with MapLibre
+• optional local PMTiles v3 vector maps for offline geometry
 • background exploration with an explicit persistent notification
 • GPS accuracy filtering
 • local Room/SQLite history with sessions and timestamped GPS points
@@ -20,7 +21,9 @@ Roamglyph is local-first. Your exploration history is stored on your device and 
 not uploaded to a Roamglyph server. Android cloud backup is disabled; use the
 explicit export feature for a portable backup.
 
-The default basemap is online and provided by OpenFreeMap. Offline vector-map
-packages are planned for a future release.
+The default basemap is online and provided by OpenFreeMap. You can also import an
+OpenMapTiles-compatible PMTiles v3 archive. The bundled local style renders
+buildings, streets, water, parks, landuse and boundaries without network map
+requests; text labels are not yet part of the offline style.
 
 Roamglyph is free and open-source software licensed under Apache-2.0.

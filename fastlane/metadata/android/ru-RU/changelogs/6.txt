@@ -1,6 +1,5 @@
-FLOSS-фундамент: удалены Google Play Services, GPS переведён на Android
-LocationManager, карта — на OpenFreeMap/MapLibre. Добавлены Room/SQLite-сессии,
-GPS-точки с временными метками, время первого открытия H3-ячеек, фильтр GPS-скачков,
-полный переносимый backup/restore v2, настоящий адаптивный Fog of War с точной
-H3-геометрией на уличном масштабе, инкрементальный viewport-рендеринг, безопасная
-подпись релизов и метаданные F-Droid.
+Крупное local-first обновление: удалены Google Play Services, добавлены
+LocationManager, Room/SQLite-сессии и GPS-точки, переносимый backup v3, адаптивный
+Fog of War, локальные Discoveries из POI OpenMapTiles и импорт локальных векторных
+карт PMTiles v3. Также добавлены фильтр GPS-скачков, безопасная подпись релизов и
+метаданные F-Droid; рекламы, аналитики и обязательного сервера нет.

@@ -13,6 +13,10 @@
     <string name="menu_discoveries_off">Discoveries: Off</string>
     <string name="menu_source_code">Source code</string>
     <string name="menu_privacy">Privacy</string>
+    <string name="menu_import_local_map">Import local PMTiles…</string>
+    <string name="menu_use_local_map">Use local PMTiles</string>
+    <string name="menu_use_online_map">Use online map</string>
+    <string name="menu_remove_local_map">Remove local PMTiles</string>
 
     <string name="state_active">Exploration active</string>
     <string name="state_paused">Exploration paused</string>
@@ -39,6 +43,13 @@
     <string name="export_failed">Could not export backup</string>
     <string name="import_h3_unavailable">H3 unavailable: import is not possible</string>
     <string name="import_failed">Could not import backup: the file is damaged or unsupported</string>
+
+    <string name="offline_map_importing">Importing local PMTiles…</string>
+    <string name="offline_map_import_success">Local PMTiles imported: %1$s</string>
+    <string name="offline_map_import_failed">Could not import PMTiles. Use a PMTiles v3 vector archive with OpenMapTiles-compatible layers.</string>
+    <string name="offline_map_enabled">Using local PMTiles map</string>
+    <string name="offline_map_online">Using online OpenFreeMap</string>
+    <string name="offline_map_removed">Local PMTiles removed</string>
     <string name="discovery_hint_title">Undiscovered place</string>
     <string name="discovery_hint_message">Explore this area to reveal the place.</string>
     <string name="discovery_opened_label">Discovered</string>
