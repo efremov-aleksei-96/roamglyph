@@ -225,6 +225,9 @@ public final class FogOverlayView extends View {
      */
     public void requestTiles() { requestTiles(false); }
 
+    /** Camera-idle/coverage refresh bypasses the gesture throttle. */
+    public void requestTilesNow() { requestTiles(true); }
+
     private void requestTiles(boolean forced) {
         if (disposed || !enabled || map == null || h3 == null
                 || coverage == null || getWidth() < 1 || getHeight() < 1) return;
