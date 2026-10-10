@@ -148,13 +148,17 @@ public final class ViewportOverlayBuilder {
                 if (polygon.isEmpty()) continue;
                 List<Point> exterior = ring(polygon.get(0));
                 if (exterior == null) continue;
-                // H3 merged exterior loops are holes in the inverted fog.
+                // H3 GeoJSON exterior rings are counterclockwise; invert the
+                // winding when using them as holes in our dark world polygon.
+                Collections.reverse(exterior);
                 worldWithHoles.add(exterior);
 
-                // Interior unexplored pockets remain fogged.
+                // H3 interior rings have hole winding; reverse them back to
+                // exterior winding when rendering unexplored islands.
                 for (int i = 1; i < polygon.size(); i++) {
                     List<Point> island = ring(polygon.get(i));
                     if (island != null) {
+                        Collections.reverse(island);
                         islands.add(Feature.fromGeometry(
                                 Polygon.fromLngLats(Collections.singletonList(island))
                         ));
