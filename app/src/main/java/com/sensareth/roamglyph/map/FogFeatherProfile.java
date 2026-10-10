@@ -8,7 +8,7 @@ package com.sensareth.roamglyph.map;
  * Raw mask alpha is a strict upper bound: unvisited pixels are NEVER revealed.
  */
 public final class FogFeatherProfile {
-    private static final float THIN_TRAIL_VISIBILITY = 0.18f;
+    private static final float THIN_TRAIL_VISIBILITY = 0.32f;
 
     private FogFeatherProfile() {}
 
@@ -23,7 +23,9 @@ public final class FogFeatherProfile {
 
         // Chamfer distance is in thirds of raster pixels, not map meters.
         float distancePx = distanceSteps / 3f;
-        float feather = smoothStep(
+        float coreFade = smoothStep(
+                (distancePx - 0.5f) / Math.max(1f, featherRadiusPx * 0.38f));
+        float wideFade = smoothStep(
                 (distancePx - 0.5f) / Math.max(1, featherRadiusPx));
 
         // A broad low-pass mask removes bumps smaller than one H3 cell:
@@ -36,8 +38,14 @@ public final class FogFeatherProfile {
         // Sparse one-pixel H3 trails need a faint interior even when the
         // blurred neighbourhood consists mostly of unexplored territory.
         // Keep this tiny floor INSIDE the exact H3 cutout only.
-        float reveal = feather * Math.max(
-                THIN_TRAIL_VISIBILITY, smoothedCore);
+        // Two continuous ramps avoid a binary choice between a broad
+        // gradient and an invisible narrow track. The short-distance ramp
+        // keeps the center of a genuinely visited 1-cell-wide path visible;
+        // the longer ramp adds the requested graduated dark halo in open
+        // areas. Both vanish at the strict outer boundary.
+        float reveal = coreFade * Math.max(
+                THIN_TRAIL_VISIBILITY, smoothedCore)
+                * (0.4f + 0.6f * wideFade);
         int alpha = Math.round(255f * reveal);
         return Math.max(0, Math.min(rawAlpha, alpha));
     }
