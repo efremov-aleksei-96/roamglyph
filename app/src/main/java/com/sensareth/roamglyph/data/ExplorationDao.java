@@ -46,6 +46,23 @@ public interface ExplorationDao {
     @Query("SELECT COUNT(*) FROM sessions")
     int countSessions();
 
+    @Query("SELECT * FROM sessions ORDER BY started_at_ms DESC, session_id DESC LIMIT :limit")
+    List<SessionEntity> loadRecentSessions(int limit);
+
+    @Query("SELECT COALESCE(SUM(distance_m), 0.0) FROM sessions")
+    double sumSessionDistanceMeters();
+
+    @Query("SELECT COALESCE(SUM(accepted_points), 0) FROM sessions")
+    long sumAcceptedPoints();
+
+    @Query(
+            "SELECT COALESCE(SUM(" +
+            "CASE WHEN COALESCE(ended_at_ms, :nowMs) >= started_at_ms " +
+            "THEN COALESCE(ended_at_ms, :nowMs) - started_at_ms ELSE 0 END" +
+            "), 0) FROM sessions"
+    )
+    long sumTrackedDurationMs(long nowMs);
+
     @Query("UPDATE sessions SET ended_at_ms = :endedAtMs WHERE session_id = :sessionId AND ended_at_ms IS NULL")
     int endSession(@NonNull String sessionId, long endedAtMs);
 

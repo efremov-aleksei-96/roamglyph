@@ -17,6 +17,7 @@
     <string name="menu_use_local_map">Use local PMTiles</string>
     <string name="menu_use_online_map">Use online map</string>
     <string name="menu_remove_local_map">Remove local PMTiles</string>
+    <string name="menu_history">History &amp; statistics</string>
 
     <string name="state_active">Exploration active</string>
     <string name="state_paused">Exploration paused</string>
@@ -53,6 +54,26 @@
     <string name="discovery_hint_title">Undiscovered place</string>
     <string name="discovery_hint_message">Explore this area to reveal the place.</string>
     <string name="discovery_opened_label">Discovered</string>
+
+    <string name="history_title">History &amp; statistics</string>
+    <string name="history_back">‹</string>
+    <string name="history_back_description">Back</string>
+    <string name="history_overview">Overview</string>
+    <string name="history_explored">Explored</string>
+    <string name="history_discoveries">Discoveries</string>
+    <string name="history_sessions">Sessions</string>
+    <string name="history_distance">Distance</string>
+    <string name="history_tracked_time">Tracked time</string>
+    <string name="history_accepted_fixes">Accepted GPS fixes</string>
+    <string name="history_gps_points">Stored GPS points</string>
+    <string name="history_recent_sessions">Recent sessions</string>
+    <string name="history_no_sessions">No exploration sessions yet.</string>
+    <string name="history_load_failed">Could not load history.</string>
+    <string name="history_session_summary">%1$s · %2$s · +%3$,d cells</string>
+    <string name="history_session_active">In progress · %1$,d accepted fixes</string>
+    <string name="history_session_complete">Completed · %1$,d accepted fixes</string>
+    <string name="history_in_progress">In progress</string>
+    <string name="history_session_details">Ended: %1$s\nDuration: %2$s\nDistance: %3$s\nNew cells: %4$,d\nAccepted fixes: %5$,d\nSource: %6$s</string>
 
     <string name="notification_channel_name">Map exploration</string>
     <string name="notification_channel_description">Background GPS exploration for Roamglyph</string>
