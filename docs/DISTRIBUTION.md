@@ -8,7 +8,8 @@ developer-signed GitHub releases for repositories that consume upstream APKs.
 Before submitting a stable version:
 
 1. Merge a fully green release candidate to `main`.
-2. Test it on a physical ARM64 Android device.
+2. Complete the physical ARM64 acceptance matrix in
+   [RELEASE_CANDIDATE_QA.md](RELEASE_CANDIDATE_QA.md).
 3. Update `CHANGELOG.md` and Fastlane changelog metadata.
 4. Create a stable Git tag matching `versionName`, e.g. `v0.5.0`.
 5. Add real screenshots under
