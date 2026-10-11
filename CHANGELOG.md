@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.0-dev.23 — 2026-10-11 (test build)
+
+- Display the actual fractional MapLibre camera zoom on the map (for example
+  `z17.5`) above the existing +/- controls. The label updates on gestures,
+  zoom-button presses and programmatic camera movement and shows 0.1 precision.
+- Avoid formatting/updating the Android TextView unless the displayed tenth
+  changes, to keep the new UI from introducing per-frame work.
+- The zoom number is an SDK camera level, not a device-DPI-dependent
+  cartographic ratio. Keep location controls and discovered geography intact.
+- Physical QA is needed. The open complaints about micro-stutters,
+  residual H3 teeth and internal dark clipping artifacts in the latest Pixel
+  screenshot are NOT fixed by this UI-only version.
+
 ## 0.5.0-dev.22 — 2026-10-11 (experimental performance build)
 
 - Follow up on Pixel 9 Pro XL dev.21 physical QA: rapid panning no longer

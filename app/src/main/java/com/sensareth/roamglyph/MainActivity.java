@@ -133,6 +133,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private TextView stateText;
     private TextView statsText;
     private TextView gpsText;
+    private TextView mapZoomText;
+    private int displayedZoomTenth = Integer.MIN_VALUE;
 
     private final Set<String> visited = new HashSet<>();
     private final AtomicBoolean refreshPending = new AtomicBoolean(false);
@@ -443,6 +445,20 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         zoomControls.setBackground(zoomBackground);
         zoomControls.setElevation(dp(5));
 
+        // Show the actual fractional MapLibre zoom level rather than
+        // guessing a map ratio from the device's physical screen density.
+        // The label shares the existing + / - group and stays visible.
+        mapZoomText = new TextView(this);
+        mapZoomText.setText("z—");
+        mapZoomText.setTextColor(Color.WHITE);
+        mapZoomText.setTextSize(14f);
+        mapZoomText.setTypeface(Typeface.DEFAULT, Typeface.BOLD);
+        mapZoomText.setGravity(Gravity.CENTER);
+        mapZoomText.setSingleLine(true);
+        mapZoomText.setContentDescription("Current map zoom level");
+        zoomControls.addView(mapZoomText,
+                new LinearLayout.LayoutParams(dp(56), dp(30)));
+
         Button zoomInButton = new Button(this);
         zoomInButton.setAllCaps(false);
         zoomInButton.setText("+");
@@ -468,7 +484,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         zoomControls.addView(zoomOutButton, new LinearLayout.LayoutParams(dp(56), dp(54)));
 
         FrameLayout.LayoutParams zoomLp = new FrameLayout.LayoutParams(
-                dp(56), dp(109)
+                dp(56), FrameLayout.LayoutParams.WRAP_CONTENT
         );
         zoomLp.gravity = Gravity.BOTTOM | Gravity.END;
         zoomLp.setMargins(0, 0, dp(16), dp(173));
@@ -493,14 +509,17 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         map = mapLibreMap;
         fogOverlayView.attachMap(map);
         if (h3 != null) fogOverlayView.attachCoverage(h3, coverageIndex);
+        updateMapZoomLabel();
 
         map.addOnCameraMoveListener(() -> {
+            updateMapZoomLabel();
             // Existing world tiles move synchronously with MapLibre;
             // only missing neighbours are queued in the background.
             fogOverlayView.invalidate();
             fogOverlayView.requestTiles();
         });
         map.addOnCameraIdleListener(() -> {
+            updateMapZoomLabel();
             fogOverlayView.invalidate();
             scheduleViewportOverlay();
             requestDiscoveryScan();
@@ -514,6 +533,18 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         mapView.addOnDidBecomeIdleListener(this::requestDiscoveryScan);
 
         loadActiveMapStyle();
+    }
+
+    private void updateMapZoomLabel() {
+        if (map == null || mapZoomText == null) return;
+        CameraPosition position = map.getCameraPosition();
+        if (position == null || !Double.isFinite(position.zoom)) return;
+        int tenth = (int) Math.round(position.zoom * 10.0);
+        if (tenth == displayedZoomTenth) return;
+        displayedZoomTenth = tenth;
+        String zoom = String.format(Locale.US, "%.1f", tenth / 10.0);
+        mapZoomText.setText("z" + zoom);
+        mapZoomText.setContentDescription("Current map zoom level " + zoom);
     }
 
     private void loadActiveMapStyle() {
