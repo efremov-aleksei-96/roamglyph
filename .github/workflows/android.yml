@@ -18,7 +18,7 @@ jobs:
       # Never upload a CI-runner-generated ephemeral debug certificate.
       # PRs still run normal builds without access to signing secrets.
       ROAMGLYPH_REQUIRE_DEV_KEYSTORE: ${{ (github.ref == 'refs/heads/main' && github.event_name != 'pull_request') && 'true' || 'false' }}
-      ROAMGLYPH_DEV_KEYSTORE: ${{ runner.temp }}/roamglyph-dev.p12
+      ROAMGLYPH_DEV_KEYSTORE: /tmp/roamglyph-dev.p12
       ROAMGLYPH_DEV_KEYSTORE_PASSWORD: ${{ secrets.ROAMGLYPH_DEV_KEYSTORE_PASSWORD }}
 
     steps:
