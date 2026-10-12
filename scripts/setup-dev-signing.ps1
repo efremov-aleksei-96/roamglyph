@@ -44,8 +44,7 @@ if (-not $keyExists) {
     $bytes = New-Object byte[] 32
     $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
     try { $rng.GetBytes($bytes) } finally { $rng.Dispose() }
-    $password = [Convert]::ToBase64String($bytes).
-        Replace('+', '-').Replace('/', '_').TrimEnd('=')
+    $password = ([Convert]::ToBase64String($bytes)).Replace('+', '-').Replace('/', '_').TrimEnd('=')
     $keyArgs = @(
         "-genkeypair", "-noprompt",
         "-keystore", $keyPath, "-storetype", "PKCS12",
