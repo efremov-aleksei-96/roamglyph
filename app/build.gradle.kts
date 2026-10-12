@@ -7,6 +7,25 @@ plugins {
 fun signingValue(name: String): String? =
     System.getenv(name)?.takeIf { it.isNotBlank() }
 
+// Developer APKs must use one persistent, dedicated PRIVATE certificate.
+ // Do not reuse the accidentally published pre-0.5 debug signing key.
+val devKeystorePath = signingValue("ROAMGLYPH_DEV_KEYSTORE")
+val devStorePassword = signingValue("ROAMGLYPH_DEV_KEYSTORE_PASSWORD")
+val hasDevSigning =
+    !devKeystorePath.isNullOrBlank() &&
+    File(devKeystorePath).isFile &&
+    !devStorePassword.isNullOrBlank()
+val requireDevSigning =
+    signingValue("ROAMGLYPH_REQUIRE_DEV_KEYSTORE")?.lowercase() in setOf("1", "true", "yes")
+
+if (requireDevSigning && !hasDevSigning) {
+    throw GradleException(
+        "Persistent development APK signing is required. " +
+            "Provide ROAMGLYPH_DEV_KEYSTORE and ROAMGLYPH_DEV_KEYSTORE_PASSWORD. " +
+            "Never distribute a CI runner's temporary default debug-signed APK."
+    )
+}
+
 val releaseKeystorePath = signingValue("ROAMGLYPH_KEYSTORE")
 val releaseStorePassword = signingValue("ROAMGLYPH_KEYSTORE_PASSWORD")
 val releaseKeyAlias = signingValue("ROAMGLYPH_KEY_ALIAS")
@@ -51,8 +70,8 @@ android {
         applicationId = "com.sensareth.roamglyph"
         minSdk = 29
         targetSdk = 36
-        versionCode = 24
-        versionName = "0.5.0-dev.24+g$devRevision"
+        versionCode = 25
+        versionName = "0.5.0-dev.25+g$devRevision"
 
         javaCompileOptions {
             annotationProcessorOptions {
@@ -62,6 +81,15 @@ android {
     }
 
     signingConfigs {
+        if (hasDevSigning) {
+            create("persistentDev") {
+                storeFile = File(devKeystorePath!!)
+                storeType = "PKCS12"
+                storePassword = devStorePassword
+                keyAlias = "roamglyph-dev"
+                keyPassword = devStorePassword
+            }
+        }
         if (hasReleaseSigning) {
             create("release") {
                 storeFile = File(releaseKeystorePath!!)
@@ -73,6 +101,11 @@ android {
     }
 
     buildTypes {
+        getByName("debug") {
+            if (hasDevSigning) {
+                signingConfig = signingConfigs.getByName("persistentDev")
+            }
+        }
         getByName("release") {
             isMinifyEnabled = false
             if (hasReleaseSigning) {
