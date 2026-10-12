@@ -8,13 +8,13 @@ Roamglyph-operated server.
 
 ## Status
 
-Current test line: **0.5.0-dev.18** (the future **0.5.0** release is not yet published).
+Current test line: **0.5.0-dev.25** (the future **0.5.0** release is not yet published).
 
 Inside the application, open **⋮ → Check for updates** and choose either
 [Official releases](https://github.com/efremov-aleksei-96/roamglyph/releases)
 or [Development builds](https://github.com/efremov-aleksei-96/roamglyph/actions/workflows/android.yml?query=branch%3Amain).
 The latter lists CI runs; open a successful Android CI run and download the
-`roamglyph-dev18-debug-apk` artifact. These are website links, not an
+`roamglyph-dev25-signed-apk` artifact. These are website links, not an
 automatic updater. Development versions include a source-specific commit
 identifier in **Version & Changelog**.
 
@@ -117,6 +117,20 @@ gradle :app:assembleRelease
 
 A release build without signing environment variables is intentionally unsigned so
 source-based repositories such as F-Droid can rebuild and sign it themselves.
+
+## Installable development APK signatures
+
+From dev.25, GitHub Actions publishes development APKs only if they are
+signed with a **persistent, dedicated test certificate**. This makes normal
+in-place updates possible without repeatedly uninstalling the application.
+The one-time setup is documented in [docs/DEV_SIGNING.md](docs/DEV_SIGNING.md).
+Testing APKs from PR branches or manually assembled unsigned/temporary debug
+builds must not be substituted for the officially signed main artifacts.
+
+Android requires uninstalling a previously installed dev.24 APK **once**
+to switch from its ephemeral debug certificate to the persistent dev.25
+certificate. Export and verify the JSON backup before uninstalling.
+Official release/F-Droid packages may use different certificates.
 
 ## Signing warning for early testers
 

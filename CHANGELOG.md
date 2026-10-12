@@ -1,5 +1,23 @@
 # Changelog
 
+## 0.5.0-dev.25 — 2026-10-12 (development signing migration)
+
+- Fix development APK updates failing with Android signing-certificate mismatch.
+- Keep a **private, persistent dedicated development key** in GitHub Actions
+  Secrets and use it for installable APKs built from `main`; PR/debug builds
+  can compile using a local debug key but can no longer be distributed as the
+  official test-channel artifact.
+- Main CI refuses to publish any APK if the signing secrets are missing or
+  the APK certificate differs from the configured signing certificate.
+- Add one-time Windows helper `scripts/setup-dev-signing.ps1` to create a
+  private signing key and configure the two required repository Secrets.
+- Bump `versionCode` to 25 so subsequent test-channel upgrades install over
+  lower-versioned builds with the **same** certificate.
+- Existing dev.24 installs still need **one final JSON-backup/uninstall/restore**
+  migration; the previous temporary signing private key is not available.
+- No changes to fog geometry, exploration history, database schema or runtime
+  permissions. Production/F-Droid release signing remains independent.
+
 ## 0.5.0-dev.24 — 2026-10-12 (experimental architecture test)
 
 - Investigate repeated on-device Pixel 9 Pro XL complaints from dev.21–23:

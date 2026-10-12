@@ -15,6 +15,11 @@ jobs:
     timeout-minutes: 25
     env:
       ROAMGLYPH_SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+      # Never upload a CI-runner-generated ephemeral debug certificate.
+      # PRs still run normal builds without access to signing secrets.
+      ROAMGLYPH_REQUIRE_DEV_KEYSTORE: ${{ (github.ref == 'refs/heads/main' && github.event_name != 'pull_request') && 'true' || 'false' }}
+      ROAMGLYPH_DEV_KEYSTORE: /tmp/roamglyph-dev.p12
+      ROAMGLYPH_DEV_KEYSTORE_PASSWORD: ${{ (github.ref == 'refs/heads/main' && github.event_name != 'pull_request') && secrets.ROAMGLYPH_DEV_KEYSTORE_PASSWORD || '' }}
 
     steps:
       - name: Checkout exact advertised source revision
@@ -61,6 +66,23 @@ jobs:
             exit 1
           fi
 
+      - name: Restore persistent development signing key (main only)
+        if: env.ROAMGLYPH_REQUIRE_DEV_KEYSTORE == 'true'
+        shell: bash
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ROAMGLYPH_DEV_KEYSTORE_BASE64 }}
+        run: |
+          if [[ -z "$KEYSTORE_BASE64" || -z "$ROAMGLYPH_DEV_KEYSTORE_PASSWORD" ]]; then
+            echo "::error::Persistent development signing is not configured. Run scripts/setup-dev-signing.ps1 locally to upload both GitHub Actions secrets."
+            exit 1
+          fi
+          umask 077
+          printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$ROAMGLYPH_DEV_KEYSTORE"
+          keytool -list -storetype PKCS12 \
+            -keystore "$ROAMGLYPH_DEV_KEYSTORE" \
+            -storepass "$ROAMGLYPH_DEV_KEYSTORE_PASSWORD" \
+            -alias roamglyph-dev >/dev/null
+
       - name: Unit tests
         run: gradle --no-daemon :app:testDebugUnitTest
 
@@ -70,19 +92,74 @@ jobs:
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
 
+      - name: Test injected development signing without publishing a throwaway key
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          ROAMGLYPH_DEV_KEYSTORE: /tmp/roamglyph-ci-test.p12
+          ROAMGLYPH_DEV_KEYSTORE_PASSWORD: ci-test-key-never-distribute
+          ROAMGLYPH_REQUIRE_DEV_KEYSTORE: 'true'
+        run: |
+          umask 077
+          keytool -genkeypair -noprompt -storetype PKCS12 \
+            -keystore "$ROAMGLYPH_DEV_KEYSTORE" \
+            -storepass "$ROAMGLYPH_DEV_KEYSTORE_PASSWORD" \
+            -keypass "$ROAMGLYPH_DEV_KEYSTORE_PASSWORD" \
+            -alias roamglyph-dev -keyalg RSA -keysize 2048 -validity 7 \
+            -dname "CN=CI Only Test Certificate, O=RoamGlyph, C=AM"
+          gradle --no-daemon :app:assembleDebug --rerun-tasks
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          "$APKSIGNER" verify --verbose --print-certs "$APK"
+          APK_DIGEST="$("$APKSIGNER" verify --print-certs "$APK" |
+            sed -n 's/^.*certificate SHA-256 digest: //p' | head -n 1)"
+          KEY_DIGEST="$(keytool -exportcert -rfc -storetype PKCS12 \
+            -keystore "$ROAMGLYPH_DEV_KEYSTORE" \
+            -storepass "$ROAMGLYPH_DEV_KEYSTORE_PASSWORD" \
+            -alias roamglyph-dev | openssl x509 -noout -fingerprint -sha256 |
+            sed 's/.*=//' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          test -n "$APK_DIGEST" && test "$APK_DIGEST" = "$KEY_DIGEST" || {
+            echo "::error::PR signing test produced a different APK certificate."
+            exit 1
+          }
+          rm -f "$ROAMGLYPH_DEV_KEYSTORE"
+
       - name: Build unsigned release for F-Droid compatibility
         run: gradle --no-daemon :app:assembleRelease
 
-      - name: Label development APK with its source revision
+      - name: Verify exact persistent signing certificate before distribution
+        if: env.ROAMGLYPH_REQUIRE_DEV_KEYSTORE == 'true'
+        shell: bash
+        run: |
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$APKSIGNER"
+          APK="app/build/outputs/apk/debug/app-debug.apk"
+          "$APKSIGNER" verify --verbose "$APK"
+          APK_DIGEST="$("$APKSIGNER" verify --print-certs "$APK" |
+            sed -n 's/^.*certificate SHA-256 digest: //p' | head -n 1)"
+          KEY_DIGEST="$(keytool -exportcert -rfc -storetype PKCS12 \
+            -keystore "$ROAMGLYPH_DEV_KEYSTORE" \
+            -storepass "$ROAMGLYPH_DEV_KEYSTORE_PASSWORD" \
+            -alias roamglyph-dev | openssl x509 -noout -fingerprint -sha256 |
+            sed 's/.*=//' | tr -d ':' | tr '[:upper:]' '[:lower:]')"
+          test -n "$APK_DIGEST" && test "$APK_DIGEST" = "$KEY_DIGEST" || {
+            echo "::error::APK signing certificate does not match the persistent development keystore."
+            exit 1
+          }
+          echo "Verified persistent development certificate SHA-256: $APK_DIGEST"
+
+      - name: Label persistently signed development APK with source revision
+        if: env.ROAMGLYPH_REQUIRE_DEV_KEYSTORE == 'true'
         shell: bash
         run: |
           mkdir -p dist
           cp app/build/outputs/apk/debug/app-debug.apk \
-            "dist/roamglyph-0.5.0-dev.24-g${ROAMGLYPH_SOURCE_SHA:0:8}.apk"
+            "dist/roamglyph-0.5.0-dev.25-g${ROAMGLYPH_SOURCE_SHA:0:8}.apk"
 
-      - name: Upload development APK
+      - name: Upload verified updateable development APK
+        if: env.ROAMGLYPH_REQUIRE_DEV_KEYSTORE == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: roamglyph-dev24-debug-apk
-          path: dist/roamglyph-0.5.0-dev.24-g*.apk
+          name: roamglyph-dev25-signed-apk
+          path: dist/roamglyph-0.5.0-dev.25-g*.apk
           if-no-files-found: error
