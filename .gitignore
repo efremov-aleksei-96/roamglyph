@@ -15,3 +15,7 @@ app/build/
 *.p12
 *.pfx
 keystore.properties
+
+# Dedicated test APK credential backups must stay off the repository.
+roamglyph-dev-password.txt
+roamglyph-dev.p12
