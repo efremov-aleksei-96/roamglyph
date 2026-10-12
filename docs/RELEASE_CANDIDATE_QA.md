@@ -37,14 +37,14 @@ matrix or exact restored counts. Those remain required below.
 | Bicycle | Ride at varying speeds, including hill climbs | Reasonable route with no systematic false reveals |
 | Accuracy | Temporarily obstruct GPS / go indoors | Poor fixes do not produce remote clusters |
 | Location toggle | Disable Android Location; re-enable later | UI shows `Location disabled`, then resumes |
-| Fog | Throw/pan/zoom rapidly near explored and unexplored cells | Geographic fog tiles track the basemap synchronously; no rectangular cutout, no false reveal, no conspicuous tile seams, and no recurring frame pauses during quick swipes |
+| Fog (dev.24 physical acceptance) | Quickly pan left/right twice across the same explored route, then pinch to city and street zoom | Smoothly registered world tiles; no newly exposed unvisited land, no rectangular cuts or H3-staircase glare, no repeatable UI stalls after cache warmup |
 | Zoom accuracy | Compare a thin discovered trail at street/city/country zoom | Never expand partial H3 parents; visited area gets smaller in screen pixels as expected and can become subpixel |
 | Screen-space edge smoothing | Inspect boundaries including sparse isolated visited areas | Supersampled, softly fading cutouts without conspicuous hexagonal sawteeth; narrow routes remain visible |
 | Rounded silhouette | Inspect isolated explored H3 cells and long connected trails while zooming | Corners visibly curved, not just blurred straight hex edges; no unvisited area opens |
 | Zigzag simplification | Inspect long cycle paths at street and overview zoom | Unneeded hex sawteeth straightened with curved bends; true visited area is not exaggerated |
 | Smoothed occupancy silhouette | Compare the same visited junction on dev.19 and dev.20 at identical map zoom | H3 corners do not form a repeating sawtooth outline; broad areas have a clearly visible smooth multi-pixel inward gradient, and thin routes remain distinguishable without outward reveal |
 | Continuous pinch zoom | Pinch rapidly both in and out repeatedly around an explored route | Cached inward-feather mask follows actual map coordinates, never reveals beyond the exact H3 footprint, and never exposes a lateral strip |
-| APK version identity | Inspect installed About screen and APK filename | Distinct 0.5.0-dev.23+g&lt;commit&gt; displayed; downloadable artifact filename contains same commit |
+| APK version identity | Inspect installed About screen and APK filename | Distinct 0.5.0-dev.24+g&lt;commit&gt; displayed; downloadable artifact filename contains same commit |
 | Check for updates dialog | Tap ⋮ → Check for updates, then repeat from Version & Changelog | Installed dev.18 version in title and both clickable website choices (not just a text-only message) |
 | Update destinations | Select each website choice with internet | Official releases link opens GitHub Releases; test builds link opens main-branch Android CI runs, which contain downloadable development APKs under Artifacts; no auto-install |
 | Discovery emoji | Inspect museum, nature, landmark and hint POIs | Category-specific emojis visible above fog, tappable POI details preserved; icons also visible with Fog off |
@@ -103,3 +103,12 @@ These automated checks do **not** guarantee runtime behavior on a physical devic
   independently obtain and retain a copy of the map package.
 - GPS route, explored cells, and POI availability depend on device location
   quality and coverage of the imported/online map data.
+
+
+## Dev.24 on-device performance validation (required; CI smoke is not enough)
+
+- Confirm installed version `0.5.0-dev.24+g<commit>`.
+- Pause exploration where possible. At the *same camera angle and zoom*, fling repeatedly over a previously opened road, first with Fog ON then Fog OFF. Compare with an ordinary map gesture before toggling; record a 10-second screen capture of both.
+- Debug logcat tag `RoamGlyphFrames` provides window frame duration averages and 16.7/33.3 ms outliers over 240 frames (local only). This is a **partial metric**: the native MapLibre Surface may render on a different thread; use Perfetto or Android GPU Inspector to confirm GPU-side stalls on Pixel.
+- Assess the outer white mask and tile boundaries at street/city zoom. One-cell routes must remain visible and visited area must never expand into genuinely unvisited terrain.
+- Hardware compositing and conservative raster filtering are architectural changes. Treat passing JVM tests, Android lint, and emulator launch as *necessary but insufficient* for performance and visual acceptance.

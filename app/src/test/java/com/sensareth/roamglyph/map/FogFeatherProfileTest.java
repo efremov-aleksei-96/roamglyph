@@ -7,6 +7,30 @@ import static org.junit.Assert.assertTrue;
 
 public class FogFeatherProfileTest {
     @Test
+    public void streetMaskKeepsTwoFullTransparentPixelsInsideEveryH3Edge() {
+        // GPU bilinear sampling can only spread cutout alpha by ~one bitmap
+        // pixel; alpha must be zero on the two source samples nearest an H3
+        // border before we omit the expensive per-frame vector clipping.
+        for (int raw : new int[]{0, 1, 64, 255}) {
+            for (int occupancy : new int[]{1, 80, 255}) {
+                for (int d = 0; d <= 6; d++) {
+                    assertEquals(0, FogFeatherProfile.cutoutAlpha(
+                            raw, occupancy, d, 24));
+                }
+            }
+        }
+        int inside = FogFeatherProfile.cutoutAlpha(255, 255, 30, 24);
+        assertTrue("The route core must remain visible after the inset",
+                inside > 0);
+    }
+
+    @Test
+    public void geographicMaskRetainsNarrowSubpixelRouteAtOverviewZoom() {
+        assertTrue("Overview route must not be erased by street-scale guard",
+                FogFeatherProfile.cutoutAlpha(255, 40, 3, 1) > 0);
+    }
+
+    @Test
     public void unvisitedPixelAlwaysRemainsFullyFogged() {
         assertEquals(0, FogFeatherProfile.cutoutAlpha(0, 255, 255, 24));
     }

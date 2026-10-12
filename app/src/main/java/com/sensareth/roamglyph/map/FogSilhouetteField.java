@@ -85,15 +85,55 @@ final class FogSilhouetteField {
         horizontalFromByte(blurred, horizontal, width, height, blurRadius, cancelled);
         verticalFromByte(horizontal, blurred, width, height, blurRadius, cancelled);
 
+        // The first stage applies the (strictly H3-bounded) distance fade.
+        // That still follows every inward zigzag of the hex perimeter. For
+        // genuinely wide corridors, smooth the *final cutout field* once
+        // more in tile space, then intersect it with the original stencil.
+        // Very thin/overview routes skip this pass to preserve visibility.
+        boolean refineSilhouette = blurRadius >= 6 && featherRadius >= 12;
+        byte[] rawStencil = refineSilhouette ? new byte[length] : null;
         for (int y = 0; y < height; y++) {
             if ((y & 31) == 0) checkInterrupted(cancelled);
             int row = y * width;
             for (int x = 0; x < width; x++) {
                 int i = row + x;
                 int raw = argb[i] >>> 24;
+                if (refineSilhouette) rawStencil[i] = (byte) raw;
                 int alpha = FogFeatherProfile.cutoutAlpha(
                         raw, blurred[i] & 255, distance[i] & 255, featherRadius);
                 argb[i] = (alpha << 24) | 0xFFFFFF;
+            }
+        }
+
+        if (refineSilhouette) {
+            // This is an actual 2-D smoothing of the resulting silhouette,
+            // not another feather drawn along the unchanged jagged border.
+            // Both box passes are area-normalized and run on the worker.
+            int shapeRadius = Math.max(3,
+                    Math.min(16, Math.round(blurRadius * 0.55f)));
+            horizontalFromArgb(argb, horizontal, width, height,
+                    shapeRadius, cancelled);
+            verticalFromByte(horizontal, blurred, width, height,
+                    shapeRadius, cancelled);
+
+            for (int y = 0; y < height; y++) {
+                if ((y & 31) == 0) checkInterrupted(cancelled);
+                int row = y * width;
+                for (int x = 0; x < width; x++) {
+                    int i = row + x;
+                    int source = rawStencil[i] & 255;
+                    // Refined field contains only normalized original cutout
+                    // alpha. Squash weak tooth tips while retaining solid
+                    // interiors and the long faint transition around roads.
+                    float t = ((blurred[i] & 255) / 255f - 0.08f) / 0.55f;
+                    t = Math.max(0f, Math.min(1f, t));
+                    float reveal = t * t * (3f - 2f * t);
+                    int alpha = Math.min(source, Math.round(255f * reveal));
+                    // Do not let the SECOND smoothing pass fill the 2-pixel
+                    // conservative inset needed for bilinear GPU sampling.
+                    if ((distance[i] & 255) <= 6) alpha = 0;
+                    argb[i] = (alpha << 24) | 0xFFFFFF;
+                }
             }
         }
         checkInterrupted(cancelled);

@@ -12,6 +12,7 @@ import android.graphics.PorterDuff;
 import android.graphics.PorterDuffXfermode;
 import android.graphics.RectF;
 import android.os.SystemClock;
+import android.os.Trace;
 import android.view.View;
 
 import androidx.annotation.NonNull;
@@ -72,6 +73,7 @@ public final class FogOverlayView extends View {
     private final Set<FogWorldTileScheme.Key> pending = new HashSet<>();
     private Set<FogWorldTileScheme.Key> pinned = Collections.emptySet();
     private long cacheBytes;
+    private float lastCoarsenScale = Float.POSITIVE_INFINITY;
     private final AtomicBoolean workerRunning = new AtomicBoolean(false);
     private ExecutorService worker = Executors.newSingleThreadExecutor();
 
@@ -173,6 +175,11 @@ public final class FogOverlayView extends View {
         density = getResources().getDisplayMetrics().density;
         setClickable(false);
         setWillNotDraw(false);
+        // The foreground layer MUST have its own compositing surface. The
+        // DST_OUT bitmaps punch holes only in this View's dark texture, never
+        // in the underlying MapLibre surface. This persistent layer replaces
+        // allocating a full-screen saveLayer on every animated camera frame.
+        setLayerType(View.LAYER_TYPE_HARDWARE, null);
         cutoutPaint.setColor(Color.WHITE);
         cutoutPaint.setXfermode(new PorterDuffXfermode(PorterDuff.Mode.DST_OUT));
         markerOutline.setColor(Color.WHITE);
@@ -262,6 +269,7 @@ public final class FogOverlayView extends View {
         for (Tile tile : cache.values()) tile.recycle();
         cache.clear();
         cacheBytes = 0L;
+        lastCoarsenScale = Float.POSITIVE_INFINITY;
         displayZoom = -1;
         pinned = Collections.emptySet();
     }
@@ -359,8 +367,15 @@ public final class FogOverlayView extends View {
             // Previously cached full-resolution bitmaps must shrink with
             // the new generation; otherwise mixed scales break the byte
             // budget and lead to eviction of visible content.
-            coarsenCachedTilesTo(rasterScale);
-            trimCacheToBudget();
+            // A camera fling typically keeps the same raster scale. Never
+            // traverse/recycle the entire LRU every 110ms in that case.
+            if (rasterScale < lastCoarsenScale * 0.98f) {
+                coarsenCachedTilesTo(rasterScale);
+            }
+            lastCoarsenScale = rasterScale;
+            if (cache.size() > MAX_CACHE || cacheBytes > MAX_CACHE_BYTES) {
+                trimCacheToBudget();
+            }
             for (FogWorldTileScheme.Key key : prioritized) {
                 Tile current = cache.get(key);
                 // Zooming back into a normal-size viewport can restore a
@@ -587,18 +602,23 @@ public final class FogOverlayView extends View {
     }
 
     @Override protected void onDraw(@NonNull Canvas canvas) {
-        super.onDraw(canvas);
-        if (!enabled) {
-            if (map != null) drawForegroundMarkers(canvas, false);
-            return;
+        Trace.beginSection("RoamGlyph.fogDraw");
+        try {
+            super.onDraw(canvas);
+            if (!enabled) {
+                if (map != null) drawForegroundMarkers(canvas, false);
+                return;
+            }
+            // This View owns a persistent HARDWARE layer; drawing the fog
+            // directly avoids a second full-screen offscreen saveLayer for
+            // every MapLibre animation frame. Destination-out is confined to
+            // this overlay layer, not the basemap or the POI views above it.
+            canvas.drawColor(Color.argb(FOG_ALPHA, 17, 20, 24));
+            if (map != null) drawCachedTiles(canvas);
+            if (map != null) drawForegroundMarkers(canvas, true);
+        } finally {
+            Trace.endSection();
         }
-
-        int savedFog = canvas.saveLayer(0, 0, getWidth(), getHeight(), null);
-        canvas.drawColor(Color.argb(FOG_ALPHA, 17, 20, 24));
-        if (map != null) drawCachedTiles(canvas);
-        canvas.restoreToCount(savedFog);
-
-        if (map != null) drawForegroundMarkers(canvas, true);
     }
 
     private void drawCachedTiles(Canvas canvas) {
@@ -657,9 +677,11 @@ public final class FogOverlayView extends View {
                     // the earlier independently projected per-tile matrix.
                     canvas.concat(tileMatrix);
                 }
-                // Critical: always preserve the exact res-13 H3 stencil;
-                // smoothing the underlying raster must never reveal new land.
-                canvas.clipPath(tile.exactPath);
+                // The expensive H3 vector clip is already baked into the
+                // conservative bitmap alpha by FogSilhouetteField. Repeating
+                // GPU clipPath for every tile on every pan frame reproduced
+                // H3 corner facets and caused substantial RenderThread work.
+                // The rasterizer keeps non-visited source pixels fully dark.
                 int level = FogMipLevel.forZoomDelta(
                         tile.key.z - currentZoom, tile.effectiveScale(),
                         tile.mipmaps.length);

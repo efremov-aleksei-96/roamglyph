@@ -18,6 +18,11 @@ public final class FogFeatherProfile {
     public static int cutoutAlpha(int rawAlpha, int smoothedAlpha,
                                   int distanceSteps, int featherRadiusPx) {
         if (rawAlpha <= 0 || distanceSteps <= 0) return 0;
+        // On street-scale cached images, bilinear filtering must not
+        // interpolate positive alpha past an H3 polygon boundary. Reserve
+        // two fully transparent source pixels INSIDE every visited edge.
+        // Subpixel routes at overview scales retain their existing rescue.
+        if (featherRadiusPx >= 8 && distanceSteps <= 6) return 0;
         float distance = distanceSteps / 3f;
         float feather = Math.max(1f, featherRadiusPx);
         float occupancy = Math.max(0f, Math.min(1f, smoothedAlpha / 255f));

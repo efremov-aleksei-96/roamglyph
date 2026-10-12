@@ -1,5 +1,33 @@
 # Changelog
 
+## 0.5.0-dev.24 — 2026-10-12 (experimental architecture test)
+
+- Investigate repeated on-device Pixel 9 Pro XL complaints from dev.21–23:
+  conspicuous H3 teeth and micro-stutters even during repeated warm swipes.
+- Allocate one persistent Android hardware layer for the fog overlay instead
+  of a new full-screen offscreen `Canvas.saveLayer` at every camera frame.
+  Preserve `DST_OUT` isolation from the underlying MapLibre surface.
+- Move repeated exact H3 vector clipping off the frame-critical render path:
+  the tile worker already rasterizes alpha only where source H3 cells exist,
+  and a two-pixel inward transparent guard prevents ordinary bilinear
+  texture interpolation from opening neighbouring unvisited terrain.
+  Approximate raster/mipmap sampling still requires real-device visual QA.
+- Further smooth the **actual visible cutout silhouette**, instead of
+  merely tracing the zigzag H3 boundary with a blurry outline. A second
+  tile-worker spatial filter attenuates recurring hex tips; all output
+  is clamped to the original H3 source alpha, and fine single-cell routes
+  retain their original small-scale rendering path.
+- Avoid scanning and downsampling every resident cached tile at every
+  110ms demand tick if the memory-adjusted raster scale is unchanged.
+- Add debug-only local `RoamGlyphFrames` window frame metrics and
+  `RoamGlyph.fogDraw` Perfetto trace sections for cold/warm and
+  fog-off/fog-on comparisons. No telemetry or new runtime dependencies.
+- Add pure-JVM source-boundary / repeated-teeth tests. User GPS history,
+  exact stored H3-13 cells, JSON import/export and discoveries are unchanged.
+- This build is **NOT visually or performance accepted** merely because
+  Android CI and AOSP Runtime Smoke pass. Confirm real physical swipes,
+  pinch zoom, tile edges, thin routes and GPU timings on Pixel.
+
 ## 0.5.0-dev.23 — 2026-10-11 (test build)
 
 - Display the actual fractional MapLibre camera zoom on the map (for example

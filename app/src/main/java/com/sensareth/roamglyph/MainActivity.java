@@ -46,6 +46,7 @@ import com.sensareth.roamglyph.map.DiscoveryHitPolicy;
 import com.sensareth.roamglyph.map.DiscoveryOverlayBuilder;
 import com.sensareth.roamglyph.map.ExplorationCoverageIndex;
 import com.sensareth.roamglyph.map.FogOverlayView;
+import com.sensareth.roamglyph.map.FogFrameMetrics;
 import com.sensareth.roamglyph.map.OfflineMapStore;
 import com.sensareth.roamglyph.map.OfflineMapStyle;
 import com.sensareth.roamglyph.map.PoiDiscoveryCandidate;
@@ -127,6 +128,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     private MapView mapView;
     private FogOverlayView fogOverlayView;
+    private FogFrameMetrics frameMetrics;
     private MapLibreMap map;
     private Button trackingButton;
     private Button locateButton;
@@ -491,6 +493,11 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         root.addView(zoomControls, zoomLp);
 
         setContentView(root);
+        if ((getApplicationInfo().flags
+                & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            frameMetrics = new FogFrameMetrics(getWindow(), store.isFogEnabled());
+            frameMetrics.start();
+        }
         setLocateAvailable(hasLocation);
         updateUi(true);
 
@@ -952,6 +959,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             if (item.getItemId() == 6) {
                 boolean enabled = !store.isFogEnabled();
                 store.setFogEnabled(enabled);
+                if (frameMetrics != null) frameMetrics.setFogEnabled(enabled);
                 if (enabled) {
                     showInitialFogLayer();
                 } else {
@@ -1788,6 +1796,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     @Override
     protected void onDestroy() {
+        if (frameMetrics != null) frameMetrics.stop();
         mapView.onDestroy();
         if (dataExecutor != null) {
             dataExecutor.shutdown();
