@@ -92,6 +92,27 @@ jobs:
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
 
+      - name: Test injected development signing without publishing a throwaway key
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          ROAMGLYPH_DEV_KEYSTORE: /tmp/roamglyph-ci-test.p12
+          ROAMGLYPH_DEV_KEYSTORE_PASSWORD: ci-test-key-never-distribute
+          ROAMGLYPH_REQUIRE_DEV_KEYSTORE: 'true'
+        run: |
+          umask 077
+          keytool -genkeypair -noprompt -storetype PKCS12 \
+            -keystore "$ROAMGLYPH_DEV_KEYSTORE" \
+            -storepass "$ROAMGLYPH_DEV_KEYSTORE_PASSWORD" \
+            -keypass "$ROAMGLYPH_DEV_KEYSTORE_PASSWORD" \
+            -alias roamglyph-dev -keyalg RSA -keysize 2048 -validity 7 \
+            -dname "CN=CI Only Test Certificate, O=RoamGlyph, C=AM"
+          gradle --no-daemon :app:assembleDebug --rerun-tasks
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          "$APKSIGNER" verify --print-certs app/build/outputs/apk/debug/app-debug.apk |
+            grep -q 'Signer #1 certificate SHA-256 digest:'
+          rm -f "$ROAMGLYPH_DEV_KEYSTORE"
+
       - name: Build unsigned release for F-Droid compatibility
         run: gradle --no-daemon :app:assembleRelease
 
