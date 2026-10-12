@@ -44,7 +44,7 @@ matrix or exact restored counts. Those remain required below.
 | Zigzag simplification | Inspect long cycle paths at street and overview zoom | Unneeded hex sawteeth straightened with curved bends; true visited area is not exaggerated |
 | Smoothed occupancy silhouette | Compare the same visited junction on dev.19 and dev.20 at identical map zoom | H3 corners do not form a repeating sawtooth outline; broad areas have a clearly visible smooth multi-pixel inward gradient, and thin routes remain distinguishable without outward reveal |
 | Continuous pinch zoom | Pinch rapidly both in and out repeatedly around an explored route | Cached inward-feather mask follows actual map coordinates, never reveals beyond the exact H3 footprint, and never exposes a lateral strip |
-| APK version identity | Inspect installed About screen and APK filename | Distinct 0.5.0-dev.24+g&lt;commit&gt; displayed; downloadable artifact filename contains same commit |
+| APK version identity | Inspect installed About screen and APK filename | Distinct 0.5.0-dev.25+g&lt;commit&gt; displayed; downloadable artifact filename contains same commit |
 | Check for updates dialog | Tap ⋮ → Check for updates, then repeat from Version & Changelog | Installed dev.18 version in title and both clickable website choices (not just a text-only message) |
 | Update destinations | Select each website choice with internet | Official releases link opens GitHub Releases; test builds link opens main-branch Android CI runs, which contain downloadable development APKs under Artifacts; no auto-install |
 | Discovery emoji | Inspect museum, nature, landmark and hint POIs | Category-specific emojis visible above fog, tappable POI details preserved; icons also visible with Fog off |
@@ -112,3 +112,16 @@ These automated checks do **not** guarantee runtime behavior on a physical devic
 - Debug logcat tag `RoamGlyphFrames` provides window frame duration averages and 16.7/33.3 ms outliers over 240 frames (local only). This is a **partial metric**: the native MapLibre Surface may render on a different thread; use Perfetto or Android GPU Inspector to confirm GPU-side stalls on Pixel.
 - Assess the outer white mask and tile boundaries at street/city zoom. One-cell routes must remain visible and visited area must never expand into genuinely unvisited terrain.
 - Hardware compositing and conservative raster filtering are architectural changes. Treat passing JVM tests, Android lint, and emulator launch as *necessary but insufficient* for performance and visual acceptance.
+
+
+## Development signing acceptance (dev.25)
+
+- Verify the `roamglyph-dev25-signed-apk` artifact was published by the
+  `main` Android CI workflow, not an ephemeral PR runner.
+- Compare `apksigner verify --print-certs` certificate SHA-256 across two
+  separately triggered main-branch builds: they must be identical.
+- Install build A, collect some data, then install higher-versionCode build B
+  **without uninstalling**. Previously explored cells, session history and
+  preferences must remain.
+- A one-time JSON-export/uninstall/import migration from dev.24 is expected.
+  Tests are not complete if this is confused with routine update behavior.
