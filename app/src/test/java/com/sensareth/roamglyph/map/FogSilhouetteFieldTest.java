@@ -26,6 +26,33 @@ public class FogSilhouetteFieldTest {
         return pixels[y * width + x] >>> 24;
     }
 
+    @Test
+    public void wideRoadSuppressesRepeatedH3ToothTipsWithoutFillingUnvisitedLand() {
+        int width = 200, height = 200;
+        int[] image = blank(width, height);
+        rect(image, width, 70, 12, 130, 187);
+        // Repeated H3-like side extrusions along an otherwise wide road.
+        for (int y = 18; y < 178; y += 20) {
+            rect(image, width, 58, y + 2, 70, y + 16);
+            rect(image, width, 130, y + 2, 142, y + 16);
+        }
+        int[] raw = image.clone();
+        FogSilhouetteField.renderInPlace(image, width, height, 20, 38);
+        for (int i = 0; i < image.length; i++) {
+            assertTrue("Resmoothing must never reveal unvisited pixels",
+                    (image[i] >>> 24) <= (raw[i] >>> 24));
+        }
+        int tooth = alpha(image, width, 62, 48);
+        int core = alpha(image, width, 100, 48);
+        assertTrue("A wide visited road must remain clear", core >= 210);
+        assertTrue("Repeated teeth must be considerably darker than the road",
+                tooth < core / 3);
+        assertEquals("There is no expansion outside recorded H3 cells", 0,
+                alpha(image, width, 55, 48));
+        assertEquals("Conservative H3 texture margin must be transparent", 0,
+                alpha(image, width, 58, 48));
+    }
+
     @Test(expected = CancellationException.class)
     public void supersededViewportComputationCanCancelBeforeCompletion() {
         int width = 144, height = 96;
