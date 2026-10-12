@@ -31,6 +31,13 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 $folder = [System.IO.Path]::GetFullPath($BackupDirectory)
+$sourceRoot = [System.IO.Path]::GetFullPath((Join-Path $PSScriptRoot ".."))
+if ($folder.StartsWith(
+        $sourceRoot.TrimEnd([System.IO.Path]::DirectorySeparatorChar) +
+        [System.IO.Path]::DirectorySeparatorChar,
+        [System.StringComparison]::OrdinalIgnoreCase)) {
+    throw "Signing credentials must be stored OUTSIDE the Git working tree."
+}
 New-Item -Path $folder -ItemType Directory -Force | Out-Null
 $keyPath = Join-Path $folder "roamglyph-dev.p12"
 $passwordPath = Join-Path $folder "roamglyph-dev-password.txt"
@@ -74,8 +81,8 @@ if ($LASTEXITCODE -ne 0) {
     throw "Private key, alias, or saved password mismatch. Secrets were not updated."
 }
 
-# gh secret set reads values from stdin. No private key or password is ever
-# placed into command-line arguments, repository files or GitHub logs.
+# gh secret set reads values from stdin and does not print signing material.
+# Keytool itself receives the new password in local process arguments.
 $encoded = [Convert]::ToBase64String([System.IO.File]::ReadAllBytes($keyPath))
 $encoded | & gh secret set ROAMGLYPH_DEV_KEYSTORE_BASE64 --repo $repo
 if ($LASTEXITCODE -ne 0) { throw "Failed to set keystore secret." }
