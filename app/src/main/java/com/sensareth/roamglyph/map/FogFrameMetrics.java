@@ -18,6 +18,7 @@ public final class FogFrameMetrics {
     private static final int REPORT_EVERY = 240;
 
     private final Window window;
+    private final FogPerformanceDiagnostics diagnostics;
     private final HandlerThread thread = new HandlerThread("roamglyph-frame-metrics");
     private Handler handler;
     private boolean started;
@@ -31,6 +32,7 @@ public final class FogFrameMetrics {
     private final Window.OnFrameMetricsAvailableListener listener = (ignored, frame, dropped) -> {
         long nanos = frame.getMetric(FrameMetrics.TOTAL_DURATION);
         if (nanos <= 0) return;
+        if (diagnostics != null) diagnostics.recordWindowFrame(nanos, dropped);
         double ms = nanos / 1_000_000.0;
         total++;
         summedMs += ms;
@@ -50,9 +52,11 @@ public final class FogFrameMetrics {
         }
     };
 
-    public FogFrameMetrics(Window window, boolean fogEnabled) {
+    public FogFrameMetrics(Window window, boolean fogEnabled,
+                           FogPerformanceDiagnostics diagnostics) {
         this.window = window;
         this.fogEnabled = fogEnabled;
+        this.diagnostics = diagnostics;
     }
 
     public void start() {
