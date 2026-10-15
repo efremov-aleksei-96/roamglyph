@@ -146,7 +146,13 @@ jobs:
             echo "::error::APK signing certificate does not match the persistent development keystore."
             exit 1
           }
-          echo "Verified persistent development certificate SHA-256: $APK_DIGEST"
+          # Pin the known dev.25/dev.26 Android signing certificate. Even if
+          # somebody changes Actions Secrets, never publish an incompatible APK.
+          test "$APK_DIGEST" = "89defa011682172a6d892cda46cd6132393dccda22cecf1175f825596db80758" || {
+            echo "::error::Dev signing certificate changed: this would break in-place updates."
+            exit 1
+          }
+          echo "Verified pinned development certificate SHA-256: $APK_DIGEST"
 
       - name: Label persistently signed development APK with source revision
         if: env.ROAMGLYPH_REQUIRE_DEV_KEYSTORE == 'true'
@@ -154,18 +160,18 @@ jobs:
         run: |
           mkdir -p dist
           cp app/build/outputs/apk/debug/app-debug.apk \
-            "dist/roamglyph-0.5.0-dev.26-g${ROAMGLYPH_SOURCE_SHA:0:8}.apk"
+            "dist/roamglyph-0.5.0-dev.27-g${ROAMGLYPH_SOURCE_SHA:0:8}.apk"
 
       - name: Upload verified updateable development APK
         if: env.ROAMGLYPH_REQUIRE_DEV_KEYSTORE == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: roamglyph-dev26-signed-apk
-          path: dist/roamglyph-0.5.0-dev.26-g*.apk
+          name: roamglyph-dev27-signed-apk
+          path: dist/roamglyph-0.5.0-dev.27-g*.apk
           if-no-files-found: error
 
   publish-development:
-    name: Publish installable dev.26 APK
+    name: Publish installable dev.27 APK
     needs: verify
     # Publishing from reviewed main only; a PR/fork cannot forge updates.
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
@@ -176,7 +182,7 @@ jobs:
       - name: Retrieve certificate-verified, permanently signed APK
         uses: actions/download-artifact@v4
         with:
-          name: roamglyph-dev26-signed-apk
+          name: roamglyph-dev27-signed-apk
           path: dist
 
       - name: Publish immutable public development prerelease
@@ -187,10 +193,10 @@ jobs:
           SOURCE_SHA: ${{ github.sha }}
         run: |
           SHORT="${SOURCE_SHA:0:8}"
-          TAG="dev-vc26-g${SHORT}"
-          APK="dist/roamglyph-0.5.0-dev.26-g${SHORT}.apk"
+          TAG="dev-vc27-g${SHORT}"
+          APK="dist/roamglyph-0.5.0-dev.27-g${SHORT}.apk"
           test -f "$APK"
-          (cd dist && sha256sum "roamglyph-0.5.0-dev.26-g${SHORT}.apk" > SHA256SUMS.txt)
+          (cd dist && sha256sum "roamglyph-0.5.0-dev.27-g${SHORT}.apk" > SHA256SUMS.txt)
 
           # GitHub Releases serves anonymous HTTPS downloads. An Actions
           # artifact instead requires login and expires, so it cannot be
@@ -198,5 +204,5 @@ jobs:
           gh release create "$TAG" "$APK" dist/SHA256SUMS.txt \
             --target "$SOURCE_SHA" \
             --prerelease --latest=false \
-            --title "RoamGlyph 0.5.0-dev.26 (signed test channel)" \
-            --notes "Android test-channel build. Same persistent dev key as dev.25. Contains in-app update checks and verified APK installation. Test builds are not official/F-Droid stable releases; the user must confirm installation in Android."
+            --title "RoamGlyph 0.5.0-dev.27 (signed test channel)" \
+            --notes "Dev.27 is the first end-to-end in-app update acceptance build. From an installed dev.26, open Menu > Check for updates, download, verify, and confirm the normal Android package installer. Your exploration history should remain unchanged. Same pinned dev.25/dev.26 signing certificate. The micro-stutters and H3 edges are still unresolved."
