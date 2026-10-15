@@ -8,15 +8,15 @@ Roamglyph-operated server.
 
 ## Status
 
-Current test line: **0.5.0-dev.25** (the future **0.5.0** release is not yet published).
+Current test line: **0.5.0-dev.26** (the future **0.5.0** release is not yet published).
 
-Inside the application, open **⋮ → Check for updates** and choose either
-[Official releases](https://github.com/efremov-aleksei-96/roamglyph/releases)
-or [Development builds](https://github.com/efremov-aleksei-96/roamglyph/actions/workflows/android.yml?query=branch%3Amain).
-The latter lists CI runs; open a successful Android CI run and download the
-`roamglyph-dev25-signed-apk` artifact. These are website links, not an
-automatic updater. Development versions include a source-specific commit
-identifier in **Version & Changelog**.
+Inside the application, open **⋮ → Check for updates**. In dev.26 and newer
+the app checks first-party public GitHub development prereleases automatically
+once per day while open (or on demand), can download the verified APK directly
+and launch Android's installer. **Android still requires user confirmation.**
+Each development version displays its source commit in **Version & Changelog**.
+The publicly downloadable test APKs also remain available under
+[GitHub Releases](https://github.com/efremov-aleksei-96/roamglyph/releases).
 
 This is still an early project. The original GPS/background flow has been tested on
 a physical Android device. The 0.5.0 development line now includes Room/SQLite

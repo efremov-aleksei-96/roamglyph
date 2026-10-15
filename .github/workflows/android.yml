@@ -154,12 +154,49 @@ jobs:
         run: |
           mkdir -p dist
           cp app/build/outputs/apk/debug/app-debug.apk \
-            "dist/roamglyph-0.5.0-dev.25-g${ROAMGLYPH_SOURCE_SHA:0:8}.apk"
+            "dist/roamglyph-0.5.0-dev.26-g${ROAMGLYPH_SOURCE_SHA:0:8}.apk"
 
       - name: Upload verified updateable development APK
         if: env.ROAMGLYPH_REQUIRE_DEV_KEYSTORE == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: roamglyph-dev25-signed-apk
-          path: dist/roamglyph-0.5.0-dev.25-g*.apk
+          name: roamglyph-dev26-signed-apk
+          path: dist/roamglyph-0.5.0-dev.26-g*.apk
           if-no-files-found: error
+
+  publish-development:
+    name: Publish installable dev.26 APK
+    needs: verify
+    # Publishing from reviewed main only; a PR/fork cannot forge updates.
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Retrieve certificate-verified, permanently signed APK
+        uses: actions/download-artifact@v4
+        with:
+          name: roamglyph-dev26-signed-apk
+          path: dist
+
+      - name: Publish immutable public development prerelease
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          SHORT="${SOURCE_SHA:0:8}"
+          TAG="dev-vc26-g${SHORT}"
+          APK="dist/roamglyph-0.5.0-dev.26-g${SHORT}.apk"
+          test -f "$APK"
+          (cd dist && sha256sum "roamglyph-0.5.0-dev.26-g${SHORT}.apk" > SHA256SUMS.txt)
+
+          # GitHub Releases serves anonymous HTTPS downloads. An Actions
+          # artifact instead requires login and expires, so it cannot be
+          # used by the native Android updater.
+          gh release create "$TAG" "$APK" dist/SHA256SUMS.txt \
+            --target "$SOURCE_SHA" \
+            --prerelease --latest=false \
+            --title "RoamGlyph 0.5.0-dev.26 (signed test channel)" \
+            --notes "Android test-channel build. Same persistent dev key as dev.25. Contains in-app update checks and verified APK installation. Test builds are not official/F-Droid stable releases; the user must confirm installation in Android."
