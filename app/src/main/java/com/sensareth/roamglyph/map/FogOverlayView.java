@@ -80,6 +80,12 @@ public final class FogOverlayView extends View {
     private MapLibreMap map;
     private H3Core h3;
     private ExplorationCoverageIndex coverage;
+    private volatile FogPerformanceDiagnostics diagnostics;
+
+    /** Debug-only sampling; nullable in production builds. */
+    public void setPerformanceDiagnostics(FogPerformanceDiagnostics value) {
+        diagnostics = value;
+    }
     private volatile boolean disposed;
     private volatile boolean enabled = true;
     private volatile int coverageEpoch = 1;
@@ -114,6 +120,7 @@ public final class FogOverlayView extends View {
         final FogWorldTileScheme.Key key;
         final int epoch;
         final float rasterScale;
+        final long enqueuedAtNanos;
         // Sticky: the camera may leave and re-enter this tile before the
         // worker posts its result. Never reinterpret an aborted job as
         // a deterministic empty H3 tile.
@@ -122,6 +129,7 @@ public final class FogOverlayView extends View {
             this.key = key;
             this.epoch = epoch;
             this.rasterScale = rasterScale;
+            this.enqueuedAtNanos = SystemClock.elapsedRealtimeNanos();
         }
     }
 
@@ -299,6 +307,8 @@ public final class FogOverlayView extends View {
         long now = SystemClock.uptimeMillis();
         if (!forced && now - lastDemandAt < DEMAND_INTERVAL_MS) return;
         lastDemandAt = now;
+        long startedNanos = SystemClock.elapsedRealtimeNanos();
+        int hits = 0, misses = 0, queued = 0;
         try {
             org.maplibre.android.camera.CameraPosition camera = map.getCameraPosition();
             if (camera == null) return;
@@ -378,6 +388,7 @@ public final class FogOverlayView extends View {
             }
             for (FogWorldTileScheme.Key key : prioritized) {
                 Tile current = cache.get(key);
+                if (current == null) misses++; else hits++;
                 // Zooming back into a normal-size viewport can restore a
                 // higher raster budget after visible mipmaps were coarsened.
                 // Rebuild such cells asynchronously; retain the old tile
@@ -389,12 +400,19 @@ public final class FogOverlayView extends View {
                 if ((current == null || current.epoch != epoch || undersampled)
                         && pending.add(key)) {
                     jobs.add(new TileJob(key, epoch, rasterScale));
+                    queued++;
                 }
             }
             startWorker();
             invalidate();
         } catch (RuntimeException ignored) {
             // Unprojectable poles/dateline or an incomplete style: fail dark.
+        } finally {
+            FogPerformanceDiagnostics current = diagnostics;
+            if (current != null) current.recordDemand(
+                    SystemClock.elapsedRealtimeNanos() - startedNanos,
+                    hits, misses, queued, visible.size(), pending.size(),
+                    cache.size(), cacheBytes);
         }
     }
 
@@ -414,6 +432,7 @@ public final class FogOverlayView extends View {
                     && (job = jobs.poll()) != null) {
                 final TileJob work = job;
                 Tile tile = null;
+                long buildStartedNanos = SystemClock.elapsedRealtimeNanos();
                 if (!cancelled(work)) {
                     try {
                         tile = buildTile(work);
@@ -421,6 +440,11 @@ public final class FogOverlayView extends View {
                         // Unknown geography remains safely dark.
                     }
                 }
+                FogPerformanceDiagnostics metrics = diagnostics;
+                if (metrics != null) metrics.recordTileBuild(
+                        Math.max(0L, buildStartedNanos - work.enqueuedAtNanos),
+                        SystemClock.elapsedRealtimeNanos() - buildStartedNanos,
+                        tile != null && !work.wasCancelled);
                 Tile result = tile;
                 // A detached view can reject posts; do not leak the
                 // finished bitmap when no UI consumer will receive it.
@@ -602,6 +626,7 @@ public final class FogOverlayView extends View {
     }
 
     @Override protected void onDraw(@NonNull Canvas canvas) {
+        long drawStartedNanos = SystemClock.elapsedRealtimeNanos();
         Trace.beginSection("RoamGlyph.fogDraw");
         try {
             super.onDraw(canvas);
@@ -618,6 +643,9 @@ public final class FogOverlayView extends View {
             if (map != null) drawForegroundMarkers(canvas, true);
         } finally {
             Trace.endSection();
+            FogPerformanceDiagnostics metrics = diagnostics;
+            if (metrics != null) metrics.recordFogDraw(
+                    SystemClock.elapsedRealtimeNanos() - drawStartedNanos);
         }
     }
 
@@ -660,6 +688,9 @@ public final class FogOverlayView extends View {
             // for ALL tiles in a zoom generation. This removes 4*N JNI map
             // projections during every rapid pan animation frame.
             FogWorldTileScheme.Key anchor = prepareViewportProjection(displayZoom);
+            if (anchor == null && diagnostics != null) {
+                diagnostics.recordProjectionFallback();
+            }
             for (Tile tile : cache.values()) {
                 if (tile.key.z != displayZoom || tile.mipmaps.length == 0) continue;
                 if (tile.key.x < left || tile.key.x > right
