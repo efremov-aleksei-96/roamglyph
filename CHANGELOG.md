@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.0-dev.26 — 2026-10-15 (first-party in-app test updater)
+
+- Build and publish GitHub development prereleases automatically after
+  green Android CI on main, using the same private signing key as dev.25.
+- Check for new test releases within the app once per day or via menu;
+  download APK only after confirmation, verify GitHub SHA-256 and exact
+  installed certificate, and open the normal Android installer.
+- Android may ask to enable installation from RoamGlyph once; installation
+  always requires user approval. No root, private API or third-party updater.
+- Test-channel and official release certificates remain separate.
+- Fog panning micro-stutters and visible H3 teeth **remain unresolved**
+  after physical Pixel dev.25 testing. No unmeasured renderer claims here.
+
 ## 0.5.0-dev.25 — 2026-10-12 (development signing migration)
 
 - Fix development APK updates failing with Android signing-certificate mismatch.
