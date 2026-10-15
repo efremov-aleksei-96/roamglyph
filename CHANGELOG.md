@@ -1,5 +1,22 @@
 # Changelog
 
+## 0.5.0-dev.28 — 2026-10-15 (physical-device instrumentation)
+
+- Add **Menu → Performance diagnostics (test)** in development builds: local,
+  user-shareable performance counters for both Fog ON and Fog OFF.
+- Record Android Window FrameMetrics timings, Fog View.onDraw CPU recording,
+  UI-thread fog tile-demand cost, background tile generation/queue delays,
+  cache hits/misses, visible/pending tiles, cache memory and projection fallbacks.
+- Report frame-duration p50/p95/p99 and long-frame counts; explicitly clarify
+  that Window FrameMetrics can exclude MapLibre OpenGL/GPU timing and cannot
+  establish actual on-screen map FPS.
+- No remote analytics: measurements are in memory only; no GPS coordinates,
+  trips or stored routes are copied into the report. User alone chooses when
+  to share it. 'Reset counters' starts a clean comparison session.
+- Do not alter the actual H3 geometry, fog raster masks, map tile lifecycle,
+  history, or GPS tracking. Micro-stutters and visible hexagons are NOT fixed
+  by this measurement build; #24 remains open.
+
 ## 0.5.0-dev.27 — 2026-10-15 (in-app update acceptance build)
 
 - Publish a **newer, persistently signed development APK** to verify the
