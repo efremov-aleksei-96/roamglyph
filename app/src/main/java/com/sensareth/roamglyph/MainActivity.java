@@ -47,6 +47,7 @@ import com.sensareth.roamglyph.map.DiscoveryOverlayBuilder;
 import com.sensareth.roamglyph.map.ExplorationCoverageIndex;
 import com.sensareth.roamglyph.map.FogOverlayView;
 import com.sensareth.roamglyph.map.FogFrameMetrics;
+import com.sensareth.roamglyph.map.FogPerformanceDiagnostics;
 import com.sensareth.roamglyph.map.OfflineMapStore;
 import com.sensareth.roamglyph.map.OfflineMapStyle;
 import com.sensareth.roamglyph.map.PoiDiscoveryCandidate;
@@ -130,6 +131,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private MapView mapView;
     private FogOverlayView fogOverlayView;
     private FogFrameMetrics frameMetrics;
+    private FogPerformanceDiagnostics performanceDiagnostics;
     private AppUpdateManager appUpdates;
     private MapLibreMap map;
     private Button trackingButton;
@@ -322,9 +324,15 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 )
         );
 
+        if ((getApplicationInfo().flags
+                & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            performanceDiagnostics = new FogPerformanceDiagnostics(store.isFogEnabled());
+        }
+
         // Foreground screen-space fog cannot expose a strip during a rapid
         // gesture while MapLibre updates/clips its world GeoJSON sources.
         fogOverlayView = new FogOverlayView(this);
+        fogOverlayView.setPerformanceDiagnostics(performanceDiagnostics);
         fogOverlayView.setFogEnabled(store.isFogEnabled());
         root.addView(
                 fogOverlayView,
@@ -498,7 +506,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         appUpdates = new AppUpdateManager(this, () -> tracking);
         if ((getApplicationInfo().flags
                 & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
-            frameMetrics = new FogFrameMetrics(getWindow(), store.isFogEnabled());
+            frameMetrics = new FogFrameMetrics(
+                    getWindow(), store.isFogEnabled(), performanceDiagnostics);
             frameMetrics.start();
         }
         setLocateAvailable(hasLocation);
@@ -923,6 +932,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         popup.getMenu().add(0, 12, 9,
                 getString(R.string.menu_version_changelog, installedVersion()));
         popup.getMenu().add(0, 13, 10, R.string.menu_check_updates);
+        if (performanceDiagnostics != null) {
+            popup.getMenu().add(0, 14, 11, R.string.menu_performance_diagnostics);
+        }
         popup.getMenu().add(0, 4, 11, R.string.menu_source_code);
         popup.getMenu().add(0, 5, 12, R.string.menu_privacy);
 
@@ -963,6 +975,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 boolean enabled = !store.isFogEnabled();
                 store.setFogEnabled(enabled);
                 if (frameMetrics != null) frameMetrics.setFogEnabled(enabled);
+                if (performanceDiagnostics != null) {
+                    performanceDiagnostics.setFogEnabled(enabled);
+                }
                 if (enabled) {
                     showInitialFogLayer();
                 } else {
@@ -1025,6 +1040,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             }
             if (item.getItemId() == 13) {
                 appUpdates.check(true);
+                return true;
+            }
+            if (item.getItemId() == 14) {
+                showPerformanceDiagnostics();
                 return true;
             }
             if (item.getItemId() == 4) {
