@@ -51,6 +51,7 @@ import com.sensareth.roamglyph.map.OfflineMapStore;
 import com.sensareth.roamglyph.map.OfflineMapStyle;
 import com.sensareth.roamglyph.map.PoiDiscoveryCandidate;
 import com.sensareth.roamglyph.map.ViewportOverlayBuilder;
+import com.sensareth.roamglyph.updates.AppUpdateManager;
 import com.uber.h3core.H3Core;
 import com.uber.h3core.util.LatLng;
 
@@ -129,6 +130,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private MapView mapView;
     private FogOverlayView fogOverlayView;
     private FogFrameMetrics frameMetrics;
+    private AppUpdateManager appUpdates;
     private MapLibreMap map;
     private Button trackingButton;
     private Button locateButton;
@@ -493,6 +495,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         root.addView(zoomControls, zoomLp);
 
         setContentView(root);
+        appUpdates = new AppUpdateManager(this, () -> tracking);
         if ((getApplicationInfo().flags
                 & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
             frameMetrics = new FogFrameMetrics(getWindow(), store.isFogEnabled());
@@ -1021,7 +1024,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 return true;
             }
             if (item.getItemId() == 13) {
-                showUpdateSources();
+                appUpdates.check(true);
                 return true;
             }
             if (item.getItemId() == 4) {
@@ -1475,25 +1478,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         }
     }
 
-    private void showUpdateSources() {
-        // This is a web-link chooser, not a background version check.
-        // GitHub Releases can be empty before our first public release;
-        // the Actions page hosts development APKs under successful runs.
-        String[] choices = {
-                getString(R.string.update_stable_releases),
-                getString(R.string.update_test_builds)
-        };
-        // AppCompat AlertDialog suppresses setItems when setMessage is
-        // present: keep the installed version in the title so BOTH links
-        // are reliably visible and tappable in its list content.
-        new AlertDialog.Builder(this)
-                .setTitle(getString(R.string.update_dialog_title, installedVersion()))
-                .setItems(choices, (dialog, which) -> openUrl(
-                        which == 0 ? RELEASES_URL : DEVELOPMENT_BUILDS_URL))
-                .setNegativeButton(android.R.string.cancel, null)
-                .show();
-    }
-
     private void showVersionAndChangelog() {
         String version = installedVersion();
         String header = getString(R.string.about_version, version);
@@ -1528,7 +1512,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 .setTitle(R.string.menu_about)
                 .setView(scroll)
                 .setNeutralButton(R.string.menu_check_updates,
-                        (dialog, which) -> showUpdateSources())
+                        (dialog, which) -> appUpdates.check(true))
                 .setPositiveButton(android.R.string.ok, null)
                 .show();
     }
@@ -1765,6 +1749,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         renderCurrentLocation();
         setLocateAvailable(hasLocation);
         updateUi(true);
+        if (appUpdates != null) appUpdates.onResume();
     }
 
     @Override
@@ -1797,6 +1782,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     @Override
     protected void onDestroy() {
         if (frameMetrics != null) frameMetrics.stop();
+        if (appUpdates != null) appUpdates.close();
         mapView.onDestroy();
         if (dataExecutor != null) {
             dataExecutor.shutdown();
