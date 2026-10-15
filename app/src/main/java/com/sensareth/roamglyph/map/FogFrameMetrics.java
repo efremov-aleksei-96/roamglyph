@@ -18,7 +18,7 @@ public final class FogFrameMetrics {
     private static final int REPORT_EVERY = 240;
 
     private final Window window;
-    private final FogPerformanceDiagnostics diagnostics;
+    private FogPerformanceDiagnostics diagnostics;
     private final HandlerThread thread = new HandlerThread("roamglyph-frame-metrics");
     private Handler handler;
     private boolean started;
