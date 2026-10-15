@@ -83,3 +83,29 @@ different, now-unrecoverable ephemeral debug signing key:
 Switching later to an official release/F-Droid channel **with a different
 certificate** may require another deliberate migration. Do not treat
 GitHub test builds and app-store signed packages as interchangeable.
+
+## In-app development updates (dev.26+)
+
+- After Android CI passes on `main`, a separate, write-scoped job publishes
+  the previously verified signed APK as an immutable-versioned GitHub
+  **prerelease**, tagged `dev-vc<versionCode>-g<first8commit>`.
+- The regular tag-release workflow matches only `v*`; development tags do
+  not impersonate official production releases.
+- RoamGlyph queries GitHub's anonymous `/releases` API once per day while
+  opened and on demand under `⋮ → Check for updates`. Actions artifacts
+  are not used for in-app installation (they require login and expire).
+- Candidate release must be a prerelease with the exact tag, APK filename,
+  HTTPS upstream download URL and GitHub-calculated SHA-256 digest.
+- Downloaded APK SHA-256, application ID, versionCode **and signing
+  certificate** must match policy/current installation before handing off
+  to the system package installer.
+- Download requires confirmation, and Android requires confirmation to
+  install. For sideloading, the user might need to allow installation from
+  RoamGlyph once under Android Settings.
+- Updates are blocked while an active exploration session is running;
+  stop tracking before updating. Existing history is not uninstalled.
+- The debug/dev signing certificate is **not the official release signature**.
+  Moving to stable/F-Droid may still require a backed-up migration.
+- Testing acceptance: install dev.26 from the public development Release,
+  then install dev.27 from the in-app check after it is published. Confirm
+  on-device data survival; one build cannot prove two-build OTA continuity.
