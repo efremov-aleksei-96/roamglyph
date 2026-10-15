@@ -125,3 +125,19 @@ These automated checks do **not** guarantee runtime behavior on a physical devic
   preferences must remain.
 - A one-time JSON-export/uninstall/import migration from dev.24 is expected.
   Tests are not complete if this is confused with routine update behavior.
+
+## dev.26 in-app update path
+
+1. Install dev.26 via its public GitHub development prerelease; ensure
+   signature is identical to dev.25's private test channel.
+2. Check updates from menu when current: report up-to-date, no installer.
+3. Publish a higher-numbered dev.27 signed with the *same* key; opening
+   dev.26 should offer an update at most once per day, or immediately via
+   menu. Download must verify SHA-256, package ID, versionCode, certificate.
+4. Accept Android's one-time sideload permission if needed and then explicitly
+   confirm installation. Verify history, preferences and discoveries survive.
+5. Test offline, malformed/truncated APK, wrong checksum/identity, tracking
+   active, and cancellation: **none** may install untrusted data.
+6. Physical Pixel dev.25 reported still-jagged H3 boundaries and panning
+   micro-stutter despite dev.24 renderer rewrite. Keep issue #24 open;
+   require device logs/Perfetto before another fog geometry change.
