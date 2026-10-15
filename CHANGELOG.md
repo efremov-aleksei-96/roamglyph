@@ -1,5 +1,16 @@
 # Changelog
 
+## 0.5.0-dev.27 — 2026-10-15 (in-app update acceptance build)
+
+- Publish a **newer, persistently signed development APK** to verify the
+  dev.26 → dev.27 download-and-install flow inside RoamGlyph itself.
+- Pin the public SHA-256 fingerprint of the dev.25/dev.26 test certificate
+  in distribution CI; refuse a silently rotated signing identity.
+- Bump Android versionCode to 27; no GPS history, storage, backup,
+  offline maps or UI changes beyond the advertised build version.
+- No fog rendering changes: micro-stutters and H3-shaped edges from the
+  Pixel device report remain open and require separate instrumented tests.
+
 ## 0.5.0-dev.26 — 2026-10-15 (first-party in-app test updater)
 
 - Build and publish GitHub development prereleases automatically after
