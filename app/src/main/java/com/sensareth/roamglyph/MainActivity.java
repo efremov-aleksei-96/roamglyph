@@ -1497,6 +1497,52 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         }
     }
 
+    private void showPerformanceDiagnostics() {
+        if (performanceDiagnostics == null) return;
+        StringBuilder report = new StringBuilder();
+        report.append("App: ").append(installedVersion()).append('\n');
+        report.append("Device: ").append(Build.MANUFACTURER)
+                .append(' ').append(Build.MODEL)
+                .append("; Android API ").append(Build.VERSION.SDK_INT).append('\n');
+        report.append("Offline map: ").append(store.isOfflineMapEnabled())
+                .append("; discoveries: ").append(store.isDiscoveriesEnabled())
+                .append("; tracking: ").append(tracking).append('\n');
+        report.append("Map zoom: ");
+        if (map != null && map.getCameraPosition() != null) {
+            report.append(String.format(Locale.US, "%.1f", map.getCameraPosition().zoom));
+        } else {
+            report.append("not ready");
+        }
+        report.append("\n\n").append(performanceDiagnostics.report());
+        String content = report.toString();
+
+        TextView notes = new TextView(this);
+        notes.setText(content);
+        notes.setTextSize(13f);
+        notes.setTextIsSelectable(true);
+        notes.setTypeface(Typeface.MONOSPACE);
+        notes.setPadding(dp(20), dp(12), dp(20), dp(20));
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(notes);
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.menu_performance_diagnostics)
+                .setView(scroll)
+                .setPositiveButton(R.string.diagnostics_share, (dialog, which) -> {
+                    Intent send = new Intent(Intent.ACTION_SEND);
+                    send.setType("text/plain");
+                    send.putExtra(Intent.EXTRA_TEXT, content);
+                    startActivity(Intent.createChooser(send,
+                            getString(R.string.diagnostics_share)));
+                })
+                .setNeutralButton(R.string.diagnostics_reset, (dialog, which) -> {
+                    performanceDiagnostics.reset();
+                    Toast.makeText(this, R.string.diagnostics_reset_done,
+                            Toast.LENGTH_LONG).show();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
     private void showVersionAndChangelog() {
         String version = installedVersion();
         String header = getString(R.string.about_version, version);
