@@ -47,6 +47,7 @@ import com.sensareth.roamglyph.map.DiscoveryOverlayBuilder;
 import com.sensareth.roamglyph.map.ExplorationCoverageIndex;
 import com.sensareth.roamglyph.map.FogOverlayView;
 import com.sensareth.roamglyph.map.FogFrameMetrics;
+import com.sensareth.roamglyph.map.FogPerformanceDiagnostics;
 import com.sensareth.roamglyph.map.OfflineMapStore;
 import com.sensareth.roamglyph.map.OfflineMapStyle;
 import com.sensareth.roamglyph.map.PoiDiscoveryCandidate;
@@ -130,6 +131,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private MapView mapView;
     private FogOverlayView fogOverlayView;
     private FogFrameMetrics frameMetrics;
+    private FogPerformanceDiagnostics performanceDiagnostics;
     private AppUpdateManager appUpdates;
     private MapLibreMap map;
     private Button trackingButton;
@@ -322,9 +324,15 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 )
         );
 
+        if ((getApplicationInfo().flags
+                & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
+            performanceDiagnostics = new FogPerformanceDiagnostics(store.isFogEnabled());
+        }
+
         // Foreground screen-space fog cannot expose a strip during a rapid
         // gesture while MapLibre updates/clips its world GeoJSON sources.
         fogOverlayView = new FogOverlayView(this);
+        fogOverlayView.setPerformanceDiagnostics(performanceDiagnostics);
         fogOverlayView.setFogEnabled(store.isFogEnabled());
         root.addView(
                 fogOverlayView,
@@ -498,7 +506,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         appUpdates = new AppUpdateManager(this, () -> tracking);
         if ((getApplicationInfo().flags
                 & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
-            frameMetrics = new FogFrameMetrics(getWindow(), store.isFogEnabled());
+            frameMetrics = new FogFrameMetrics(
+                    getWindow(), store.isFogEnabled(), performanceDiagnostics);
             frameMetrics.start();
         }
         setLocateAvailable(hasLocation);
@@ -923,6 +932,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         popup.getMenu().add(0, 12, 9,
                 getString(R.string.menu_version_changelog, installedVersion()));
         popup.getMenu().add(0, 13, 10, R.string.menu_check_updates);
+        if (performanceDiagnostics != null) {
+            popup.getMenu().add(0, 14, 11, R.string.menu_performance_diagnostics);
+        }
         popup.getMenu().add(0, 4, 11, R.string.menu_source_code);
         popup.getMenu().add(0, 5, 12, R.string.menu_privacy);
 
@@ -963,6 +975,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 boolean enabled = !store.isFogEnabled();
                 store.setFogEnabled(enabled);
                 if (frameMetrics != null) frameMetrics.setFogEnabled(enabled);
+                if (performanceDiagnostics != null) {
+                    performanceDiagnostics.setFogEnabled(enabled);
+                }
                 if (enabled) {
                     showInitialFogLayer();
                 } else {
@@ -1025,6 +1040,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             }
             if (item.getItemId() == 13) {
                 appUpdates.check(true);
+                return true;
+            }
+            if (item.getItemId() == 14) {
+                showPerformanceDiagnostics();
                 return true;
             }
             if (item.getItemId() == 4) {
@@ -1476,6 +1495,52 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         } catch (PackageManager.NameNotFoundException error) {
             return getString(R.string.version_unknown);
         }
+    }
+
+    private void showPerformanceDiagnostics() {
+        if (performanceDiagnostics == null) return;
+        StringBuilder report = new StringBuilder();
+        report.append("App: ").append(installedVersion()).append('\n');
+        report.append("Device: ").append(Build.MANUFACTURER)
+                .append(' ').append(Build.MODEL)
+                .append("; Android API ").append(Build.VERSION.SDK_INT).append('\n');
+        report.append("Offline map: ").append(store.isOfflineMapEnabled())
+                .append("; discoveries: ").append(store.isDiscoveriesEnabled())
+                .append("; tracking: ").append(tracking).append('\n');
+        report.append("Map zoom: ");
+        if (map != null && map.getCameraPosition() != null) {
+            report.append(String.format(Locale.US, "%.1f", map.getCameraPosition().zoom));
+        } else {
+            report.append("not ready");
+        }
+        report.append("\n\n").append(performanceDiagnostics.report());
+        String content = report.toString();
+
+        TextView notes = new TextView(this);
+        notes.setText(content);
+        notes.setTextSize(13f);
+        notes.setTextIsSelectable(true);
+        notes.setTypeface(Typeface.MONOSPACE);
+        notes.setPadding(dp(20), dp(12), dp(20), dp(20));
+        ScrollView scroll = new ScrollView(this);
+        scroll.addView(notes);
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.menu_performance_diagnostics)
+                .setView(scroll)
+                .setPositiveButton(R.string.diagnostics_share, (dialog, which) -> {
+                    Intent send = new Intent(Intent.ACTION_SEND);
+                    send.setType("text/plain");
+                    send.putExtra(Intent.EXTRA_TEXT, content);
+                    startActivity(Intent.createChooser(send,
+                            getString(R.string.diagnostics_share)));
+                })
+                .setNeutralButton(R.string.diagnostics_reset, (dialog, which) -> {
+                    performanceDiagnostics.reset();
+                    Toast.makeText(this, R.string.diagnostics_reset_done,
+                            Toast.LENGTH_LONG).show();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
     }
 
     private void showVersionAndChangelog() {

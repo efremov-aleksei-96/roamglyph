@@ -8,7 +8,7 @@ Roamglyph-operated server.
 
 ## Status
 
-Current test line: **0.5.0-dev.27** (the future **0.5.0** release is not yet published).
+Current test line: **0.5.0-dev.28** (the future **0.5.0** release is not yet published).
 
 Inside the application, open **⋮ → Check for updates**. In dev.26 and newer
 the app checks first-party public GitHub development prereleases automatically

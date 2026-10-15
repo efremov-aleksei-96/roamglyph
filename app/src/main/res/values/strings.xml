@@ -3,6 +3,10 @@
     <string name="menu_description">Menu</string>
     <string name="menu_version_changelog">Version %1$s · Changelog</string>
     <string name="menu_check_updates">Check for updates</string>
+    <string name="menu_performance_diagnostics">Performance diagnostics (test)</string>
+    <string name="diagnostics_share">Share report…</string>
+    <string name="diagnostics_reset">Reset counters</string>
+    <string name="diagnostics_reset_done">Performance counters reset. Swipe the map, then reopen diagnostics.</string>
     <string name="update_dialog_title">Check for updates\nInstalled: %1$s</string>
     <string name="update_stable_releases">Official releases (GitHub)</string>
     <string name="update_test_builds">Signed development prereleases (GitHub)</string>
