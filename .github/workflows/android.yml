@@ -160,18 +160,18 @@ jobs:
         run: |
           mkdir -p dist
           cp app/build/outputs/apk/debug/app-debug.apk \
-            "dist/roamglyph-0.5.0-dev.31-g${ROAMGLYPH_SOURCE_SHA:0:8}.apk"
+            "dist/roamglyph-0.5.0-dev.32-g${ROAMGLYPH_SOURCE_SHA:0:8}.apk"
 
       - name: Upload verified updateable development APK
         if: env.ROAMGLYPH_REQUIRE_DEV_KEYSTORE == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: roamglyph-dev31-signed-apk
-          path: dist/roamglyph-0.5.0-dev.31-g*.apk
+          name: roamglyph-dev32-signed-apk
+          path: dist/roamglyph-0.5.0-dev.32-g*.apk
           if-no-files-found: error
 
   publish-development:
-    name: Publish installable dev.31 APK
+    name: Publish installable dev.32 APK
     needs: verify
     # Publishing from reviewed main only; a PR/fork cannot forge updates.
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
@@ -182,7 +182,7 @@ jobs:
       - name: Retrieve certificate-verified, permanently signed APK
         uses: actions/download-artifact@v4
         with:
-          name: roamglyph-dev31-signed-apk
+          name: roamglyph-dev32-signed-apk
           path: dist
 
       - name: Publish immutable public development prerelease
@@ -193,10 +193,10 @@ jobs:
           SOURCE_SHA: ${{ github.sha }}
         run: |
           SHORT="${SOURCE_SHA:0:8}"
-          TAG="dev-vc31-g${SHORT}"
-          APK="dist/roamglyph-0.5.0-dev.31-g${SHORT}.apk"
+          TAG="dev-vc32-g${SHORT}"
+          APK="dist/roamglyph-0.5.0-dev.32-g${SHORT}.apk"
           test -f "$APK"
-          (cd dist && sha256sum "roamglyph-0.5.0-dev.31-g${SHORT}.apk" > SHA256SUMS.txt)
+          (cd dist && sha256sum "roamglyph-0.5.0-dev.32-g${SHORT}.apk" > SHA256SUMS.txt)
 
           # GitHub Releases serves anonymous HTTPS downloads. An Actions
           # artifact instead requires login and expires, so it cannot be
@@ -204,5 +204,5 @@ jobs:
           gh release create "$TAG" "$APK" dist/SHA256SUMS.txt \
             --target "$SOURCE_SHA" \
             --prerelease --latest=false \
-            --title "RoamGlyph 0.5.0-dev.31 (signed test channel)" \
-            --notes "Dev.31 adds experimental V3 GPS corridors with rounded path strokes and slight exterior smoothing. Toggle in test menu; V1 remains default. Route continuity excludes gaps and teleport jumps. Android CI green is not on-device visual acceptance."
+            --title "RoamGlyph 0.5.0-dev.32 (signed test channel)" \
+            --notes "Dev.32 adds opt-in Renderer V4: a re-shaped organic coverage contour derived from world-anchored H3 + rounded GPS ribbons, rather than hex-shaped edges with blur. A 2.5m maximum visual-only exterior budget, geometric jaggedness and tile-seam regression tests. V1 remains default; compare at z17.7 and share screenshots. Pixel visual and performance acceptance still required."
