@@ -1,5 +1,27 @@
 # Changelog
 
+## 0.5.0-dev.30 — 2026-10-16 (experimental Renderer V2 prototype)
+
+- Introduce an opt-in experimental **Renderer V2**, selectable in the map
+  menu of development builds; Renderer V1 remains the default and fallback.
+- V2 uses a separately implemented, linear-time squared-Euclidean distance
+  field over exact anti-aliased H3 coverage. The output alpha never exceeds
+  the original H3 stencil, preventing false reveals. Thin routes keep a
+  bounded amount of visibility at overview zoom.
+- Construct world-anchored rasters with an off-tile smoothing halo and
+  filtered mipmaps. Reuse the camera-synchronized hardware Canvas and LRU
+  infrastructure for this first prototype; no claim of a native GPU shader
+  implementation yet. Rebuilding happens off the UI thread.
+- Switching renderers invalidates in-flight tile results and cached raster
+  data. Persist the visual mode independently of exploration data. Include
+  the current renderer in local shareable performance diagnostics.
+- Add JVM tests for source-mask safety, corridor visibility, all-clear/all-full
+  tiles, cancellation and matching geographic seam results.
+- No Room migration, permissions, GPS tracking changes, discoveries changes,
+  signing-key rotation or JSON format changes. Physical Pixel visual/FPS
+  comparison and dense-history acceptance are outstanding.
+
+
 ## 0.5.0-dev.29 — 2026-10-16 (dense-history overview tile recovery)
 
 - Address Pixel dev.28 field screenshots: at z12.8 vs z14.0, portions of

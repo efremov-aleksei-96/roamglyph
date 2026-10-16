@@ -67,6 +67,21 @@ matrix or exact restored counts. Those remain required below.
 | Battery/process | Run a typical extended ride | No unexpected exit, repeated freezes, or unusual battery drain |
 | Restart | Force-close/open while recording; stop from notification | Recoverable state; stopping terminates foreground tracking |
 
+## Renderer V2 prototype (dev.30)
+
+- On the same stored 29,964-cell Pixel history, test menu → V1 and V2,
+  zoom z12.8 / z14.0 / z17.7, wait for tiles, pan away and return.
+  Never lose a previously visible valid route or open unvisited pixels.
+- Run local Performance diagnostics separately for each renderer with Fog ON
+  and Fog OFF. Reset counters for each run, share the complete reports;
+  Window FrameMetrics do not establish MapLibre GPU/GL composition FPS.
+- At street zoom compare H3 corner teeth, corridor softness and overlap
+  of adjacent tile borders. Confirm no rectangle/grid seams at tile edges.
+- Restart the app and verify selected renderer persists, history count and
+  Discoveries unchanged, and that switching back to V1 requires no reinstall.
+- Treat the native MapLibre shader backend, if pursued, as a later milestone,
+  distinct from this CPU-preprocessed SDF first prototype.
+
 ## Automatic gates
 
 GitHub Actions must pass on the **exact release candidate head**:
