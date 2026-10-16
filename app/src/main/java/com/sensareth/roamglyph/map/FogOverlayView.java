@@ -90,6 +90,7 @@ public final class FogOverlayView extends View {
     private volatile boolean enabled = true;
     private volatile boolean rendererV2;
     private volatile boolean rendererV3;
+    private volatile boolean rendererV4;
     private volatile FogGpsCorridors gpsCorridors = FogGpsCorridors.empty();
     private volatile int coverageEpoch = 1;
     private volatile Set<FogWorldTileScheme.Key> wanted = Collections.emptySet();
@@ -253,9 +254,22 @@ public final class FogOverlayView extends View {
         invalidate();
     }
 
+    /** V4 rebuilds the shape from occupancy, not from source-clipped SDF. */
+    public void setRendererV4(boolean enabled) {
+        if (rendererV4 == enabled) return;
+        rendererV4 = enabled;
+        coverageEpoch++;
+        jobs.clear();
+        pending.clear();
+        wanted = Collections.emptySet();
+        clearCache();
+        requestTiles(true);
+        invalidate();
+    }
+
     public void setGpsCorridors(@NonNull FogGpsCorridors snapshot) {
         gpsCorridors = snapshot;
-        if (!rendererV3) return;
+        if (!rendererV3 && !rendererV4) return;
         coverageEpoch++;
         jobs.clear();
         pending.clear();
@@ -560,7 +574,7 @@ public final class FogOverlayView extends View {
 
         if (cancelled(job)) return null;
         FogGpsCorridors gpsSnapshot = gpsCorridors;
-        Path corridor = rendererV3 ? gpsSnapshot.tilePath(key) : null;
+        Path corridor = (rendererV3 || rendererV4) ? gpsSnapshot.tilePath(key) : null;
         if (exact.isEmpty() && (corridor == null || corridor.isEmpty())) {
             return new Tile(key, exact, new Bitmap[0], job.epoch);
         }
@@ -571,7 +585,12 @@ public final class FogOverlayView extends View {
                 Math.cos(Math.toRadians(centerLat))
                 / (FogWorldTileScheme.TILE_PX * Math.pow(2, key.z));
         float diameter = (float) (8.2 / Math.max(0.000001, mpp));
-        Bitmap[] masks = rendererV3
+        Bitmap[] masks = rendererV4
+                ? FogOrganicRaster.createPyramid(
+                        exact, corridor,
+                        FogWorldTileScheme.TILE_PX, diameter,
+                        job.rasterScale, () -> cancelled(job))
+                : rendererV3
                 ? FogDistanceFieldRaster.createPyramid(
                         exact, corridor,
                         FogWorldTileScheme.TILE_PX, diameter,
