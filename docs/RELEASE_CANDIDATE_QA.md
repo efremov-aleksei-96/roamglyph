@@ -38,6 +38,7 @@ matrix or exact restored counts. Those remain required below.
 | Accuracy | Temporarily obstruct GPS / go indoors | Poor fixes do not produce remote clusters |
 | Location toggle | Disable Android Location; re-enable later | UI shows `Location disabled`, then resumes |
 | Fog (dev.24 physical acceptance) | Quickly pan left/right twice across the same explored route, then pinch to city and street zoom | Smoothly registered world tiles; no newly exposed unvisited land, no rectangular cuts or H3-staircase glare, no repeatable UI stalls after cache warmup |
+| Dense-coverage overview (dev.29 Pixel regression) | With 29,831+ res-13 cells, zoom out around Yerevan from z14 to z12.8, wait, pan away and return; repeat with tracking on and off | Exact already visited routes remain visible after tiles load; no permanently dark city blocks, no falsely revealed roads, no need to toggle Fog/restart |
 | Zoom accuracy | Compare a thin discovered trail at street/city/country zoom | Never expand partial H3 parents; visited area gets smaller in screen pixels as expected and can become subpixel |
 | Screen-space edge smoothing | Inspect boundaries including sparse isolated visited areas | Supersampled, softly fading cutouts without conspicuous hexagonal sawteeth; narrow routes remain visible |
 | Rounded silhouette | Inspect isolated explored H3 cells and long connected trails while zooming | Corners visibly curved, not just blurred straight hex edges; no unvisited area opens |
