@@ -46,6 +46,7 @@ import com.sensareth.roamglyph.map.DiscoveryHitPolicy;
 import com.sensareth.roamglyph.map.DiscoveryOverlayBuilder;
 import com.sensareth.roamglyph.map.ExplorationCoverageIndex;
 import com.sensareth.roamglyph.map.FogOverlayView;
+import com.sensareth.roamglyph.map.FogGpsCorridors;
 import com.sensareth.roamglyph.map.FogFrameMetrics;
 import com.sensareth.roamglyph.map.FogPerformanceDiagnostics;
 import com.sensareth.roamglyph.map.OfflineMapStore;
@@ -147,6 +148,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private final AtomicBoolean discoveryScanScheduled = new AtomicBoolean(false);
     private final AtomicLong discoveryScanGeneration = new AtomicLong(0L);
     private final ExplorationCoverageIndex coverageIndex = new ExplorationCoverageIndex();
+    private final AtomicLong gpsCorridorGeneration = new AtomicLong();
     private VisitedStore store;
     private ExplorationRepository repository;
     private ExecutorService dataExecutor;
@@ -334,6 +336,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         fogOverlayView = new FogOverlayView(this);
         fogOverlayView.setPerformanceDiagnostics(performanceDiagnostics);
         fogOverlayView.setRendererV2(store.isRendererV2Enabled());
+        fogOverlayView.setRendererV3(store.isRendererV3Enabled());
         fogOverlayView.setFogEnabled(store.isFogEnabled());
         root.addView(
                 fogOverlayView,
@@ -522,6 +525,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         }
 
         refreshVisitedFromDatabase();
+        refreshGpsCorridors();
     }
 
     @Override
@@ -938,7 +942,11 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     store.isRendererV2Enabled()
                             ? "Renderer V2 ✓ — switch to V1"
                             : "Renderer V1 ✓ — try V2 (test)");
-            popup.getMenu().add(0, 14, 12, R.string.menu_performance_diagnostics);
+            popup.getMenu().add(0, 16, 12,
+                    store.isRendererV3Enabled()
+                            ? "Renderer V3 ✓ — GPS corridors"
+                            : "Try Renderer V3 — smooth GPS corridors");
+            popup.getMenu().add(0, 14, 13, R.string.menu_performance_diagnostics);
         }
         popup.getMenu().add(0, 4, 13, R.string.menu_source_code);
         popup.getMenu().add(0, 5, 12, R.string.menu_privacy);
@@ -1051,11 +1059,29 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 boolean next = !store.isRendererV2Enabled();
                 store.setRendererV2Enabled(next);
                 fogOverlayView.setRendererV2(next);
+                if (next) {
+                    store.setRendererV3Enabled(false);
+                    fogOverlayView.setRendererV3(false);
+                }
                 performanceDiagnostics.reset();
                 Toast.makeText(this,
                         next ? "Experimental Renderer V2 enabled"
                                 : "Renderer V1 restored",
                         Toast.LENGTH_SHORT).show();
+                return true;
+            }
+            if (item.getItemId() == 16 && performanceDiagnostics != null) {
+                boolean next = !store.isRendererV3Enabled();
+                store.setRendererV3Enabled(next);
+                if (next) {
+                    store.setRendererV2Enabled(false);
+                    fogOverlayView.setRendererV2(false);
+                    refreshGpsCorridors();
+                }
+                fogOverlayView.setRendererV3(next);
+                performanceDiagnostics.reset();
+                Toast.makeText(this, next ? "GPS corridor renderer V3"
+                                : "Renderer V1 restored", Toast.LENGTH_SHORT).show();
                 return true;
             }
             if (item.getItemId() == 14) {
@@ -1332,6 +1358,26 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         });
     }
 
+    /** Background route snapshot. The persisted H3 and GPS rows are untouched. */
+    private void refreshGpsCorridors() {
+        if (dataExecutor == null || repository == null || fogOverlayView == null
+                || !store.isRendererV3Enabled()) return;
+        long generation = gpsCorridorGeneration.incrementAndGet();
+        dataExecutor.execute(() -> {
+            try {
+                FogGpsCorridors snapshot = FogGpsCorridors.from(repository.loadGpsPoints());
+                runOnUiThread(() -> {
+                    if (!isDestroyed() && generation == gpsCorridorGeneration.get()
+                            && store.isRendererV3Enabled()) {
+                        fogOverlayView.setGpsCorridors(snapshot);
+                    }
+                });
+            } catch (RuntimeException ignored) {
+                // Keep last good snapshot. Never block GPS tracking.
+            }
+        });
+    }
+
     private void scheduleViewportOverlay() {
         // The old per-viewport H3 union caused 400ms-plus gaps and
         // square bitmap boundaries when the user panned. Fog tiles now
@@ -1524,7 +1570,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 .append("; discoveries: ").append(store.isDiscoveriesEnabled())
                 .append("; tracking: ").append(tracking).append('\n');
         report.append("Fog renderer: ")
-                .append(store.isRendererV2Enabled() ? "V2 SDF prototype" : "V1 legacy")
+                .append(store.isRendererV3Enabled() ? "V3 GPS corridors"
+                        : store.isRendererV2Enabled() ? "V2 SDF prototype" : "V1 legacy")
                 .append('\n');
         report.append("Map zoom: ");
         if (map != null && map.getCameraPosition() != null) {
