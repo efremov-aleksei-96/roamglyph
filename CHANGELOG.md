@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.5.0-dev.29 — 2026-10-16 (dense-history overview tile recovery)
+
+- Address Pixel dev.28 field screenshots: at z12.8 vs z14.0, portions of
+  explored roads disappear while 29,831 exact H3 resolution-13 cells are saved.
+- Merge geographic tile contents in sorted, bounded 4,096-cell batches rather
+  than rejecting the entire tile above 20,000 cells. Exact H3 geometry remains
+  authoritative; no unvisited parent cell is revealed.
+- Raise the per-tile protective query cap to 120,000 exact cells, while keeping
+  a bounded fallback for exceptionally dense areas.
+- Do not cache an aborted, over-budget or failed tile build as an empty
+  "successful" tile; an upcoming camera demand can retry it, while previous
+  valid zoom tiles remain available during handoff.
+- Test batch partitioning of 29,831 cells without loss/duplication and the
+  expanded geometry threshold. No migration, database, GPS, permissions,
+  history, update-certificate or tracking changes.
+- This is a targeted software correction, not device acceptance. Verify
+  z12.8–z14 zoom continuity, panning and ON/OFF performance on the Pixel;
+  rendering micro-stutters and H3 teeth are still independently open.
+
+
 ## 0.5.0-dev.28 — 2026-10-15 (physical-device instrumentation)
 
 - Add **Menu → Performance diagnostics (test)** in development builds: local,
