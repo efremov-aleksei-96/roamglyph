@@ -333,6 +333,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         // gesture while MapLibre updates/clips its world GeoJSON sources.
         fogOverlayView = new FogOverlayView(this);
         fogOverlayView.setPerformanceDiagnostics(performanceDiagnostics);
+        fogOverlayView.setRendererV2(store.isRendererV2Enabled());
         fogOverlayView.setFogEnabled(store.isFogEnabled());
         root.addView(
                 fogOverlayView,
@@ -933,9 +934,13 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 getString(R.string.menu_version_changelog, installedVersion()));
         popup.getMenu().add(0, 13, 10, R.string.menu_check_updates);
         if (performanceDiagnostics != null) {
-            popup.getMenu().add(0, 14, 11, R.string.menu_performance_diagnostics);
+            popup.getMenu().add(0, 15, 11,
+                    store.isRendererV2Enabled()
+                            ? "Renderer V2 ✓ — switch to V1"
+                            : "Renderer V1 ✓ — try V2 (test)");
+            popup.getMenu().add(0, 14, 12, R.string.menu_performance_diagnostics);
         }
-        popup.getMenu().add(0, 4, 11, R.string.menu_source_code);
+        popup.getMenu().add(0, 4, 13, R.string.menu_source_code);
         popup.getMenu().add(0, 5, 12, R.string.menu_privacy);
 
         popup.setOnMenuItemClickListener(item -> {
@@ -1040,6 +1045,17 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             }
             if (item.getItemId() == 13) {
                 appUpdates.check(true);
+                return true;
+            }
+            if (item.getItemId() == 15 && performanceDiagnostics != null) {
+                boolean next = !store.isRendererV2Enabled();
+                store.setRendererV2Enabled(next);
+                fogOverlayView.setRendererV2(next);
+                performanceDiagnostics.reset();
+                Toast.makeText(this,
+                        next ? "Experimental Renderer V2 enabled"
+                                : "Renderer V1 restored",
+                        Toast.LENGTH_SHORT).show();
                 return true;
             }
             if (item.getItemId() == 14) {
@@ -1507,6 +1523,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         report.append("Offline map: ").append(store.isOfflineMapEnabled())
                 .append("; discoveries: ").append(store.isDiscoveriesEnabled())
                 .append("; tracking: ").append(tracking).append('\n');
+        report.append("Fog renderer: ")
+                .append(store.isRendererV2Enabled() ? "V2 SDF prototype" : "V1 legacy")
+                .append('\n');
         report.append("Map zoom: ");
         if (map != null && map.getCameraPosition() != null) {
             report.append(String.format(Locale.US, "%.1f", map.getCameraPosition().zoom));
