@@ -8,7 +8,7 @@ Roamglyph-operated server.
 
 ## Status
 
-Current test line: **0.5.0-dev.30** (the future **0.5.0** release is not yet published).
+Current test line: **0.5.0-dev.31** (the future **0.5.0** release is not yet published).
 
 Inside the application, open **⋮ → Check for updates**. In dev.26 and newer
 the app checks first-party public GitHub development prereleases automatically
@@ -36,6 +36,16 @@ future work. It is **opt-in**: V1 is the default and can be restored immediately
 Changing renderer does not alter visited H3 cells, GPS, sessions or backups.
 Compare the two using **Performance diagnostics (test)**; on-device visual and
 GPU-frame acceptance is not claimed.
+
+## Experimental GPS corridors (dev.31)
+
+An opt-in third renderer uses saved, accepted GPS points to draw rounded
+walking/cycling corridors, composited with exact H3 footprints and a limited
+exterior feather. Breaks between sessions, time gaps and teleport-like jumps
+are not connected. The historical H3 grid remains the database authority;
+the new visual region is not recorded as visited. The prototype remains CPU
+preprocessed and requires physical-device validation of raster shape,
+performance and correctness. V1 remains the default and fallback.
 
 ## Current features
 

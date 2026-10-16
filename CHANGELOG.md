@@ -1,5 +1,20 @@
 # Changelog
 
+## 0.5.0-dev.31 — 2026-10-16 (GPS-guided soft fog prototype)
+
+- Add opt-in Renderer V3 for soft corridor rendering around accepted persisted
+  GPS points, with round caps and approximately 10m radius; combine with
+  legacy H3 coverage when GPS data is absent.
+- Permit a tightly bounded exterior visual feather around mask edges.
+  Rendered-only expansion never changes exploration history, H3 visited
+  cells, session stats, backups or discoveries.
+- Segment route strokes by session and reject bridges across >30-second
+  gaps or >85m jumps. GPS is asynchronously loaded and snapshot updates
+  are throttled during tracking to avoid blocking map gestures.
+- Keep V1 and V2 available in debug/test menu. This is an experimental visual
+  branch; device-side evidence required before adopting the renderer.
+
+
 ## 0.5.0-dev.30 — 2026-10-16 (experimental Renderer V2 prototype)
 
 - Introduce an opt-in experimental **Renderer V2**, selectable in the map
