@@ -545,14 +545,12 @@ public final class FogOverlayView extends View {
             return;
         }
         if (tile == null) {
-            // A failed attempt to restore lost raster detail must NEVER
-            // overwrite a valid existing tile with a blank fallback.
-            // Retain its exact vector footprint and lower-res bitmap until
-            // a later camera/coverage refresh can retry the upgrade.
-            Tile usable = cache.get(job.key);
-            if (usable != null && usable.epoch == job.epoch) return;
-            // No previous coverage: fail dark without an infinite retry loop.
-            tile = new Tile(job.key, new Path(), new Bitmap[0], job.epoch);
+            // A cancelled, over-budget or failed tile is NOT an empty tile.
+            // Do not mark this geographic key as "ready" with a blank cache
+            // entry: that made explored routes permanently disappear while
+            // zooming out. The next gesture/idle requests it again; existing
+            // exact tiles remain intact until a valid replacement arrives.
+            return;
         }
         Tile old = cache.put(job.key, tile);
         if (old != null) {
