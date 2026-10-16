@@ -88,6 +88,7 @@ public final class FogOverlayView extends View {
     }
     private volatile boolean disposed;
     private volatile boolean enabled = true;
+    private volatile boolean rendererV2;
     private volatile int coverageEpoch = 1;
     private volatile Set<FogWorldTileScheme.Key> wanted = Collections.emptySet();
     private List<FogWorldTileScheme.Key> visible = Collections.emptyList();
@@ -219,6 +220,23 @@ public final class FogOverlayView extends View {
         requestTiles(true);
         invalidate();
     }
+
+    /** Switch A/B raster generators without changing GPS, H3 or Room data. */
+    public void setRendererV2(boolean useV2) {
+        if (rendererV2 == useV2) return;
+        rendererV2 = useV2;
+        // A world-tile bitmap must never be mistaken for the other renderer's
+        // output. Cancel all in-flight jobs and rebuild from the same H3 index.
+        coverageEpoch++;
+        jobs.clear();
+        pending.clear();
+        wanted = Collections.emptySet();
+        clearCache();
+        requestTiles(true);
+        invalidate();
+    }
+
+    public boolean isRendererV2() { return rendererV2; }
 
     public void setFogEnabled(boolean value) {
         enabled = value;
@@ -523,9 +541,13 @@ public final class FogOverlayView extends View {
                 Math.cos(Math.toRadians(centerLat))
                 / (FogWorldTileScheme.TILE_PX * Math.pow(2, key.z));
         float diameter = (float) (8.2 / Math.max(0.000001, mpp));
-        Bitmap[] masks = FogRasterFeather.createPyramid(
-                exact, FogWorldTileScheme.TILE_PX, FogWorldTileScheme.TILE_PX,
-                diameter, density, () -> cancelled(job), job.rasterScale);
+        Bitmap[] masks = rendererV2
+                ? FogDistanceFieldRaster.createPyramid(
+                        exact, FogWorldTileScheme.TILE_PX, diameter,
+                        job.rasterScale, () -> cancelled(job))
+                : FogRasterFeather.createPyramid(
+                        exact, FogWorldTileScheme.TILE_PX, FogWorldTileScheme.TILE_PX,
+                        diameter, density, () -> cancelled(job), job.rasterScale);
         if (cancelled(job)) {
             for (Bitmap bitmap : masks) bitmap.recycle();
             return null;
