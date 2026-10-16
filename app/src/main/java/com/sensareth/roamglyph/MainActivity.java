@@ -228,7 +228,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 }
             }
             updateUi(accepted);
-            if (accepted && store.isRendererV3Enabled()) refreshGpsCorridors();
+            if (accepted && (store.isRendererV3Enabled()
+                    || store.isRendererV4Enabled())) refreshGpsCorridors();
         }
     };
 
@@ -340,6 +341,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         fogOverlayView.setPerformanceDiagnostics(performanceDiagnostics);
         fogOverlayView.setRendererV2(store.isRendererV2Enabled());
         fogOverlayView.setRendererV3(store.isRendererV3Enabled());
+        fogOverlayView.setRendererV4(store.isRendererV4Enabled());
         fogOverlayView.setFogEnabled(store.isFogEnabled());
         root.addView(
                 fogOverlayView,
@@ -949,7 +951,11 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     store.isRendererV3Enabled()
                             ? "Renderer V3 ✓ — GPS corridors"
                             : "Try Renderer V3 — smooth GPS corridors");
-            popup.getMenu().add(0, 14, 13, R.string.menu_performance_diagnostics);
+            popup.getMenu().add(0, 17, 13,
+                    store.isRendererV4Enabled()
+                            ? "Renderer V4 ✓ — organic contour"
+                            : "Try V4 — organic shape (test)");
+            popup.getMenu().add(0, 14, 14, R.string.menu_performance_diagnostics);
         }
         popup.getMenu().add(0, 4, 13, R.string.menu_source_code);
         popup.getMenu().add(0, 5, 12, R.string.menu_privacy);
@@ -1065,6 +1071,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 if (next) {
                     store.setRendererV3Enabled(false);
                     fogOverlayView.setRendererV3(false);
+                    store.setRendererV4Enabled(false);
+                    fogOverlayView.setRendererV4(false);
                 }
                 performanceDiagnostics.reset();
                 Toast.makeText(this,
@@ -1079,11 +1087,31 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 if (next) {
                     store.setRendererV2Enabled(false);
                     fogOverlayView.setRendererV2(false);
+                    store.setRendererV4Enabled(false);
+                    fogOverlayView.setRendererV4(false);
+                    lastGpsCorridorLoadAt = 0;
                     refreshGpsCorridors();
                 }
                 fogOverlayView.setRendererV3(next);
                 performanceDiagnostics.reset();
                 Toast.makeText(this, next ? "GPS corridor renderer V3"
+                                : "Renderer V1 restored", Toast.LENGTH_SHORT).show();
+                return true;
+            }
+            if (item.getItemId() == 17 && performanceDiagnostics != null) {
+                boolean next = !store.isRendererV4Enabled();
+                store.setRendererV4Enabled(next);
+                if (next) {
+                    store.setRendererV2Enabled(false);
+                    store.setRendererV3Enabled(false);
+                    fogOverlayView.setRendererV2(false);
+                    fogOverlayView.setRendererV3(false);
+                    lastGpsCorridorLoadAt = 0;
+                    refreshGpsCorridors();
+                }
+                fogOverlayView.setRendererV4(next);
+                performanceDiagnostics.reset();
+                Toast.makeText(this, next ? "Renderer V4 organic contour"
                                 : "Renderer V1 restored", Toast.LENGTH_SHORT).show();
                 return true;
             }
@@ -1364,7 +1392,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     /** Background route snapshot. The persisted H3 and GPS rows are untouched. */
     private void refreshGpsCorridors() {
         if (dataExecutor == null || repository == null || fogOverlayView == null
-                || !store.isRendererV3Enabled()) return;
+                || (!store.isRendererV3Enabled() && !store.isRendererV4Enabled())) return;
         long now = android.os.SystemClock.uptimeMillis();
         if (now - lastGpsCorridorLoadAt < 15_000L) return;
         lastGpsCorridorLoadAt = now;
@@ -1374,7 +1402,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 FogGpsCorridors snapshot = FogGpsCorridors.from(repository.loadGpsPoints());
                 runOnUiThread(() -> {
                     if (!isDestroyed() && generation == gpsCorridorGeneration.get()
-                            && store.isRendererV3Enabled()) {
+                            && (store.isRendererV3Enabled()
+                                    || store.isRendererV4Enabled())) {
                         fogOverlayView.setGpsCorridors(snapshot);
                     }
                 });
@@ -1576,7 +1605,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 .append("; discoveries: ").append(store.isDiscoveriesEnabled())
                 .append("; tracking: ").append(tracking).append('\n');
         report.append("Fog renderer: ")
-                .append(store.isRendererV3Enabled() ? "V3 GPS corridors"
+                .append(store.isRendererV4Enabled() ? "V4 organic contour"
+                        : store.isRendererV3Enabled() ? "V3 GPS corridors"
                         : store.isRendererV2Enabled() ? "V2 SDF prototype" : "V1 legacy")
                 .append('\n');
         report.append("Map zoom: ");
