@@ -160,18 +160,18 @@ jobs:
         run: |
           mkdir -p dist
           cp app/build/outputs/apk/debug/app-debug.apk \
-            "dist/roamglyph-0.5.0-dev.28-g${ROAMGLYPH_SOURCE_SHA:0:8}.apk"
+            "dist/roamglyph-0.5.0-dev.29-g${ROAMGLYPH_SOURCE_SHA:0:8}.apk"
 
       - name: Upload verified updateable development APK
         if: env.ROAMGLYPH_REQUIRE_DEV_KEYSTORE == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: roamglyph-dev28-signed-apk
-          path: dist/roamglyph-0.5.0-dev.28-g*.apk
+          name: roamglyph-dev29-signed-apk
+          path: dist/roamglyph-0.5.0-dev.29-g*.apk
           if-no-files-found: error
 
   publish-development:
-    name: Publish installable dev.28 APK
+    name: Publish installable dev.29 APK
     needs: verify
     # Publishing from reviewed main only; a PR/fork cannot forge updates.
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
@@ -182,7 +182,7 @@ jobs:
       - name: Retrieve certificate-verified, permanently signed APK
         uses: actions/download-artifact@v4
         with:
-          name: roamglyph-dev28-signed-apk
+          name: roamglyph-dev29-signed-apk
           path: dist
 
       - name: Publish immutable public development prerelease
@@ -193,10 +193,10 @@ jobs:
           SOURCE_SHA: ${{ github.sha }}
         run: |
           SHORT="${SOURCE_SHA:0:8}"
-          TAG="dev-vc28-g${SHORT}"
-          APK="dist/roamglyph-0.5.0-dev.28-g${SHORT}.apk"
+          TAG="dev-vc29-g${SHORT}"
+          APK="dist/roamglyph-0.5.0-dev.29-g${SHORT}.apk"
           test -f "$APK"
-          (cd dist && sha256sum "roamglyph-0.5.0-dev.28-g${SHORT}.apk" > SHA256SUMS.txt)
+          (cd dist && sha256sum "roamglyph-0.5.0-dev.29-g${SHORT}.apk" > SHA256SUMS.txt)
 
           # GitHub Releases serves anonymous HTTPS downloads. An Actions
           # artifact instead requires login and expires, so it cannot be
@@ -204,5 +204,5 @@ jobs:
           gh release create "$TAG" "$APK" dist/SHA256SUMS.txt \
             --target "$SOURCE_SHA" \
             --prerelease --latest=false \
-            --title "RoamGlyph 0.5.0-dev.28 (signed test channel)" \
-            --notes "Dev.28 adds local ON/OFF performance diagnostics and shareable measurements for Pixel fog stutters. Open Menu > Performance diagnostics (test); reset, swipe with fog ON/OFF and share a report. No location or trip data is collected. No fog smoothing claims: jagged H3 edges and micro-stutters remain unresolved. Same pinned signing certificate; update in-app from dev.27."
+            --title "RoamGlyph 0.5.0-dev.29 (signed test channel)" \
+            --notes "Dev.29 fixes a known missing-coverage case on overview zoom: exact H3 sets over 20,000 cells are now unioned in bounded spatial batches, and failed tile jobs no longer install permanent blank cache entries. Physical Pixel zoom/pan testing remains required."
