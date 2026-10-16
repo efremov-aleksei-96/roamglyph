@@ -47,7 +47,16 @@ public final class FogGpsCorridors {
     public Path tilePath(FogWorldTileScheme.Key key) {
         Path path = new Path();
         Fix previous = null;
-        final double border = 32.0;
+        // Include centres beyond the visible tile when their rounded 10m
+        // corridor + 2.5m exterior feather + the 2-pass contour kernel
+        // could still overlap it. A fixed 32px border cut wide ribbons at z20.
+        double centerLat = (FogWorldTileScheme.north(key)
+                + FogWorldTileScheme.south(key)) * 0.5;
+        double metresPerPixel = 40075016.68557849
+                * Math.cos(Math.toRadians(centerLat))
+                / (FogWorldTileScheme.TILE_PX * Math.pow(2.0, key.z));
+        final double border = Math.max(32.0,
+                24.0 / Math.max(0.000001, metresPerPixel));
         for (Fix current : fixes) {
             double x = FogWorldTileScheme.localX(current.lng,key);
             double y = FogWorldTileScheme.localY(current.lat,key);
