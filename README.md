@@ -8,7 +8,7 @@ Roamglyph-operated server.
 
 ## Status
 
-Current test line: **0.5.0-dev.31** (the future **0.5.0** release is not yet published).
+Current test line: **0.5.0-dev.32** (the future **0.5.0** release is not yet published).
 
 Inside the application, open **⋮ → Check for updates**. In dev.26 and newer
 the app checks first-party public GitHub development prereleases automatically
@@ -46,6 +46,21 @@ are not connected. The historical H3 grid remains the database authority;
 the new visual region is not recorded as visited. The prototype remains CPU
 preprocessed and requires physical-device validation of raster shape,
 performance and correctness. V1 remains the default and fallback.
+
+## Organic contours (dev.32 experimental)
+
+The test-only menu now includes **Renderer V4 — organic shape**. It changes
+the geometry of the displayed coverage, not only the opacity around an
+unchanged H3 outline. A two-pass, linear-time spatial occupancy filter replaces
+repetitive hexagonal teeth with a geographically anchored smoothed silhouette.
+Rounded accepted GPS ribbons are included; cosmetic coverage beyond the
+original geometry is restricted to a ~2.5m bound. Visited H3, GPS tracks,
+statistics and JSON backups are unchanged.
+
+V1 remains the default. CI tests assert significant synthetic tooth-amplitude
+reduction, thin route continuity, no large false reveals, and exact cross-tile
+matching. These checks **do not prove** that the user's real Pixel screenshot
+is satisfactory: physical-device visual and GPU performance tests are required.
 
 ## Current features
 
