@@ -149,6 +149,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private final AtomicLong discoveryScanGeneration = new AtomicLong(0L);
     private final ExplorationCoverageIndex coverageIndex = new ExplorationCoverageIndex();
     private final AtomicLong gpsCorridorGeneration = new AtomicLong();
+    private long lastGpsCorridorLoadAt;
     private VisitedStore store;
     private ExplorationRepository repository;
     private ExecutorService dataExecutor;
@@ -219,6 +220,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                             });
                         }
                         scheduleViewportOverlay();
+                        refreshGpsCorridors();
                         requestDiscoveryScan();
                     }
                 } else {
@@ -1362,6 +1364,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private void refreshGpsCorridors() {
         if (dataExecutor == null || repository == null || fogOverlayView == null
                 || !store.isRendererV3Enabled()) return;
+        long now = android.os.SystemClock.uptimeMillis();
+        if (now - lastGpsCorridorLoadAt < 15_000L) return;
+        lastGpsCorridorLoadAt = now;
         long generation = gpsCorridorGeneration.incrementAndGet();
         dataExecutor.execute(() -> {
             try {
