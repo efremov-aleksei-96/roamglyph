@@ -8,7 +8,7 @@ Roamglyph-operated server.
 
 ## Status
 
-Current test line: **0.5.0-dev.29** (the future **0.5.0** release is not yet published).
+Current test line: **0.5.0-dev.30** (the future **0.5.0** release is not yet published).
 
 Inside the application, open **⋮ → Check for updates**. In dev.26 and newer
 the app checks first-party public GitHub development prereleases automatically
@@ -25,6 +25,17 @@ and optional local PMTiles maps. These newer components still require a physical
 ARM64 regression pass before the first public 0.5.0 release. Detailed route replay,
 discovery collections, and route planning toward unexplored areas remain future
 work.
+
+## Experimental Renderer V2 (dev.30)
+
+The test menu includes **Renderer V1 / Renderer V2 (test)**. V2 builds a
+source-clipped Euclidean signed-distance mask in a background thread, with an
+off-tile geographic halo and LOD mipmaps. It uses the existing hardware Canvas
+compositing/camera cache while a truly shader-driven MapLibre renderer remains
+future work. It is **opt-in**: V1 is the default and can be restored immediately.
+Changing renderer does not alter visited H3 cells, GPS, sessions or backups.
+Compare the two using **Performance diagnostics (test)**; on-device visual and
+GPU-frame acceptance is not claimed.
 
 ## Current features
 
