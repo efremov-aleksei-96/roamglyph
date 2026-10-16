@@ -228,6 +228,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 }
             }
             updateUi(accepted);
+            if (accepted && store.isRendererV3Enabled()) refreshGpsCorridors();
         }
     };
 
