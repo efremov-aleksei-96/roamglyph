@@ -559,7 +559,11 @@ public final class FogOverlayView extends View {
         }
 
         if (cancelled(job)) return null;
-        if (exact.isEmpty()) return new Tile(key, exact, new Bitmap[0], job.epoch);
+        FogGpsCorridors gpsSnapshot = gpsCorridors;
+        Path corridor = rendererV3 ? gpsSnapshot.tilePath(key) : null;
+        if (exact.isEmpty() && (corridor == null || corridor.isEmpty())) {
+            return new Tile(key, exact, new Bitmap[0], job.epoch);
+        }
 
         double centerLat = (FogWorldTileScheme.north(key)
                 + FogWorldTileScheme.south(key)) * .5;
@@ -567,10 +571,9 @@ public final class FogOverlayView extends View {
                 Math.cos(Math.toRadians(centerLat))
                 / (FogWorldTileScheme.TILE_PX * Math.pow(2, key.z));
         float diameter = (float) (8.2 / Math.max(0.000001, mpp));
-        FogGpsCorridors gpsSnapshot = gpsCorridors;
         Bitmap[] masks = rendererV3
                 ? FogDistanceFieldRaster.createPyramid(
-                        exact, gpsSnapshot.tilePath(key),
+                        exact, corridor,
                         FogWorldTileScheme.TILE_PX, diameter,
                         job.rasterScale, () -> cancelled(job))
                 : rendererV2
