@@ -106,7 +106,7 @@ final class FogDistanceFieldRaster {
                     smoothed[idx] = (softened << 24) | 0xFFFFFF;
                 }
             }
-            work.setPixels(smoothed(pixels, 0, workSize, 0, 0, workSize, workSize);
+            work.setPixels(smoothed, 0, workSize, 0, 0, workSize, workSize);
 
             // Off-tile sampling halo is stripped only AFTER the distance
             // transform, allowing adjacent world tiles to share boundaries.
