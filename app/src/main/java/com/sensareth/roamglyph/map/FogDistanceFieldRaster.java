@@ -61,7 +61,11 @@ final class FogDistanceFieldRaster {
         // strength of this effect, defines which land has been explored.
         int feather = Math.max(1, Math.min(9,
                 Math.round(Math.max(1f, Math.min(6f, diameter * 0.36f)) * scale)));
-        int padding = Math.max(18, feather * 4);
+        int corridorRadius = gpsCorridor == null ? 0
+                : Math.round(diameter * 1.2f * scale);
+        // The distance field needs true geographic pixels outside the tile.
+        // An ordinary fixed 18px halo would cut off a 10m corridor at z20.
+        int padding = Math.max(18, Math.max(feather * 4, corridorRadius + 14));
         int workSize = size + 2 * padding;
         Bitmap work = Bitmap.createBitmap(workSize, workSize, Bitmap.Config.ARGB_8888);
         try {
