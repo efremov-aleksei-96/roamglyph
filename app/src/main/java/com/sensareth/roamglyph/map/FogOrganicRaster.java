@@ -67,10 +67,14 @@ final class FogOrganicRaster {
         // H3 footprint: one zoomed-out pixel can represent many metres.
         int exterior = Math.max(0, Math.round(
                 actualDiameter * MAX_EXTERIOR_METERS / H3_CELL_METERS));
-        int routeRadius = Math.max(0, Math.round(
-                actualDiameter * ROUTE_RADIUS_METERS / H3_CELL_METERS));
+        int routeRadius = (gps == null || gps.isEmpty()) ? 0 : Math.max(0,
+                Math.round(actualDiameter * ROUTE_RADIUS_METERS / H3_CELL_METERS));
+        // A route extends farther than the original H3 raster: its complete
+        // stroke, the two smoothing passes and the permitted exterior pixels
+        // must all fit outside the cropped geographic tile rectangle.
         int padding = Math.max(8, Math.max(
-                2 * radius + exterior + 8, routeRadius + 2 * radius + 8));
+                2 * radius + exterior + 8,
+                routeRadius + 2 * radius + exterior + 8));
 
         int side = tileSize + 2 * padding;
         if ((long) side * side > 2_000_000L) {
