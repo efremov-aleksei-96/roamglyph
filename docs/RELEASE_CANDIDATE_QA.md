@@ -82,6 +82,23 @@ matrix or exact restored counts. Those remain required below.
 - Treat the native MapLibre shader backend, if pursued, as a later milestone,
   distinct from this CPU-preprocessed SDF first prototype.
 
+## Organic V4 shape acceptance (dev.32)
+
+- Compare the same saved block around the user's z17.7 screenshot
+  (32,917+ H3 cells): V1 / V3 / V4, with an unchanged camera location.
+  Record the actual screen; the repeating H3 staircase must be gone
+  rather than simply softened or hidden by an excessive feather.
+- At z12.8 and z14 verify already visited route segments remain visible
+  and no hard tile rectangles or large false reveals appear.
+- Zoom to a single thin recorded corridor: verify the route stays open.
+  A visual extension outside saved coverage must remain within the
+  2.5m cosmetic bound (except a genuine 10m GPS route ribbon).
+- Compare Fog ON/OFF using matched camera gestures and Perfetto for
+  native MapLibre GPU/render-thread timing; Window FrameMetrics alone
+  cannot prove map FPS. Check memory under 64MiB tile-cache budget.
+- A CI-green build is not final acceptance; V1 remains default until
+  these real-device checks pass.
+
 ## Automatic gates
 
 GitHub Actions must pass on the **exact release candidate head**:

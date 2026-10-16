@@ -1,5 +1,25 @@
 # Changelog
 
+## 0.5.0-dev.32 — 2026-10-16 (organic coverage geometry test)
+
+- Make a genuinely new experimental **Renderer V4**, opt-in; keep legacy
+  V1 the default and existing V2/V3 comparison modes available.
+- Replace V2/V3's H3-shaped cutout and tiny 5-pixel edge blur with a new
+  2D regularized OCCUPANCY silhouette. Two separable spatial filter passes
+  change the contour geometry before a narrow visual alpha transition.
+- Use a physical world-metre-derived smoothing radius across zoom levels,
+  an off-tile geographic halo and a strict <=2.5m cosmetic exterior cap.
+  Full coverage and rounded accepted GPS corridors are retained.
+- Correct the fixed 32-pixel GPS segment border: at close zoom, a 10m radius
+  extends many more than 32 world pixels beyond a tile edge.
+- Quantitative pure-JVM geometry tests check suppression of synthetic 14px
+  sawteeth, fine route continuity, no excessive expansion, exact tile-seam
+  matching, cancellation and all-covered/all-dark cases.
+- No changes to Room schema, GPS collection/acceptance, H3 storage, backups,
+  permissions, signing or application ID. Real Pixel visual and FPS acceptance
+  is still pending; CI is not a substitute for real-world imagery.
+
+
 ## 0.5.0-dev.31 — 2026-10-16 (GPS-guided soft fog prototype)
 
 - Add opt-in Renderer V3 for soft corridor rendering around accepted persisted

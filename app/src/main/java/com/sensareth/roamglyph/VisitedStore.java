@@ -22,6 +22,7 @@ public final class VisitedStore {
     private static final String KEY_FOG_ENABLED = "fog_enabled";
     private static final String KEY_RENDERER_V2 = "renderer_v2_test";
     private static final String KEY_RENDERER_V3 = "renderer_v3_test";
+    private static final String KEY_RENDERER_V4 = "renderer_v4_organic_test";
     private static final String KEY_DISCOVERIES_ENABLED = "discoveries_enabled";
     private static final String KEY_HAS_LOCATION = "has_location";
     private static final String KEY_LAT = "last_lat";
@@ -118,6 +119,14 @@ public final class VisitedStore {
 
     public void setRendererV3Enabled(boolean enabled) {
         prefs.edit().putBoolean(KEY_RENDERER_V3, enabled).apply();
+    }
+
+    public boolean isRendererV4Enabled() {
+        return prefs.getBoolean(KEY_RENDERER_V4, false);
+    }
+
+    public void setRendererV4Enabled(boolean enabled) {
+        prefs.edit().putBoolean(KEY_RENDERER_V4, enabled).apply();
     }
 
     public boolean isDiscoveriesEnabled() {

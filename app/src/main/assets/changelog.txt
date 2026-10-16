@@ -1,5 +1,17 @@
 ROAMGLYPH · WHAT'S NEW
 
+0.5.0-dev.32 — ORGANIC COVERAGE SHAPE TEST (2026-10-16)
+
+• Experimental Renderer V4 in the map menu. V1 is still the default.
+• Rebuilds a smooth explored REGION from a geographic coverage field;
+  this changes the hex-shaped silhouette rather than just blurring its edge.
+• Rounded accepted GPS corridors are included, with a maximum ~2.5m
+  visual-only exterior deviation. H3 history and statistics stay intact.
+• Fixed high-zoom GPS tile support to reduce rectangular edge cuts.
+• Geometric unit tests passed on synthetic samples, but physical Pixel
+  comparison and FPS validation are still required.
+
+
 0.5.0-dev.30 — RENDERER V2 PROTOTYPE (2026-10-16)
 
 • Optional test menu switch between Renderer V1 (default) and Renderer V2.
