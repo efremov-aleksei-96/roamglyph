@@ -20,6 +20,7 @@ public final class VisitedStore {
     private static final String KEY_DISCOVERY_COUNT_CACHE = "discovery_count_cache";
     private static final String KEY_OFFLINE_MAP_ENABLED = "offline_map_enabled";
     private static final String KEY_FOG_ENABLED = "fog_enabled";
+    private static final String KEY_RENDERER_V2 = "renderer_v2_test";
     private static final String KEY_DISCOVERIES_ENABLED = "discoveries_enabled";
     private static final String KEY_HAS_LOCATION = "has_location";
     private static final String KEY_LAT = "last_lat";
@@ -99,6 +100,15 @@ public final class VisitedStore {
 
     public void setFogEnabled(boolean enabled) {
         prefs.edit().putBoolean(KEY_FOG_ENABLED, enabled).apply();
+    }
+
+    /** Experimental visual preference, never mixed into exploration history. */
+    public boolean isRendererV2Enabled() {
+        return prefs.getBoolean(KEY_RENDERER_V2, false);
+    }
+
+    public void setRendererV2Enabled(boolean enabled) {
+        prefs.edit().putBoolean(KEY_RENDERER_V2, enabled).apply();
     }
 
     public boolean isDiscoveriesEnabled() {
