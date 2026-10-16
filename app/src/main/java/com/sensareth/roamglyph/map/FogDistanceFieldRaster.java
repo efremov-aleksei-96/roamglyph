@@ -5,7 +5,6 @@ import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Paint;
 import android.graphics.Path;
-import android.graphics.PorterDuff;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -76,11 +75,10 @@ final class FogDistanceFieldRaster {
                 // Map zoom determines pixel width of a geographically fixed
                 // 10-metre radius; rounded GPS corridors are a display mask,
                 // never persisted as new H3 coverage.
-                double latitude = 0; // Radius is encoded in caller's stroke width.
                 paint.setStyle(Paint.Style.STROKE);
                 paint.setStrokeCap(Paint.Cap.ROUND);
                 paint.setStrokeJoin(Paint.Join.ROUND);
-                paint.setStrokeWidth(Math.max(1f, diameter * 0.90f));
+                paint.setStrokeWidth(Math.max(1f, diameter * 2.4f));
                 canvas.drawPath(gpsCorridor, paint);
             }
 
