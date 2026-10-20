@@ -9,6 +9,10 @@ public final class DevelopmentReleasePolicy {
     private static final Pattern TAG =
             Pattern.compile("^dev-vc([1-9][0-9]*)-g([0-9a-f]{8})$");
 
+    public static boolean isAllowedAssetSize(long size) {
+        return size > 0 && size <= 150L * 1024L * 1024L;
+    }
+
     private DevelopmentReleasePolicy() {}
 
     public static int versionCode(String tag) {
