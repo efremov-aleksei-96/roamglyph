@@ -211,6 +211,7 @@ jobs:
     timeout-minutes: 10
     permissions:
       contents: write
+      actions: read
     env:
       GH_TOKEN: ${{ github.token }}
       SOURCE_SHA: e996779f31aae7aeef87f4c2695e4e916d87e231
@@ -238,6 +239,21 @@ jobs:
           test "$CERT" = "$PIN"
           PR_HEAD="$(gh api "repos/$GITHUB_REPOSITORY/pulls/41" --jq '.head.sha')"
           test "$PR_HEAD" = "$SOURCE_SHA"
+          # Enforce the acceptance gates in the job that has permission to
+          # publish. A healthy workflow PR is not proof that candidate PR #41
+          # passed CI and emulator smoke on its exact immutable commit.
+          CANDIDATE_RUNS="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$SOURCE_SHA&event=pull_request&per_page=100")"
+          for CHECK in "Android CI" "Android Runtime Smoke"; do
+            jq -e --arg sha "$SOURCE_SHA" --arg name "$CHECK" '
+              [.workflow_runs[] |
+               select(.head_sha == $sha and .name == $name
+                      and .status == "completed"
+                      and .conclusion == "success")] | length > 0
+            ' <<<"$CANDIDATE_RUNS" >/dev/null || {
+              echo "::error::Candidate commit has no successful $CHECK PR run."
+              exit 1
+            }
+          done
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Release already exists; refuse replacement."
             exit 1
