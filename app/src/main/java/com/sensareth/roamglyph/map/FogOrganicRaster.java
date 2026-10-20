@@ -65,7 +65,9 @@ final class FogOrganicRaster {
         int radius = Math.max(1, Math.min(60, Math.round(actualDiameter * 0.58f)));
         // For coarse maps, no artificial >=1px reveal outside the actual
         // H3 footprint: one zoomed-out pixel can represent many metres.
-        int exterior = Math.max(0, Math.round(
+        // Round downward: one outward raster pixel may already represent
+        // more than the entire physical 2.5 m cosmetic budget.
+        int exterior = Math.max(0, (int) Math.floor(
                 actualDiameter * MAX_EXTERIOR_METERS / H3_CELL_METERS));
         int routeRadius = (gps == null || gps.isEmpty()) ? 0 : Math.max(0,
                 Math.round(actualDiameter * ROUTE_RADIUS_METERS / H3_CELL_METERS));
