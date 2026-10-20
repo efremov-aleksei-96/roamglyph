@@ -73,6 +73,11 @@ public final class AppUpdateManager {
     private boolean disposed;
     private long installerPromptedId = -1L;
     private File pendingInstall;
+    // Only accessed on the Activity thread. A catalog result is never lost
+    // because the user pressed Home before its callback could be presented.
+    private boolean deferredCatalogReady;
+    private boolean deferredCatalogManual;
+    private Release deferredCatalogRelease;
 
     private final BroadcastReceiver completionReceiver = new BroadcastReceiver() {
         @Override public void onReceive(Context context, Intent intent) {
@@ -90,13 +95,16 @@ public final class AppUpdateManager {
         final String name;
         final String url;
         final String digest;
+        final long sizeBytes;
 
-        Release(int code, String tag, String name, String url, String digest) {
+        Release(int code, String tag, String name, String url,
+                String digest, long sizeBytes) {
             this.code = code;
             this.tag = tag;
             this.name = name;
             this.url = url;
             this.digest = digest;
+            this.sizeBytes = sizeBytes;
         }
     }
 
@@ -119,7 +127,18 @@ public final class AppUpdateManager {
             showSystemInstaller(file);
         }
         inspectDownload(false);
-        if (readRecord() == null) check(false);
+        if (readRecord() == null) {
+            if (deferredCatalogReady) {
+                Release deferred = deferredCatalogRelease;
+                boolean manual = deferredCatalogManual;
+                deferredCatalogRelease = null;
+                deferredCatalogReady = false;
+                deferredCatalogManual = false;
+                presentCatalog(deferred, manual);
+            } else {
+                check(false);
+            }
+        }
     }
 
     public void onPause() {
@@ -144,19 +163,14 @@ public final class AppUpdateManager {
         executor.execute(() -> {
             try {
                 Release release = findLatestUpdate(installedCode());
-                preferences.edit().putLong(LAST_CHECK, System.currentTimeMillis()).apply();
-                onUi(() -> {
-                    if (readRecord() != null) {
-                        inspectDownload(manuallyRequested);
-                    } else if (release == null) {
-                        if (manuallyRequested) new AlertDialog.Builder(activity)
-                                .setTitle("RoamGlyph updates")
-                                .setMessage("This development build is up to date. "
-                                        + "No newer verified test release was found.")
-                                .setPositiveButton(android.R.string.ok, null)
-                                .show();
+                activity.runOnUiThread(() -> {
+                    if (disposed || activity.isFinishing() || activity.isDestroyed()) return;
+                    if (!foreground) {
+                        deferredCatalogReady = true;
+                        deferredCatalogRelease = release;
+                        deferredCatalogManual = manuallyRequested;
                     } else {
-                        offerDownload(release);
+                        presentCatalog(release, manuallyRequested);
                     }
                 });
             } catch (Exception error) {
@@ -173,6 +187,24 @@ public final class AppUpdateManager {
                 busy.set(false);
             }
         });
+    }
+
+    private void presentCatalog(Release release, boolean manual) {
+        // Record a completed check only once the result has been delivered
+        // to the Activity or retained for an explicit foreground resume.
+        preferences.edit().putLong(LAST_CHECK, System.currentTimeMillis()).apply();
+        if (readRecord() != null) {
+            inspectDownload(manual);
+        } else if (release == null) {
+            if (manual) new AlertDialog.Builder(activity)
+                    .setTitle("RoamGlyph updates")
+                    .setMessage("This development build is up to date. "
+                            + "No newer verified test release was found.")
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show();
+        } else {
+            offerDownload(release);
+        }
     }
 
     private int installedCode() {
@@ -208,10 +240,11 @@ public final class AppUpdateManager {
                     String url = asset.optString("browser_download_url");
                     String digest = DevelopmentReleasePolicy.digestHex(
                             asset.optString("digest"));
-                    if (digest != null
+                    long size = asset.optLong("size", -1L);
+                    if (digest != null && size > 0L && size <= MAX_APK_BYTES
                             && DevelopmentReleasePolicy.isExpectedApk(tag, name)
                             && DevelopmentReleasePolicy.isTrustedAssetUrl(url)) {
-                        best = new Release(code, tag, name, url, digest);
+                        best = new Release(code, tag, name, url, digest, size);
                     }
                 }
             }
@@ -251,7 +284,8 @@ public final class AppUpdateManager {
             if (!release.tag.startsWith(prefix)
                     || !DevelopmentReleasePolicy.isExpectedApk(release.tag, release.name)
                     || !DevelopmentReleasePolicy.isTrustedAssetUrl(release.url)
-                    || release.digest == null || !release.digest.matches("[0-9a-f]{64}")) {
+                    || release.digest == null || !release.digest.matches("[0-9a-f]{64}")
+                    || release.sizeBytes <= 0L || release.sizeBytes > MAX_APK_BYTES) {
                 throw new SecurityException("Untrusted development release metadata");
             }
             File output = destination(release.name);
@@ -264,11 +298,11 @@ public final class AppUpdateManager {
             }
             DownloadManager.Request request = new DownloadManager.Request(Uri.parse(release.url))
                     .setTitle("RoamGlyph dev." + release.code)
-                    .setDescription("Verified development update; open RoamGlyph to install")
+                    .setDescription("Download only; RoamGlyph verifies APK before installation")
                     .setMimeType(APK_MIME)
                     .setAllowedOverMetered(true)
                     .setNotificationVisibility(
-                            DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED)
+                            DownloadManager.Request.VISIBILITY_VISIBLE)
                     .setDestinationInExternalFilesDir(activity,
                             Environment.DIRECTORY_DOWNLOADS, "roamglyph/" + release.name);
             long id = downloads.enqueue(request);
