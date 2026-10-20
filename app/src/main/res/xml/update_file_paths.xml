@@ -2,4 +2,6 @@
 <paths xmlns:android="http://schemas.android.com/apk/res/android">
     <!-- Only APK files staged in the application's private update cache. -->
     <cache-path name="verified_update" path="updates/" />
+    <!-- Android DownloadManager stores resumable APKs in app-owned external files. -->
+    <external-files-path name="verified_system_update" path="Download/roamglyph/" />
 </paths>
