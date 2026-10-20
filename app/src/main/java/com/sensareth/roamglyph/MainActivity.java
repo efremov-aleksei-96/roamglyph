@@ -64,6 +64,7 @@ import org.maplibre.android.camera.CameraPosition;
 import org.maplibre.android.geometry.LatLngBounds;
 import org.maplibre.android.geometry.VisibleRegion;
 import org.maplibre.android.maps.MapLibreMap;
+import org.maplibre.android.maps.MapLibreMapOptions;
 import org.maplibre.android.maps.MapView;
 import org.maplibre.android.maps.OnMapReadyCallback;
 import org.maplibre.android.maps.Style;
@@ -319,7 +320,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
         FrameLayout root = new FrameLayout(this);
 
-        mapView = new MapView(this);
+        // Optional diagnostic A/B: same exact fog/GPS data with different
+        // Android compositor paths. Default remains fast GLSurfaceView.
+        mapView = new MapView(this, new MapLibreMapOptions()
+                .textureMode(store.isTextureMapTestEnabled()));
         mapView.onCreate(savedInstanceState);
         mapView.getMapAsync(this);
         root.addView(
@@ -956,6 +960,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                             ? "Renderer V4 ✓ — organic contour"
                             : "Try V4 — organic shape (test)");
             popup.getMenu().add(0, 14, 14, R.string.menu_performance_diagnostics);
+            popup.getMenu().add(0, 18, 15,
+                    store.isTextureMapTestEnabled()
+                            ? "Map compositor: TextureView ✓ — switch to SurfaceView"
+                            : "Map compositor: SurfaceView ✓ — try TextureView");
         }
         popup.getMenu().add(0, 4, 13, R.string.menu_source_code);
         popup.getMenu().add(0, 5, 12, R.string.menu_privacy);
@@ -1117,6 +1125,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             }
             if (item.getItemId() == 14) {
                 showPerformanceDiagnostics();
+                return true;
+            }
+            if (item.getItemId() == 18 && performanceDiagnostics != null) {
+                showMapCompositorExperiment();
                 return true;
             }
             if (item.getItemId() == 4) {
@@ -1594,6 +1606,36 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         }
     }
 
+    private void showMapCompositorExperiment() {
+        if (tracking) {
+            new AlertDialog.Builder(this)
+                    .setTitle("Map compositor experiment")
+                    .setMessage("Stop Exploration before restarting the map renderer. "
+                            + "Tracking and exploration history will not be changed.")
+                    .setPositiveButton(android.R.string.ok, null)
+                    .show();
+            return;
+        }
+        boolean next = !store.isTextureMapTestEnabled();
+        new AlertDialog.Builder(this)
+                .setTitle("Experimental map synchronization")
+                .setMessage(next
+                        ? "Try MapLibre TextureView instead of SurfaceView? "
+                                + "This may reduce visible map/fog phase lag, "
+                                + "but can LOWER FPS and increase battery usage. "
+                                + "Only the map screen restarts; routes and H3 "
+                                + "history stay unchanged. Switch back here if worse."
+                        : "Restore the faster default SurfaceView compositor? "
+                                + "Only the map screen restarts. "
+                                + "Exploration history stays unchanged.")
+                .setPositiveButton("Switch and restart", (dialog, which) -> {
+                    store.setTextureMapTestEnabled(next);
+                    recreate();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
     private void showPerformanceDiagnostics() {
         if (performanceDiagnostics == null) return;
         StringBuilder report = new StringBuilder();
@@ -1604,6 +1646,11 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         report.append("Offline map: ").append(store.isOfflineMapEnabled())
                 .append("; discoveries: ").append(store.isDiscoveriesEnabled())
                 .append("; tracking: ").append(tracking).append('\n');
+        report.append("Map compositor: ")
+                .append(mapView != null
+                        && mapView.getRenderView() instanceof android.view.TextureView
+                        ? "TextureView (experimental)" : "GLSurfaceView (default)")
+                .append('\n');
         report.append("Fog renderer: ")
                 .append(store.isRendererV4Enabled() ? "V4 organic contour"
                         : store.isRendererV3Enabled() ? "V3 GPS corridors"
