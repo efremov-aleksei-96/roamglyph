@@ -241,7 +241,7 @@ public final class AppUpdateManager {
                     String digest = DevelopmentReleasePolicy.digestHex(
                             asset.optString("digest"));
                     long size = asset.optLong("size", -1L);
-                    if (digest != null && size > 0L && size <= MAX_APK_BYTES
+                    if (digest != null && DevelopmentReleasePolicy.isAllowedAssetSize(size)
                             && DevelopmentReleasePolicy.isExpectedApk(tag, name)
                             && DevelopmentReleasePolicy.isTrustedAssetUrl(url)) {
                         best = new Release(code, tag, name, url, digest, size);
@@ -285,7 +285,7 @@ public final class AppUpdateManager {
                     || !DevelopmentReleasePolicy.isExpectedApk(release.tag, release.name)
                     || !DevelopmentReleasePolicy.isTrustedAssetUrl(release.url)
                     || release.digest == null || !release.digest.matches("[0-9a-f]{64}")
-                    || release.sizeBytes <= 0L || release.sizeBytes > MAX_APK_BYTES) {
+                    || !DevelopmentReleasePolicy.isAllowedAssetSize(release.sizeBytes)) {
                 throw new SecurityException("Untrusted development release metadata");
             }
             File output = destination(release.name);
