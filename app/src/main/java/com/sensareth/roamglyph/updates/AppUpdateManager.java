@@ -76,6 +76,7 @@ public final class AppUpdateManager {
     private volatile boolean disposed;
     private long installerPromptedId = -1L;
     private File pendingInstall;
+    private File lastVerifiedStage;
     // Only accessed on the Activity thread. A catalog result is never lost
     // because the user pressed Home before its callback could be presented.
     private boolean deferredCatalogReady;
@@ -442,15 +443,26 @@ public final class AppUpdateManager {
         executor.execute(() -> {
             try {
                 File apk = stageAndVerify(record);
-                onUi(() -> {
+                // This callback must also reclaim its staging file when the
+                // Activity goes into the background before verification ends.
+                activity.runOnUiThread(() -> {
                     UpdateDownloadRecord current = readRecord();
-                    if (!foreground || current == null || current.id != record.id) return;
+                    if (disposed || !foreground || current == null
+                            || current.id != record.id
+                            || activity.isFinishing() || activity.isDestroyed()) {
+                        apk.delete();
+                        return;
+                    }
+                    if (lastVerifiedStage != null && !lastVerifiedStage.equals(apk)) {
+                        lastVerifiedStage.delete();
+                    }
+                    lastVerifiedStage = apk;
                     installerPromptedId = record.id;
                     if (tracking.getAsBoolean()) {
                         new AlertDialog.Builder(activity)
                                 .setTitle("Update verified")
                                 .setMessage("Stop Exploration before installing. "
-                                        + "The verified APK has been retained.")
+                                        + "The verified download has been retained.")
                                 .setPositiveButton(android.R.string.ok, null).show();
                         return;
                     }
@@ -461,12 +473,11 @@ public final class AppUpdateManager {
                 // Activity rotation/process teardown is not a corrupt download.
                 // Do not delete the system job that the replacement Activity owns.
                 if (disposed || Thread.currentThread().isInterrupted()) return;
+                rememberFailure(-3);
                 forgetDownload(record, true);
-                onUi(() -> new AlertDialog.Builder(activity)
-                        .setTitle("Update verification failed")
-                        .setMessage("The downloaded APK was rejected and discarded.\n\n"
-                                + error.getMessage())
-                        .setPositiveButton(android.R.string.ok, null).show());
+                // If the error occurred after Home was pressed, the private
+                // failure flag survives until the next Activity resume.
+                onUi(this::showDeferredDownloadFailure);
             } finally {
                 verifying.set(false);
             }
@@ -576,6 +587,7 @@ public final class AppUpdateManager {
                 name.startsWith("roamglyph-verified-") && name.endsWith(".apk"));
         if (staged != null) for (File verified : staged) verified.delete();
         pendingInstall = null;
+        lastVerifiedStage = null;
     }
 
     private void beginInstall(File file) {
