@@ -75,7 +75,6 @@ final class FogOrganicContour {
                                                   BooleanSupplier cancel) {
         final int far = 100_000_000;
         int[] squared = new int[w * h];
-        int[] result = new int[w * h];
         int span = Math.max(w, h);
         int[] input = new int[span];
         int[] transformed = new int[span];
@@ -94,9 +93,11 @@ final class FogOrganicContour {
             check(cancel, x);
             for (int y = 0; y < h; y++) input[y] = squared[y * w + x];
             transform(input, h, transformed, sites, edges);
-            for (int y = 0; y < h; y++) result[y * w + x] = transformed[y];
+            // Each column has already been copied into input; write its
+            // final squared distances back in place to save one full int[].
+            for (int y = 0; y < h; y++) squared[y * w + x] = transformed[y];
         }
-        return result;
+        return squared;
     }
 
     /** Linear-time 1-D squared Euclidean distance transform. */
