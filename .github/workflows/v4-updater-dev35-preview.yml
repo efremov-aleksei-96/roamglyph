@@ -20,9 +20,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      CANDIDATE_SHA: e996779f31aae7aeef87f4c2695e4e916d87e231
+      CANDIDATE_SHA: 0b21fc59038b55011499ba9e537a880cadb101b4
       BASE_SHA: 243532d9116e6ee20c7c6f22da3fa8add53d69c3
-      ROAMGLYPH_SOURCE_SHA: e996779f31aae7aeef87f4c2695e4e916d87e231
+      ROAMGLYPH_SOURCE_SHA: 0b21fc59038b55011499ba9e537a880cadb101b4
     steps:
       - name: Check out trusted main workflow repository
         uses: actions/checkout@v5
@@ -51,10 +51,12 @@ jobs:
             'app/src/main/java/com/sensareth/roamglyph/updates/AppUpdateManager.java' \
             'app/src/main/java/com/sensareth/roamglyph/updates/UpdateDownloadRecord.java' \
             'app/src/main/res/xml/update_file_paths.xml' \
-            'app/src/test/java/com/sensareth/roamglyph/updates/UpdateDownloadRecordTest.java' | sort)"
+            'app/src/test/java/com/sensareth/roamglyph/updates/UpdateDownloadRecordTest.java' \
+            'app/src/main/java/com/sensareth/roamglyph/updates/DevelopmentReleasePolicy.java' \
+            'app/src/test/java/com/sensareth/roamglyph/updates/DevelopmentReleasePolicyTest.java' | sort)"
           ACTUAL="$(git diff --name-only "$BASE_SHA" "$CANDIDATE_SHA" | sort)"
           if [[ "$ACTUAL" != "$EXPECTED" ]]; then
-            echo "::error::Candidate differs outside twelve reviewed V4/updater files."
+            echo "::error::Candidate differs outside fourteen reviewed V4/updater files."
             git diff --name-only "$BASE_SHA" "$CANDIDATE_SHA"
             exit 1
           fi
@@ -165,7 +167,7 @@ jobs:
           BADGING="$("$AAPT" dump badging "$INPUT" | head -n 1)"
           [[ "$BADGING" == *"name='com.sensareth.roamglyph'"* ]]
           [[ "$BADGING" == *"versionCode='35'"* ]]
-          [[ "$BADGING" == *"versionName='0.5.0-dev.35+ge996779f'"* ]]
+          [[ "$BADGING" == *"versionName='0.5.0-dev.35+g0b21fc59'"* ]]
           if "$APKSIGNER" verify "$INPUT" >/dev/null 2>&1; then
             echo "::error::Refusing an already signed candidate."
             exit 1
@@ -181,7 +183,7 @@ jobs:
             exit 1
           }
           mkdir -p dist
-          OUTPUT=dist/roamglyph-0.5.0-dev.35-ge996779f.apk
+          OUTPUT=dist/roamglyph-0.5.0-dev.35-g0b21fc59.apk
           "$APKSIGNER" sign --ks "$KEYSTORE" --ks-type PKCS12 \
             --ks-key-alias roamglyph-dev \
             --ks-pass env:ROAMGLYPH_DEV_KEYSTORE_PASSWORD \
@@ -198,7 +200,7 @@ jobs:
         with:
           name: roamglyph-pr41-dev35-pixel-preview-signed
           path: |
-            dist/roamglyph-0.5.0-dev.35-ge996779f.apk
+            dist/roamglyph-0.5.0-dev.35-g0b21fc59.apk
             dist/SHA256SUMS.txt
           retention-days: 14
           if-no-files-found: error
@@ -214,9 +216,9 @@ jobs:
       actions: read
     env:
       GH_TOKEN: ${{ github.token }}
-      SOURCE_SHA: e996779f31aae7aeef87f4c2695e4e916d87e231
-      RELEASE_TAG: dev-vc35-ge996779f
-      APK_NAME: roamglyph-0.5.0-dev.35-ge996779f.apk
+      SOURCE_SHA: 0b21fc59038b55011499ba9e537a880cadb101b4
+      RELEASE_TAG: dev-vc35-g0b21fc59
+      APK_NAME: roamglyph-0.5.0-dev.35-g0b21fc59.apk
       PIN: 89defa011682172a6d892cda46cd6132393dccda22cecf1175f825596db80758
     steps:
       - name: Get certified APK, not candidate code
