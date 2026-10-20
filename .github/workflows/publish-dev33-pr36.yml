@@ -1,0 +1,108 @@
+name: Publish verified signed dev.33 preview
+
+# One-shot release of a previously tested, source-pinned APK. This workflow
+# changes release metadata only; the unaccepted V4 source stays out of main.
+on:
+  push:
+    branches: [main]
+    paths: [.github/workflows/publish-dev33-pr36.yml]
+  workflow_dispatch:
+
+permissions:
+  actions: read
+  contents: write
+
+concurrency:
+  group: publish-verified-pr36-dev33
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.repository == 'efremov-aleksei-96/roamglyph' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GH_TOKEN: ${{ github.token }}
+      RUN_ID: '39394324600'
+      ARTIFACT_ID: '12250508304'
+      SOURCE_SHA: '8af40e746d06b3b9395a8fffea605eb0eb1b2cf0'
+      TRUSTED_MAIN_SHA: 'f3314803ac9c00ba549186960988b1cb0396cd01'
+      APK_NAME: roamglyph-0.5.0-dev.33-g8af40e74.apk
+      APK_SHA256: 1e1ecc46baf4f21142c4eb7fcccd74931287dcc090211ac51a593cf2df1a0f67
+      DEV_CERT_SHA256: 89defa011682172a6d892cda46cd6132393dccda22cecf1175f825596db80758
+      RELEASE_TAG: dev-vc33-g8af40e74
+    steps:
+      - name: Check pinned run, artifact and candidate source
+        shell: bash
+        run: |
+          set -euo pipefail
+          run="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID")"
+          test "$(jq -r '.status' <<<"$run")" = completed
+          test "$(jq -r '.conclusion' <<<"$run")" = success
+          test "$(jq -r '.head_sha' <<<"$run")" = "$TRUSTED_MAIN_SHA"
+          art="$(gh api "repos/$GITHUB_REPOSITORY/actions/artifacts/$ARTIFACT_ID")"
+          test "$(jq -r '.name' <<<"$art")" = roamglyph-pr36-dev33-pixel-preview-signed
+          test "$(jq -r '.expired' <<<"$art")" = false
+          test "$(jq -r '.workflow_run.id' <<<"$art")" = "$RUN_ID"
+          candidate="$(gh api "repos/$GITHUB_REPOSITORY/pulls/36" --jq '.head.sha')"
+          test "$candidate" = "$SOURCE_SHA"
+          if gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" >/dev/null 2>&1; then
+            echo "::error::Release tag already exists; never silently replace it."
+            exit 1
+          fi
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "::error::Release already exists; never overwrite it."
+            exit 1
+          fi
+
+      - name: Download exact signed artifact from successful trusted-main run
+        uses: actions/download-artifact@v4
+        with:
+          run-id: 39394324600
+          name: roamglyph-pr36-dev33-pixel-preview-signed
+          github-token: ${{ github.token }}
+          path: dist
+
+      - name: Verify APK bytes, manifest, signing certificate and bundled checksum
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s "dist/$APK_NAME"
+          test -s dist/SHA256SUMS.txt
+          (cd dist && sha256sum -c SHA256SUMS.txt)
+          printf '%s  %s\n' "$APK_SHA256" "dist/$APK_NAME" | sha256sum -c -
+          AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
+          APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
+          test -x "$AAPT" && test -x "$APKSIGNER"
+          BADGING="$("$AAPT" dump badging "dist/$APK_NAME" | head -n 1)"
+          [[ "$BADGING" == *"name='com.sensareth.roamglyph'"* ]]
+          [[ "$BADGING" == *"versionCode='33'"* ]]
+          [[ "$BADGING" == *"versionName='0.5.0-dev.33+g8af40e74'"* ]]
+          "$APKSIGNER" verify --verbose "dist/$APK_NAME"
+          ACTUAL_CERT="$("$APKSIGNER" verify --print-certs "dist/$APK_NAME" |
+            sed -n 's/^.*certificate SHA-256 digest: //p' | head -n 1)"
+          test "$ACTUAL_CERT" = "$DEV_CERT_SHA256"
+
+      - name: Publish opt-in V4 dev.33 prerelease without merging renderer
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh release create "$RELEASE_TAG" "dist/$APK_NAME" dist/SHA256SUMS.txt \
+            --repo "$GITHUB_REPOSITORY" \
+            --target "$SOURCE_SHA" \
+            --prerelease --latest=false \
+            --title "RoamGlyph 0.5.0-dev.33 (signed V4 test preview)" \
+            --notes "Optional V4 Euclidean clipping candidate from PR #36. Renderer V1 remains the default. This source has NOT been merged into main. Automated unit/lint/emulator checks passed, but Pixel visual/GPS-history/performance acceptance remains pending. Stop exploration and export a full JSON backup before installing. APK is signed with the existing persistent dev certificate and uses versionCode 33. After accepting this preview, the next main test release must use versionCode 34 or higher for in-place upgrades. Source: $SOURCE_SHA."
+
+      - name: Verify immutable public release and update-check compatibility
+        shell: bash
+        run: |
+          set -euo pipefail
+          info="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")"
+          jq -e --arg name "$APK_NAME" --arg digest "sha256:$APK_SHA256" \
+            '(.draft == false and .prerelease == true) and
+             ([.assets[] | select(.name == $name and .digest == $digest)] | length == 1)' \
+            <<<"$info" >/dev/null
+          tag_sha="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq '.object.sha')"
+          test "$tag_sha" = "$SOURCE_SHA"
+          echo "Verified release: https://github.com/$GITHUB_REPOSITORY/releases/tag/$RELEASE_TAG"
