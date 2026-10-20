@@ -218,7 +218,7 @@ jobs:
     env:
       GH_TOKEN: ${{ github.token }}
       SOURCE_SHA: 94abe246e1672aa13117e4d759173cc6ee552311
-      RELEASE_TAG: dev-vc35-g94abe246
+      RELEASE_TAG: dev-vc36-g94abe246
       APK_NAME: roamglyph-0.5.0-dev.36-g94abe246.apk
       PIN: 89defa011682172a6d892cda46cd6132393dccda22cecf1175f825596db80758
     steps:
