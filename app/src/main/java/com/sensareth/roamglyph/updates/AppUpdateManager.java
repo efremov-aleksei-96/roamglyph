@@ -58,6 +58,7 @@ public final class AppUpdateManager {
     private static final String DOWNLOAD_NAME = "system_download_name";
     private static final String DOWNLOAD_URL = "system_download_url";
     private static final String DOWNLOAD_DIGEST = "system_download_digest";
+    private static final String DOWNLOAD_FAILURE_REASON = "system_download_failure_reason";
     private static final long CHECK_INTERVAL_MS = 24L * 60L * 60L * 1000L;
     private static final long MAX_APK_BYTES = 150L * 1024L * 1024L;
     private static final int MAX_CATALOG_BYTES = 2 * 1024 * 1024;
@@ -72,7 +73,7 @@ public final class AppUpdateManager {
     private final AtomicBoolean busy = new AtomicBoolean(false);
     private final AtomicBoolean verifying = new AtomicBoolean(false);
     private boolean foreground;
-    private boolean disposed;
+    private volatile boolean disposed;
     private long installerPromptedId = -1L;
     private File pendingInstall;
     // Only accessed on the Activity thread. A catalog result is never lost
@@ -130,6 +131,7 @@ public final class AppUpdateManager {
         }
         inspectDownload(false);
         if (readRecord() == null) {
+            if (showDeferredDownloadFailure()) return;
             if (deferredCatalogReady) {
                 Release deferred = deferredCatalogRelease;
                 boolean manual = deferredCatalogManual;
@@ -352,6 +354,29 @@ public final class AppUpdateManager {
         return new File(new File(directory, "roamglyph"), name + ".download");
     }
 
+    /** Preserve Android download failure through backgrounding and recreation. */
+    private void rememberFailure(int reason) {
+        preferences.edit()
+                .putInt(DOWNLOAD_FAILURE_REASON, reason)
+                .remove(LAST_CHECK)
+                .commit();
+    }
+
+    /** Called only on the UI thread; never silently suppress a failed update. */
+    private boolean showDeferredDownloadFailure() {
+        int reason = preferences.getInt(DOWNLOAD_FAILURE_REASON, Integer.MIN_VALUE);
+        if (reason == Integer.MIN_VALUE || !foreground) return false;
+        preferences.edit().remove(DOWNLOAD_FAILURE_REASON).apply();
+        new AlertDialog.Builder(activity)
+                .setTitle("Update download failed")
+                .setMessage("Android could not complete the download (code "
+                        + reason + "). Your previous exploration data is unchanged.")
+                .setPositiveButton("Retry", (dialog, which) -> check(true))
+                .setNegativeButton("Later", null)
+                .show();
+        return true;
+    }
+
     private void inspectDownload(boolean manual) {
         UpdateDownloadRecord record = readRecord();
         if (disposed || record == null) return;
@@ -371,8 +396,9 @@ public final class AppUpdateManager {
         DownloadManager.Query query = new DownloadManager.Query().setFilterById(record.id);
         try (Cursor cursor = downloads.query(query)) {
             if (cursor == null || !cursor.moveToFirst()) {
+                rememberFailure(-2);
                 forgetDownload(record, false);
-                if (manual) toast("Previous download is unavailable. Check again.");
+                if (foreground) showDeferredDownloadFailure();
                 return;
             }
             status = cursor.getInt(cursor.getColumnIndexOrThrow(DownloadManager.COLUMN_STATUS));
@@ -388,12 +414,9 @@ public final class AppUpdateManager {
         if (status == DownloadManager.STATUS_SUCCESSFUL) {
             verifyAndOfferInstall(record, manual);
         } else if (status == DownloadManager.STATUS_FAILED) {
+            rememberFailure(reason);
             forgetDownload(record, true);
-            if (foreground) new AlertDialog.Builder(activity)
-                    .setTitle("Update download failed")
-                    .setMessage("Android DownloadManager reported failure code " + reason
-                            + ". Check your connection and retry Check for updates.")
-                    .setPositiveButton(android.R.string.ok, null).show();
+            if (foreground) showDeferredDownloadFailure();
         } else if (manual && foreground) {
             String amount = total > 0
                     ? Math.min(100L, Math.max(0L, complete * 100L / total)) + "%"
@@ -435,6 +458,9 @@ public final class AppUpdateManager {
                     beginInstall(apk);
                 });
             } catch (Exception error) {
+                // Activity rotation/process teardown is not a corrupt download.
+                // Do not delete the system job that the replacement Activity owns.
+                if (disposed || Thread.currentThread().isInterrupted()) return;
                 forgetDownload(record, true);
                 onUi(() -> new AlertDialog.Builder(activity)
                         .setTitle("Update verification failed")
@@ -456,6 +482,9 @@ public final class AppUpdateManager {
             byte[] chunk = new byte[65536];
             int count;
             while ((count = input.read(chunk)) != -1) {
+                if (Thread.currentThread().isInterrupted()) {
+                    throw new InterruptedException("APK verification interrupted");
+                }
                 sha256.update(chunk, 0, count);
             }
         }
@@ -479,16 +508,18 @@ public final class AppUpdateManager {
         if (!directory.isDirectory() && !directory.mkdirs()) {
             throw new IllegalStateException("Could not create private update cache");
         }
-        File staged = new File(directory, "roamglyph-verified-update.apk");
-        if (staged.exists() && !staged.delete()) {
-            throw new IllegalStateException("Cannot replace old verified update");
-        }
+        // Every Activity/verifier owns a distinct private staging path.
+        // Rotation cannot cause an obsolete worker to truncate a new file.
+        File staged = File.createTempFile("roamglyph-verified-", ".apk", directory);
         try {
             try (InputStream input = new FileInputStream(downloaded);
                  FileOutputStream output = new FileOutputStream(staged)) {
                 byte[] chunk = new byte[65536];
                 int n;
                 while ((n = input.read(chunk)) != -1) {
+                    if (disposed || Thread.currentThread().isInterrupted()) {
+                        throw new InterruptedException("APK staging interrupted");
+                    }
                     output.write(chunk, 0, n);
                 }
                 output.getFD().sync();
@@ -540,9 +571,10 @@ public final class AppUpdateManager {
             // Storage can be unavailable after an external storage transition.
         }
         if (installerPromptedId == record.id) installerPromptedId = -1L;
-        File verified = new File(new File(activity.getCacheDir(), "updates"),
-                "roamglyph-verified-update.apk");
-        if (verified.exists()) verified.delete();
+        File directory = new File(activity.getCacheDir(), "updates");
+        File[] staged = directory.listFiles((dir, name) ->
+                name.startsWith("roamglyph-verified-") && name.endsWith(".apk"));
+        if (staged != null) for (File verified : staged) verified.delete();
         pendingInstall = null;
     }
 
