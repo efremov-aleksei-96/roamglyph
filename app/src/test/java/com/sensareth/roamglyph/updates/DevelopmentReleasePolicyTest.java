@@ -38,6 +38,14 @@ public class DevelopmentReleasePolicyTest {
         assertNull(DevelopmentReleasePolicy.digestHex(""));
     }
 
+    @Test public void rejectsOversizeOrUnknownApkMetadata() {
+        assertTrue(DevelopmentReleasePolicy.isAllowedAssetSize(59L * 1024L * 1024L));
+        assertTrue(DevelopmentReleasePolicy.isAllowedAssetSize(150L * 1024L * 1024L));
+        assertFalse(DevelopmentReleasePolicy.isAllowedAssetSize(0L));
+        assertFalse(DevelopmentReleasePolicy.isAllowedAssetSize(-1L));
+        assertFalse(DevelopmentReleasePolicy.isAllowedAssetSize(150L * 1024L * 1024L + 1L));
+    }
+
     @Test public void onlyFirstPartyPublicReleaseAssetsAccepted() {
         assertTrue(DevelopmentReleasePolicy.isTrustedAssetUrl(
                 "https://github.com/efremov-aleksei-96/roamglyph/releases/"

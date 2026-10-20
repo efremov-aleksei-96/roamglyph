@@ -1921,6 +1921,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     @Override
     protected void onPause() {
+        if (appUpdates != null) appUpdates.onPause();
         mapView.onPause();
         super.onPause();
     }
