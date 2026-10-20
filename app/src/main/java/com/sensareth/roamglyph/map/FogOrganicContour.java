@@ -37,41 +37,26 @@ final class FogOrganicContour {
             vertical(b, a, width, height, radius, cancel);
         }
 
-        // A binary summed-area table enforces the maximum outward reveal.
-        // This is a strict display-only bound; nothing is written to Room/H3.
-        int stride = width + 1;
-        int[] integral = new int[(height + 1) * stride];
-        for (int y = 1; y <= height; y++) {
-            check(cancel, y);
-            int total = 0;
-            for (int x = 1; x <= width; x++) {
-                int alpha = pixels[(y - 1) * width + x - 1] >>> 24;
-                total += alpha >= 16 ? 1 : 0;
-                integral[y * stride + x] = integral[(y - 1) * stride + x] + total;
-            }
-        }
+        // A square neighbourhood can disclose up to sqrt(2) times the
+        // promised exterior radius at diagonal corners. Use the exact
+        // squared Euclidean distance to the ORIGINAL coverage instead.
+        // The transform runs in O(width * height); history is untouched.
+        int[] distanceSquared = maxExteriorPixels == 0 ? null
+                : squaredDistanceToSource(pixels, width, height, cancel);
+        long exteriorSquared = (long) maxExteriorPixels * maxExteriorPixels;
 
         // Source already includes a rounded, real-world-width GPS path when
         // available, so the H3 teeth cannot override a smooth route ribbon.
         for (int y = 0; y < height; y++) {
             check(cancel, y);
-            int top = Math.max(0, y - maxExteriorPixels);
-            int bottom = Math.min(height, y + maxExteriorPixels + 1);
             int row = y * width;
             for (int x = 0; x < width; x++) {
                 int index = row + x;
                 int alpha = pixels[index] >>> 24;
-                if (alpha < 16) {
-                    int left = Math.max(0, x - maxExteriorPixels);
-                    int right = Math.min(width, x + maxExteriorPixels + 1);
-                    int near = integral[bottom * stride + right]
-                            - integral[top * stride + right]
-                            - integral[bottom * stride + left]
-                            + integral[top * stride + left];
-                    if (near == 0) {
-                        pixels[index] = 0;
-                        continue;
-                    }
+                if (alpha < 16 && (maxExteriorPixels == 0
+                        || distanceSquared[index] > exteriorSquared)) {
+                    pixels[index] = 0;
+                    continue;
                 }
                 float occupancy = (a[index] & 255) / 255f;
                 // Transition width is narrow relative to the shape kernel.
@@ -84,6 +69,69 @@ final class FogOrganicContour {
             }
         }
         if (cancel.getAsBoolean()) throw new CancellationException("Superseded organic fog");
+    }
+
+    private static int[] squaredDistanceToSource(int[] pixels, int w, int h,
+                                                  BooleanSupplier cancel) {
+        final int far = 100_000_000;
+        int[] squared = new int[w * h];
+        int[] result = new int[w * h];
+        int span = Math.max(w, h);
+        int[] input = new int[span];
+        int[] transformed = new int[span];
+        int[] sites = new int[span];
+        double[] edges = new double[span + 1];
+        for (int y = 0; y < h; y++) {
+            check(cancel, y);
+            int row = y * w;
+            for (int x = 0; x < w; x++) {
+                input[x] = (pixels[row + x] >>> 24) >= 16 ? 0 : far;
+            }
+            transform(input, w, transformed, sites, edges);
+            System.arraycopy(transformed, 0, squared, row, w);
+        }
+        for (int x = 0; x < w; x++) {
+            check(cancel, x);
+            for (int y = 0; y < h; y++) input[y] = squared[y * w + x];
+            transform(input, h, transformed, sites, edges);
+            for (int y = 0; y < h; y++) result[y * w + x] = transformed[y];
+        }
+        return result;
+    }
+
+    /** Linear-time 1-D squared Euclidean distance transform. */
+    private static void transform(int[] input, int n, int[] out,
+                                  int[] sites, double[] edges) {
+        int k = 0;
+        sites[0] = 0;
+        edges[0] = Double.NEGATIVE_INFINITY;
+        edges[1] = Double.POSITIVE_INFINITY;
+        for (int q = 1; q < n; q++) {
+            double intersection;
+            do {
+                int p = sites[k];
+                intersection = ((double) input[q] + (double) q * q
+                        - input[p] - (double) p * p) / (2.0 * (q - p));
+                if (intersection <= edges[k]) k--;
+                else break;
+            } while (k >= 0);
+            if (k < 0) {
+                k = 0;
+                sites[0] = q;
+                edges[0] = Double.NEGATIVE_INFINITY;
+            } else {
+                k++;
+                sites[k] = q;
+                edges[k] = intersection;
+            }
+            edges[k + 1] = Double.POSITIVE_INFINITY;
+        }
+        k = 0;
+        for (int q = 0; q < n; q++) {
+            while (edges[k + 1] < q) k++;
+            int d = q - sites[k];
+            out[q] = d * d + input[sites[k]];
+        }
     }
 
     private static void horizontal(byte[] src, byte[] dst, int w, int h, int r,
