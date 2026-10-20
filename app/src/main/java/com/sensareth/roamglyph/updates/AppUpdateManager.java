@@ -26,6 +26,7 @@ import org.json.JSONObject;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -61,6 +62,7 @@ public final class AppUpdateManager {
     private static final long MAX_APK_BYTES = 150L * 1024L * 1024L;
     private static final int MAX_CATALOG_BYTES = 2 * 1024 * 1024;
     private static final String APK_MIME = "application/vnd.android.package-archive";
+    private static final String PENDING_MIME = "application/octet-stream";
 
     private final AppCompatActivity activity;
     private final BooleanSupplier tracking;
@@ -299,12 +301,15 @@ public final class AppUpdateManager {
             DownloadManager.Request request = new DownloadManager.Request(Uri.parse(release.url))
                     .setTitle("RoamGlyph dev." + release.code)
                     .setDescription("Download only; RoamGlyph verifies APK before installation")
-                    .setMimeType(APK_MIME)
+                    // An unverified system download is deliberately not an APK.
+                    // Never let notification/content viewers open Package Installer.
+                    .setMimeType(PENDING_MIME)
                     .setAllowedOverMetered(true)
                     .setNotificationVisibility(
                             DownloadManager.Request.VISIBILITY_VISIBLE)
                     .setDestinationInExternalFilesDir(activity,
-                            Environment.DIRECTORY_DOWNLOADS, "roamglyph/" + release.name);
+                            Environment.DIRECTORY_DOWNLOADS,
+                            "roamglyph/" + release.name + ".download");
             long id = downloads.enqueue(request);
             boolean saved = preferences.edit()
                     .putLong(DOWNLOAD_ID, id)
@@ -343,7 +348,8 @@ public final class AppUpdateManager {
         if (directory == null) {
             throw new IllegalStateException("App update storage is unavailable");
         }
-        return new File(new File(directory, "roamglyph"), name);
+        // System-visible bytes stay opaque until SHA-256 and signature checks.
+        return new File(new File(directory, "roamglyph"), name + ".download");
     }
 
     private void inspectDownload(boolean manual) {
@@ -412,8 +418,7 @@ public final class AppUpdateManager {
                 || !verifying.compareAndSet(false, true)) return;
         executor.execute(() -> {
             try {
-                File apk = destination(record.name);
-                verifyFile(record, apk);
+                File apk = stageAndVerify(record);
                 onUi(() -> {
                     UpdateDownloadRecord current = readRecord();
                     if (!foreground || current == null || current.id != record.id) return;
@@ -459,12 +464,44 @@ public final class AppUpdateManager {
         }
     }
 
-    private void verifyFile(UpdateDownloadRecord record, File apk) throws Exception {
+    /**
+     * Verify the opaque download first. Stage a private *.apk only after
+     * matching the pinned public release digest. No system-download
+     * notification or file manager can install unverified bytes as an APK.
+     */
+    private File stageAndVerify(UpdateDownloadRecord record) throws Exception {
         if (!record.isValid() || record.code <= installedCode()) {
             throw new SecurityException("Untrusted or outdated update record");
         }
-        verifyFileDigest(apk, record.digest);
-        verifyApkIdentity(apk, record.code);
+        File downloaded = destination(record.name);
+        verifyFileDigest(downloaded, record.digest);
+        File directory = new File(activity.getCacheDir(), "updates");
+        if (!directory.isDirectory() && !directory.mkdirs()) {
+            throw new IllegalStateException("Could not create private update cache");
+        }
+        File staged = new File(directory, "roamglyph-verified-update.apk");
+        if (staged.exists() && !staged.delete()) {
+            throw new IllegalStateException("Cannot replace old verified update");
+        }
+        try {
+            try (InputStream input = new FileInputStream(downloaded);
+                 FileOutputStream output = new FileOutputStream(staged)) {
+                byte[] chunk = new byte[65536];
+                int n;
+                while ((n = input.read(chunk)) != -1) {
+                    output.write(chunk, 0, n);
+                }
+                output.getFD().sync();
+            }
+            // Recheck the exact staged bytes: even an incomplete private copy
+            // must never be passed to Android Package Installer.
+            verifyFileDigest(staged, record.digest);
+            verifyApkIdentity(staged, record.code);
+            return staged;
+        } catch (Exception failure) {
+            staged.delete();
+            throw failure;
+        }
     }
 
     private void verifyApkIdentity(File file, int expectedVersion) throws Exception {
@@ -503,6 +540,9 @@ public final class AppUpdateManager {
             // Storage can be unavailable after an external storage transition.
         }
         if (installerPromptedId == record.id) installerPromptedId = -1L;
+        File verified = new File(new File(activity.getCacheDir(), "updates"),
+                "roamglyph-verified-update.apk");
+        if (verified.exists()) verified.delete();
         pendingInstall = null;
     }
 
