@@ -47,6 +47,7 @@ public final class FogGpsCorridors {
     public Path tilePath(FogWorldTileScheme.Key key) {
         Path path = new Path();
         Fix previous = null;
+        float previousX = 0f, previousY = 0f;
         // Include centres beyond the visible tile when their rounded 10m
         // corridor + 2.5m exterior feather + the 2-pass contour kernel
         // could still overlap it. A fixed 32px border cut wide ribbons at z20.
@@ -58,29 +59,33 @@ public final class FogGpsCorridors {
         final double border = Math.max(32.0,
                 24.0 / Math.max(0.000001, metresPerPixel));
         for (Fix current : fixes) {
-            double x = FogWorldTileScheme.localX(current.lng,key);
-            double y = FogWorldTileScheme.localY(current.lat,key);
+            // Reuse previous projection, rather than projecting every fix
+            // twice for each geographic raster tile.
+            float x = FogWorldTileScheme.localX(current.lng, key);
+            float y = FogWorldTileScheme.localY(current.lat, key);
             boolean near = x >= -border && x <= FogWorldTileScheme.TILE_PX+border
                     && y >= -border && y <= FogWorldTileScheme.TILE_PX+border;
             if (near) {
-                path.addCircle((float)x,(float)y,0.001f,Path.Direction.CW);
+                path.addCircle(x, y, 0.001f, Path.Direction.CW);
             }
             if (previous != null && previous.session.equals(current.session)
                     && current.time >= previous.time
-                    && current.time - previous.time <= MAX_GAP_MS
-                    && distance(previous,current) <= MAX_SEGMENT_METERS) {
-                float px = FogWorldTileScheme.localX(previous.lng,key);
-                float py = FogWorldTileScheme.localY(previous.lat,key);
-                // Include segments that cross a tile even when endpoints are outside.
-                if (Math.max(px,(float)x) >= -border && Math.min(px,(float)x)
-                        <= FogWorldTileScheme.TILE_PX+border
-                        && Math.max(py,(float)y) >= -border && Math.min(py,(float)y)
-                        <= FogWorldTileScheme.TILE_PX+border) {
-                    path.moveTo(px,py);
-                    path.lineTo((float)x,(float)y);
+                    && current.time - previous.time <= MAX_GAP_MS) {
+                // Check the same tile-intersection rectangle BEFORE doing
+                // expensive trigonometric distance calculations for old GPS
+                // segments nowhere near the current visible geography.
+                boolean intersects = Math.max(previousX, x) >= -border
+                        && Math.min(previousX, x) <= FogWorldTileScheme.TILE_PX+border
+                        && Math.max(previousY, y) >= -border
+                        && Math.min(previousY, y) <= FogWorldTileScheme.TILE_PX+border;
+                if (intersects && distance(previous, current) <= MAX_SEGMENT_METERS) {
+                    path.moveTo(previousX, previousY);
+                    path.lineTo(x, y);
                 }
             }
-            previous=current;
+            previous = current;
+            previousX = x;
+            previousY = y;
         }
         return path;
     }

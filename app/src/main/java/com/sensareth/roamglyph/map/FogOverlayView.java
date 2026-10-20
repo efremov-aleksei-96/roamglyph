@@ -94,6 +94,8 @@ public final class FogOverlayView extends View {
     private volatile FogGpsCorridors gpsCorridors = FogGpsCorridors.empty();
     private volatile int coverageEpoch = 1;
     private volatile Set<FogWorldTileScheme.Key> wanted = Collections.emptySet();
+    // Workers read an immutable snapshot; update it whenever the camera moves.
+    private volatile Set<FogWorldTileScheme.Key> visibleWanted = Collections.emptySet();
     private List<FogWorldTileScheme.Key> visible = Collections.emptyList();
     private volatile float latestRasterDemand = 1.0f;
     private int requestedZoom = -1;
@@ -403,6 +405,7 @@ public final class FogOverlayView extends View {
                 prioritized.add(key);
             }
             wanted = Collections.unmodifiableSet(new HashSet<>(prioritized));
+            visibleWanted = Collections.unmodifiableSet(new HashSet<>(newVisible));
 
             // Protect both the new visible set and the old visible zoom
             // during a transition. Halo tiles may be evicted first.
@@ -486,8 +489,12 @@ public final class FogOverlayView extends View {
     private void drainJobs() {
         try {
             TileJob job;
+            // Foreground geography must not sit behind an obsolete prefetch FIFO.
+            // The underlying queue remains concurrent; stale work is still
+            // rejected by cancelled() after selection.
             while (!Thread.currentThread().isInterrupted()
-                    && (job = jobs.poll()) != null) {
+                    && (job = FogTileQueuePriority.pollVisibleFirst(
+                            jobs, visibleWanted, candidate -> candidate.key)) != null) {
                 final TileJob work = job;
                 Tile tile = null;
                 long buildStartedNanos = SystemClock.elapsedRealtimeNanos();
