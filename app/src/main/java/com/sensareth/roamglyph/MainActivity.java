@@ -144,6 +144,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private TextView gpsText;
     private TextView mapZoomText;
     private int displayedZoomTenth = Integer.MIN_VALUE;
+    private VisitedStore store;
     private boolean mapLifecycleResumed;
     private long lastCameraMotionAtNanos;
     private long lastCameraMotionHandledAtNanos;
@@ -174,7 +175,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private final ExplorationCoverageIndex coverageIndex = new ExplorationCoverageIndex();
     private final AtomicLong gpsCorridorGeneration = new AtomicLong();
     private long lastGpsCorridorLoadAt;
-    private VisitedStore store;
     private ExplorationRepository repository;
     private ExecutorService dataExecutor;
     private ExecutorService overlayExecutor;
