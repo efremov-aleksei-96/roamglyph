@@ -75,8 +75,8 @@ public class FogPerformanceDiagnosticsTest {
         diagnostics.setFogEnabled(false);
         diagnostics.recordRenderedMapFrame(25_000_000L);
         String report = diagnostics.report();
-        assertTrue(report.contains("[FOG ON]\\nWindow frame TOTAL_DURATION: none\\nMapLibre rendered-frame callbacks: 1"));
-        assertTrue(report.contains("[FOG OFF]\\nWindow frame TOTAL_DURATION: none\\nMapLibre rendered-frame callbacks: 1"));
+        assertTrue(report.contains("[FOG ON]\nWindow frame TOTAL_DURATION: none\nMapLibre rendered-frame callbacks: 1"));
+        assertTrue(report.contains("[FOG OFF]\nWindow frame TOTAL_DURATION: none\nMapLibre rendered-frame callbacks: 1"));
     }
 
 }
