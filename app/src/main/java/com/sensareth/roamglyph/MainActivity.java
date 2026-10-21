@@ -151,13 +151,24 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private long lastCameraMotionAtNanos;
     private long lastCameraMotionHandledAtNanos;
     private boolean frameFallbackPending;
-    private final Runnable frameFallback = () -> {
-        frameFallbackPending = false;
-        if (!isDestroyed() && mapLifecycleResumed && store != null
-                && store.isFogMapFrameSyncEnabled() && fogOverlayView != null) {
-            // Never leave stale on-screen geography after a missed GL callback.
-            fogOverlayView.invalidate();
-            if (performanceDiagnostics != null) performanceDiagnostics.recordMapFrameFallback();
+    private final Runnable frameFallback = new Runnable() {
+        @Override public void run() {
+            frameFallbackPending = false;
+            if (!isDestroyed() && mapLifecycleResumed && store != null
+                    && store.isFogMapFrameSyncEnabled() && fogOverlayView != null) {
+                // MapLibre may skip a finish callback even AFTER camera idle.
+                // Keep showing the latest conservative fog projection while
+                // awaiting a matching render-start/finish pair.
+                fogOverlayView.invalidate();
+                if (performanceDiagnostics != null) {
+                    performanceDiagnostics.recordMapFrameFallback();
+                }
+                if (lastCameraMotionAtNanos > lastCameraMotionHandledAtNanos
+                        && mapView != null) {
+                    frameFallbackPending = true;
+                    mapView.postDelayed(this, 250L);
+                }
+            }
         }
     };
     // Pair MapLibre render-start and render-finish notifications in FIFO order.
@@ -598,9 +609,17 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             fogOverlayView.requestTiles();
         });
         map.addOnCameraIdleListener(() -> {
-            cancelMapFrameFallback();
             updateMapZoomLabel();
-            fogOverlayView.invalidate();
+            if (store.isFogMapFrameSyncEnabled()) {
+                // Camera idle is NOT proof that the latest GL frame rendered.
+                // A late/missing finish callback must leave the rescue armed.
+                if (lastCameraMotionAtNanos > lastCameraMotionHandledAtNanos) {
+                    scheduleMapFrameFallback();
+                }
+            } else {
+                cancelMapFrameFallback();
+                fogOverlayView.invalidate();
+            }
             scheduleViewportOverlay();
             requestDiscoveryScan();
         });
