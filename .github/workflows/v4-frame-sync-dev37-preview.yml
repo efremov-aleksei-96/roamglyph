@@ -20,9 +20,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      CANDIDATE_SHA: 4748f4cbde4109d971456525320c0408f1b3c720
+      CANDIDATE_SHA: 8dbde7c6ced01af272541cdc8b9df9ddf194c916
       BASE_SHA: 243532d9116e6ee20c7c6f22da3fa8add53d69c3
-      ROAMGLYPH_SOURCE_SHA: 4748f4cbde4109d971456525320c0408f1b3c720
+      ROAMGLYPH_SOURCE_SHA: 8dbde7c6ced01af272541cdc8b9df9ddf194c916
     steps:
       - name: Check out trusted main workflow repository
         uses: actions/checkout@v5
@@ -170,7 +170,7 @@ jobs:
           BADGING="$("$AAPT" dump badging "$INPUT" | head -n 1)"
           [[ "$BADGING" == *"name='com.sensareth.roamglyph'"* ]]
           [[ "$BADGING" == *"versionCode='37'"* ]]
-          [[ "$BADGING" == *"versionName='0.5.0-dev.37+g4748f4cb'"* ]]
+          [[ "$BADGING" == *"versionName='0.5.0-dev.37+g8dbde7c6'"* ]]
           if "$APKSIGNER" verify "$INPUT" >/dev/null 2>&1; then
             echo "::error::Refusing an already signed candidate."
             exit 1
@@ -186,7 +186,7 @@ jobs:
             exit 1
           }
           mkdir -p dist
-          OUTPUT=dist/roamglyph-0.5.0-dev.37-g4748f4cb.apk
+          OUTPUT=dist/roamglyph-0.5.0-dev.37-g8dbde7c6.apk
           "$APKSIGNER" sign --ks "$KEYSTORE" --ks-type PKCS12 \
             --ks-key-alias roamglyph-dev \
             --ks-pass env:ROAMGLYPH_DEV_KEYSTORE_PASSWORD \
@@ -203,7 +203,7 @@ jobs:
         with:
           name: roamglyph-pr45-dev37-pixel-preview-signed
           path: |
-            dist/roamglyph-0.5.0-dev.37-g4748f4cb.apk
+            dist/roamglyph-0.5.0-dev.37-g8dbde7c6.apk
             dist/SHA256SUMS.txt
           retention-days: 14
           if-no-files-found: error
@@ -219,9 +219,9 @@ jobs:
       actions: read
     env:
       GH_TOKEN: ${{ github.token }}
-      SOURCE_SHA: 4748f4cbde4109d971456525320c0408f1b3c720
-      RELEASE_TAG: dev-vc37-g4748f4cb
-      APK_NAME: roamglyph-0.5.0-dev.37-g4748f4cb.apk
+      SOURCE_SHA: 8dbde7c6ced01af272541cdc8b9df9ddf194c916
+      RELEASE_TAG: dev-vc37-g8dbde7c6
+      APK_NAME: roamglyph-0.5.0-dev.37-g8dbde7c6.apk
       PIN: 89defa011682172a6d892cda46cd6132393dccda22cecf1175f825596db80758
     steps:
       - name: Get certified APK, not candidate code
@@ -245,8 +245,8 @@ jobs:
           PR_HEAD="$(gh api "repos/$GITHUB_REPOSITORY/pulls/45" --jq '.head.sha')"
           test "$PR_HEAD" = "$SOURCE_SHA"
           # Enforce the acceptance gates in the job that has permission to
-          # publish. A healthy workflow PR is not proof that candidate PR #41
-          # passed CI and emulator smoke on its exact immutable commit.
+          # publish. A healthy workflow PR is not proof that candidate PR #45
+          # passed CI and emulator smoke on its exact reviewed commit.
           CANDIDATE_RUNS="$(gh api "repos/$GITHUB_REPOSITORY/actions/runs?head_sha=$SOURCE_SHA&event=pull_request&per_page=100")"
           for CHECK in "Android CI" "Android Runtime Smoke"; do
             jq -e --arg sha "$SOURCE_SHA" --arg name "$CHECK" '
@@ -259,6 +259,14 @@ jobs:
               exit 1
             }
           done
+          # Fail closed unless GitHub enforces immutable release tags and assets.
+          # The publisher token cannot change this repository-wide admin setting.
+          if ! gh api -H "X-GitHub-Api-Version: 2026-03-10" \
+              "repos/$GITHUB_REPOSITORY/immutable-releases" --jq '.enabled' \
+              | grep -qx true; then
+            echo "::error::Enable immutable releases in Settings > General > Releases before publishing."
+            exit 1
+          fi
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Release already exists; refuse replacement."
             exit 1
@@ -286,7 +294,7 @@ jobs:
           RELEASE="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")"
           DIGEST="sha256:$(sha256sum "dist/$APK_NAME" | cut -d' ' -f1)"
           jq -e --arg name "$APK_NAME" --arg digest "$DIGEST" \
-            '(.draft == false and .prerelease == true) and
+            '(.draft == false and .prerelease == true and .immutable == true) and
              ([.assets[] | select(.name == $name and .digest == $digest
                and (.browser_download_url | startswith("https://github.com/")))]
               | length == 1)' <<<"$RELEASE" >/dev/null
