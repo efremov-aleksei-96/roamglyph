@@ -216,8 +216,12 @@ public final class FogOverlayView extends View {
      * that the GL content reached the physical display.
      */
     public void onMapFrameCallback(long callbackAtNs, boolean redraw) {
-        lastMapFrameCallbackAtNanos = callbackAtNs;
-        if (redraw && mapFrameSyncEnabled) invalidate();
+        // Record only the frame callback that actually schedules this View.
+        // Other callbacks may arrive before a tile or POI-driven draw.
+        if (redraw && mapFrameSyncEnabled) {
+            lastMapFrameCallbackAtNanos = callbackAtNs;
+            invalidate();
+        }
     }
 
     public void attachMap(@NonNull MapLibreMap attachedMap) {
