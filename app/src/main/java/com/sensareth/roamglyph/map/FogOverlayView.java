@@ -91,6 +91,9 @@ public final class FogOverlayView extends View {
     private volatile boolean rendererV2;
     private volatile boolean rendererV3;
     private volatile boolean rendererV4;
+    // UI-thread-only experiment; keeps rendering geometry and tile cache intact.
+    private boolean mapFrameSyncEnabled;
+    private long lastMapFrameCallbackAtNanos = -1L;
     private volatile FogGpsCorridors gpsCorridors = FogGpsCorridors.empty();
     private volatile int coverageEpoch = 1;
     private volatile Set<FogWorldTileScheme.Key> wanted = Collections.emptySet();
@@ -199,6 +202,22 @@ public final class FogOverlayView extends View {
         markerOutline.setColor(Color.WHITE);
         markerOutline.setStyle(Paint.Style.STROKE);
         markerOutline.setStrokeWidth(2f * density);
+    }
+
+    /** A/B comparison against standard camera-driven fog invalidation. */
+    public void setMapFrameSyncEnabled(boolean enabled) {
+        mapFrameSyncEnabled = enabled;
+        lastMapFrameCallbackAtNanos = -1L;
+        invalidate(); // Apply the mode toggle immediately.
+    }
+
+    /**
+     * Callback is observed on the Activity UI thread. It is NOT an indication
+     * that the GL content reached the physical display.
+     */
+    public void onMapFrameCallback(long callbackAtNs, boolean redraw) {
+        lastMapFrameCallbackAtNanos = callbackAtNs;
+        if (redraw && mapFrameSyncEnabled) invalidate();
     }
 
     public void attachMap(@NonNull MapLibreMap attachedMap) {
@@ -465,7 +484,9 @@ public final class FogOverlayView extends View {
                 }
             }
             startWorker();
-            invalidate();
+            // In sync mode, camera movement requests geometry but map frame
+            // events schedule drawing; tile completions can still invalidate.
+            if (!mapFrameSyncEnabled) invalidate();
         } catch (RuntimeException ignored) {
             // Unprojectable poles/dateline or an incomplete style: fail dark.
         } finally {
@@ -708,6 +729,13 @@ public final class FogOverlayView extends View {
 
     @Override protected void onDraw(@NonNull Canvas canvas) {
         long drawStartedNanos = SystemClock.elapsedRealtimeNanos();
+        long callbackAt = lastMapFrameCallbackAtNanos;
+        lastMapFrameCallbackAtNanos = -1L;
+        FogPerformanceDiagnostics frameMetrics = diagnostics;
+        if (frameMetrics != null && callbackAt > 0L
+                && drawStartedNanos >= callbackAt) {
+            frameMetrics.recordMapFrameToFogDraw(drawStartedNanos - callbackAt);
+        }
         Trace.beginSection("RoamGlyph.fogDraw");
         try {
             super.onDraw(canvas);
