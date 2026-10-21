@@ -1022,79 +1022,133 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         startService(service);
     }
 
+    /**
+     * One-screen action menu. Infrequently used data, developer and legal
+     * actions live in compact category dialogs; no existing action is removed.
+     */
     private void showDataMenu(View anchor) {
         PopupMenu popup = new PopupMenu(this, anchor);
-        boolean localMapAvailable = OfflineMapStore.hasValidMap(this);
-
         popup.getMenu().add(0, 11, 0, R.string.menu_history);
-        popup.getMenu().add(0, 1, 1, R.string.menu_export_history);
-        popup.getMenu().add(0, 2, 2, R.string.menu_import_history);
-        popup.getMenu().add(
-                0,
-                6,
-                3,
-                store.isFogEnabled() ? R.string.menu_fog_on : R.string.menu_fog_off
-        );
-        popup.getMenu().add(
-                0,
-                7,
-                4,
+        popup.getMenu().add(0, 6, 1,
+                store.isFogEnabled() ? R.string.menu_fog_on : R.string.menu_fog_off);
+        popup.getMenu().add(0, 7, 2,
                 store.isDiscoveriesEnabled()
-                        ? R.string.menu_discoveries_on
-                        : R.string.menu_discoveries_off
-        );
-
-        if (localMapAvailable) {
-            popup.getMenu().add(
-                    0,
-                    8,
-                    5,
-                    store.isOfflineMapEnabled()
-                            ? R.string.menu_use_online_map
-                            : R.string.menu_use_local_map
-            );
-        }
-        popup.getMenu().add(0, 9, 6, R.string.menu_import_local_map);
-        if (localMapAvailable) {
-            popup.getMenu().add(0, 10, 7, R.string.menu_remove_local_map);
-        }
-
-        popup.getMenu().add(0, 3, 8, R.string.menu_refresh_location);
-        popup.getMenu().add(0, 12, 9,
-                getString(R.string.menu_version_changelog, installedVersion()));
-        popup.getMenu().add(0, 13, 10, R.string.menu_check_updates);
+                        ? R.string.menu_discoveries_on : R.string.menu_discoveries_off);
+        popup.getMenu().add(0, 3, 3, R.string.menu_refresh_location);
+        popup.getMenu().add(0, 20, 4, R.string.menu_data_offline);
         if (performanceDiagnostics != null) {
-            popup.getMenu().add(0, 15, 11,
-                    store.isRendererV2Enabled()
-                            ? "Renderer V2 ✓ — switch to V1"
-                            : "Renderer V1 ✓ — try V2 (test)");
-            popup.getMenu().add(0, 16, 12,
-                    store.isRendererV3Enabled()
-                            ? "Renderer V3 ✓ — GPS corridors"
-                            : "Try Renderer V3 — smooth GPS corridors");
-            popup.getMenu().add(0, 17, 13,
-                    store.isRendererV4Enabled()
-                            ? "Renderer V4 ✓ — organic contour"
-                            : "Try V4 — organic shape (test)");
-            popup.getMenu().add(0, 14, 14, R.string.menu_performance_diagnostics);
-            popup.getMenu().add(0, 19, 16,
-                    store.isFogMapFrameSyncEnabled()
-                            ? "Fog synchronization: Map frame ✓ — switch to Standard"
-                            : "Fog synchronization: Standard ✓ — try Map frame");
-            popup.getMenu().add(0, 18, 15,
-                    store.isTextureMapTestEnabled()
-                            ? "Map compositor: TextureView ✓ — switch to SurfaceView"
-                            : "Map compositor: SurfaceView ✓ — try TextureView");
+            popup.getMenu().add(0, 21, 5, R.string.menu_rendering_diagnostics);
         }
-        popup.getMenu().add(0, 4, 13, R.string.menu_source_code);
-        popup.getMenu().add(0, 5, 12, R.string.menu_privacy);
-
+        popup.getMenu().add(0, 22, 6, R.string.menu_about_updates);
         popup.setOnMenuItemClickListener(item -> {
-            if (item.getItemId() == 11) {
+            int id = item.getItemId();
+            if (id == 20) {
+                showDataOfflineMenu(anchor);
+                return true;
+            }
+            if (id == 21 && performanceDiagnostics != null) {
+                showRenderingMenu(anchor);
+                return true;
+            }
+            if (id == 22) {
+                showAboutUpdatesMenu(anchor);
+                return true;
+            }
+            return handleDataMenuAction(id);
+        });
+        popup.show();
+    }
+
+    /** Data operations preserve the old paused-tracking requirements. */
+    private void showDataOfflineMenu(View anchor) {
+        List<Integer> ids = new ArrayList<>();
+        List<CharSequence> labels = new ArrayList<>();
+        ids.add(1);
+        labels.add(getString(R.string.menu_export_history));
+        ids.add(2);
+        labels.add(getString(R.string.menu_import_history));
+
+        boolean localMapAvailable = OfflineMapStore.hasValidMap(this);
+        if (localMapAvailable) {
+            ids.add(8);
+            labels.add(getString(store.isOfflineMapEnabled()
+                    ? R.string.menu_use_online_map : R.string.menu_use_local_map));
+        }
+        ids.add(9);
+        labels.add(getString(R.string.menu_import_local_map));
+        if (localMapAvailable) {
+            ids.add(10);
+            labels.add(getString(R.string.menu_remove_local_map));
+        }
+        showMenuSection(R.string.menu_data_offline, ids, labels, anchor);
+    }
+
+    /** Developer-only options remain accessible but don't crowd the menu. */
+    private void showRenderingMenu(View anchor) {
+        List<Integer> ids = new ArrayList<>();
+        List<CharSequence> labels = new ArrayList<>();
+        ids.add(14);
+        labels.add(getString(R.string.menu_performance_diagnostics));
+        ids.add(17);
+        labels.add(store.isRendererV4Enabled()
+                ? "Renderer V4 ✓ — organic contour"
+                : "Try V4 — organic shape (test)");
+        ids.add(18);
+        labels.add(store.isTextureMapTestEnabled()
+                ? "Map compositor: TextureView ✓ — switch to SurfaceView"
+                : "Map compositor: SurfaceView ✓ — try TextureView");
+        ids.add(19);
+        labels.add(store.isFogMapFrameSyncEnabled()
+                ? "Fog synchronization: Map frame ✓ — switch to Standard"
+                : "Fog synchronization: Standard ✓ — try Map frame");
+        ids.add(15);
+        labels.add(store.isRendererV2Enabled()
+                ? "Renderer V2 ✓ — switch to V1"
+                : "Renderer V1 ✓ — try V2 (test)");
+        ids.add(16);
+        labels.add(store.isRendererV3Enabled()
+                ? "Renderer V3 ✓ — GPS corridors"
+                : "Try Renderer V3 — smooth GPS corridors");
+        showMenuSection(R.string.menu_rendering_diagnostics, ids, labels, anchor);
+    }
+
+    private void showAboutUpdatesMenu(View anchor) {
+        List<Integer> ids = new ArrayList<>();
+        List<CharSequence> labels = new ArrayList<>();
+        ids.add(12);
+        labels.add(getString(R.string.menu_version_changelog, installedVersion()));
+        ids.add(13);
+        labels.add(getString(R.string.menu_check_updates));
+        ids.add(4);
+        labels.add(getString(R.string.menu_source_code));
+        ids.add(5);
+        labels.add(getString(R.string.menu_privacy));
+        showMenuSection(R.string.menu_about_updates, ids, labels, anchor);
+    }
+
+    /** Native scrollable item dialog with Back returning to the main menu. */
+    private void showMenuSection(int title, List<Integer> ids,
+                                 List<CharSequence> labels, View anchor) {
+        CharSequence[] items = labels.toArray(new CharSequence[0]);
+        new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setItems(items, (dialog, which) -> {
+                    if (which >= 0 && which < ids.size()) {
+                        handleDataMenuAction(ids.get(which));
+                    }
+                })
+                .setNegativeButton(R.string.menu_back, (dialog, which) ->
+                        showDataMenu(anchor))
+                .show();
+    }
+
+    /** Shared handler retains the original action and safety semantics. */
+    private boolean handleDataMenuAction(int id) {
+            if (id == 11) {
                 startActivity(new Intent(this, HistoryActivity.class));
                 return true;
             }
-            if (item.getItemId() == 1) {
+            if (id == 1) {
                 if (tracking) {
                     Toast.makeText(
                             this,
@@ -1106,7 +1160,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 }
                 return true;
             }
-            if (item.getItemId() == 2) {
+            if (id == 2) {
                 if (tracking) {
                     Toast.makeText(
                             this,
@@ -1122,7 +1176,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 }
                 return true;
             }
-            if (item.getItemId() == 6) {
+            if (id == 6) {
                 boolean enabled = !store.isFogEnabled();
                 store.setFogEnabled(enabled);
                 if (frameMetrics != null) frameMetrics.setFogEnabled(enabled);
@@ -1137,7 +1191,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 scheduleViewportOverlay();
                 return true;
             }
-            if (item.getItemId() == 7) {
+            if (id == 7) {
                 boolean enabled = !store.isDiscoveriesEnabled();
                 store.setDiscoveriesEnabled(enabled);
                 if (enabled) {
@@ -1147,7 +1201,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 }
                 return true;
             }
-            if (item.getItemId() == 8) {
+            if (id == 8) {
                 boolean useOffline = !store.isOfflineMapEnabled();
                 if (useOffline && !OfflineMapStore.hasValidMap(this)) {
                     offlineMapLauncher.launch(new String[]{
@@ -1169,7 +1223,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 ).show();
                 return true;
             }
-            if (item.getItemId() == 9) {
+            if (id == 9) {
                 offlineMapLauncher.launch(new String[]{
                         "application/vnd.pmtiles",
                         "application/octet-stream",
@@ -1177,23 +1231,23 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 });
                 return true;
             }
-            if (item.getItemId() == 10) {
+            if (id == 10) {
                 removeOfflineMap();
                 return true;
             }
-            if (item.getItemId() == 3) {
+            if (id == 3) {
                 requestCurrentLocation(true);
                 return true;
             }
-            if (item.getItemId() == 12) {
+            if (id == 12) {
                 showVersionAndChangelog();
                 return true;
             }
-            if (item.getItemId() == 13) {
+            if (id == 13) {
                 appUpdates.check(true);
                 return true;
             }
-            if (item.getItemId() == 15 && performanceDiagnostics != null) {
+            if (id == 15 && performanceDiagnostics != null) {
                 boolean next = !store.isRendererV2Enabled();
                 store.setRendererV2Enabled(next);
                 fogOverlayView.setRendererV2(next);
@@ -1210,7 +1264,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                         Toast.LENGTH_SHORT).show();
                 return true;
             }
-            if (item.getItemId() == 16 && performanceDiagnostics != null) {
+            if (id == 16 && performanceDiagnostics != null) {
                 boolean next = !store.isRendererV3Enabled();
                 store.setRendererV3Enabled(next);
                 if (next) {
@@ -1227,7 +1281,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                                 : "Renderer V1 restored", Toast.LENGTH_SHORT).show();
                 return true;
             }
-            if (item.getItemId() == 17 && performanceDiagnostics != null) {
+            if (id == 17 && performanceDiagnostics != null) {
                 boolean next = !store.isRendererV4Enabled();
                 store.setRendererV4Enabled(next);
                 if (next) {
@@ -1244,30 +1298,27 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                                 : "Renderer V1 restored", Toast.LENGTH_SHORT).show();
                 return true;
             }
-            if (item.getItemId() == 14) {
+            if (id == 14) {
                 showPerformanceDiagnostics();
                 return true;
             }
-            if (item.getItemId() == 18 && performanceDiagnostics != null) {
+            if (id == 18 && performanceDiagnostics != null) {
                 showMapCompositorExperiment();
                 return true;
             }
-            if (item.getItemId() == 19 && performanceDiagnostics != null) {
+            if (id == 19 && performanceDiagnostics != null) {
                 showFrameSyncExperiment();
                 return true;
             }
-            if (item.getItemId() == 4) {
+            if (id == 4) {
                 openUrl(SOURCE_URL);
                 return true;
             }
-            if (item.getItemId() == 5) {
+            if (id == 5) {
                 openUrl(PRIVACY_URL);
                 return true;
             }
             return false;
-        });
-
-        popup.show();
     }
 
     private void importOfflineMap(@NonNull Uri uri) {
