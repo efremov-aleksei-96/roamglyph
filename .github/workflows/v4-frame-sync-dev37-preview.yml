@@ -20,9 +20,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      CANDIDATE_SHA: 8dbde7c6ced01af272541cdc8b9df9ddf194c916
+      CANDIDATE_SHA: db431a46a6cb2cee19a339243d9b9c66fa849df9
       BASE_SHA: 243532d9116e6ee20c7c6f22da3fa8add53d69c3
-      ROAMGLYPH_SOURCE_SHA: 8dbde7c6ced01af272541cdc8b9df9ddf194c916
+      ROAMGLYPH_SOURCE_SHA: db431a46a6cb2cee19a339243d9b9c66fa849df9
     steps:
       - name: Check out trusted main workflow repository
         uses: actions/checkout@v5
@@ -56,10 +56,12 @@ jobs:
             'app/src/test/java/com/sensareth/roamglyph/updates/DevelopmentReleasePolicyTest.java' \
             'app/src/main/java/com/sensareth/roamglyph/VisitedStore.java' \
             'app/src/main/java/com/sensareth/roamglyph/map/FogPerformanceDiagnostics.java' \
-            'app/src/test/java/com/sensareth/roamglyph/map/FogPerformanceDiagnosticsTest.java' | sort)"
+            'app/src/test/java/com/sensareth/roamglyph/map/FogPerformanceDiagnosticsTest.java' \
+            'app/src/main/java/com/sensareth/roamglyph/map/FogMapFrameGate.java' \
+            'app/src/test/java/com/sensareth/roamglyph/map/FogMapFrameGateTest.java' | sort)"
           ACTUAL="$(git diff --name-only "$BASE_SHA" "$CANDIDATE_SHA" | sort)"
           if [[ "$ACTUAL" != "$EXPECTED" ]]; then
-            echo "::error::Candidate differs outside seventeen reviewed V4/updater/compositor/frame-sync files."
+            echo "::error::Candidate differs outside nineteen reviewed V4/updater/compositor/frame-sync files."
             git diff --name-only "$BASE_SHA" "$CANDIDATE_SHA"
             exit 1
           fi
@@ -170,7 +172,7 @@ jobs:
           BADGING="$("$AAPT" dump badging "$INPUT" | head -n 1)"
           [[ "$BADGING" == *"name='com.sensareth.roamglyph'"* ]]
           [[ "$BADGING" == *"versionCode='37'"* ]]
-          [[ "$BADGING" == *"versionName='0.5.0-dev.37+g8dbde7c6'"* ]]
+          [[ "$BADGING" == *"versionName='0.5.0-dev.37+gdb431a46'"* ]]
           if "$APKSIGNER" verify "$INPUT" >/dev/null 2>&1; then
             echo "::error::Refusing an already signed candidate."
             exit 1
@@ -186,7 +188,7 @@ jobs:
             exit 1
           }
           mkdir -p dist
-          OUTPUT=dist/roamglyph-0.5.0-dev.37-g8dbde7c6.apk
+          OUTPUT=dist/roamglyph-0.5.0-dev.37-gdb431a46.apk
           "$APKSIGNER" sign --ks "$KEYSTORE" --ks-type PKCS12 \
             --ks-key-alias roamglyph-dev \
             --ks-pass env:ROAMGLYPH_DEV_KEYSTORE_PASSWORD \
@@ -203,7 +205,7 @@ jobs:
         with:
           name: roamglyph-pr45-dev37-pixel-preview-signed
           path: |
-            dist/roamglyph-0.5.0-dev.37-g8dbde7c6.apk
+            dist/roamglyph-0.5.0-dev.37-gdb431a46.apk
             dist/SHA256SUMS.txt
           retention-days: 14
           if-no-files-found: error
@@ -219,9 +221,9 @@ jobs:
       actions: read
     env:
       GH_TOKEN: ${{ github.token }}
-      SOURCE_SHA: 8dbde7c6ced01af272541cdc8b9df9ddf194c916
-      RELEASE_TAG: dev-vc37-g8dbde7c6
-      APK_NAME: roamglyph-0.5.0-dev.37-g8dbde7c6.apk
+      SOURCE_SHA: db431a46a6cb2cee19a339243d9b9c66fa849df9
+      RELEASE_TAG: dev-vc37-gdb431a46
+      APK_NAME: roamglyph-0.5.0-dev.37-gdb431a46.apk
       PIN: 89defa011682172a6d892cda46cd6132393dccda22cecf1175f825596db80758
     steps:
       - name: Get certified APK, not candidate code
