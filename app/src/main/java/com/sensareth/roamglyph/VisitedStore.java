@@ -25,6 +25,8 @@ public final class VisitedStore {
     private static final String KEY_RENDERER_V4 = "renderer_v4_organic_test";
     // Rendering pipeline A/B experiment. False preserves the faster SurfaceView.
     private static final String KEY_TEXTURE_MAP_TEST = "texture_map_composition_test";
+    // Purely experimental visual frame-trigger preference. Default unchanged.
+    private static final String KEY_FOG_MAP_FRAME_SYNC = "fog_map_frame_sync_test";
     private static final String KEY_DISCOVERIES_ENABLED = "discoveries_enabled";
     private static final String KEY_HAS_LOCATION = "has_location";
     private static final String KEY_LAT = "last_lat";
@@ -138,6 +140,15 @@ public final class VisitedStore {
 
     public void setTextureMapTestEnabled(boolean enabled) {
         prefs.edit().putBoolean(KEY_TEXTURE_MAP_TEST, enabled).apply();
+    }
+
+    /** A/B test only. Independent of GPS history and fog tile coverage. */
+    public boolean isFogMapFrameSyncEnabled() {
+        return prefs.getBoolean(KEY_FOG_MAP_FRAME_SYNC, false);
+    }
+
+    public void setFogMapFrameSyncEnabled(boolean enabled) {
+        prefs.edit().putBoolean(KEY_FOG_MAP_FRAME_SYNC, enabled).apply();
     }
 
     public boolean isDiscoveriesEnabled() {
