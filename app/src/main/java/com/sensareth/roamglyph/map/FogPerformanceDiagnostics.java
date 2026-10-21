@@ -67,6 +67,11 @@ public final class FogPerformanceDiagnostics {
         final Samples demand = new Samples();
         final Samples tileBuild = new Samples();
         final Samples queueWait = new Samples();
+        final Samples cameraToMapFrame = new Samples();
+        final Samples mapFrameToFogDraw = new Samples();
+        long mapFrameCallbacks;
+        long mapFrameRedraws;
+        long mapFrameFallbacks;
         long droppedFrameCallbacks;
         long requestedPresentTiles;
         long requestedMissingTiles;
@@ -82,6 +87,14 @@ public final class FogPerformanceDiagnostics {
         String report(String heading) {
             StringBuilder s = new StringBuilder("\n[").append(heading).append("]\n");
             s.append("Window frame TOTAL_DURATION: ").append(uiFrame.report()).append('\n');
+            s.append("MapLibre rendered-frame callbacks: ")
+                    .append(mapFrameCallbacks).append("; redraws=")
+                    .append(mapFrameRedraws).append("; fallbacks=")
+                    .append(mapFrameFallbacks).append('\n');
+            s.append("Camera event -> MapLibre frame callback: ")
+                    .append(cameraToMapFrame.report()).append('\n');
+            s.append("MapLibre frame callback -> Fog.onDraw CPU start: ")
+                    .append(mapFrameToFogDraw.report()).append('\n');
             s.append("Window listener dropped callbacks: ")
                     .append(droppedFrameCallbacks).append('\n');
             s.append("Fog View.onDraw CPU recording: ").append(fogDraw.report())
@@ -161,6 +174,25 @@ public final class FogPerformanceDiagnostics {
         if (success) p.builtTiles++; else p.failedTiles++;
     }
 
+    /** Callback timestamps do not represent physical display presentation. */
+    public synchronized void recordRenderedMapFrame(long cameraToFrameNs) {
+        Phase p = current();
+        p.mapFrameCallbacks++;
+        if (cameraToFrameNs >= 0L) p.cameraToMapFrame.add(cameraToFrameNs);
+    }
+
+    public synchronized void recordMapFrameRedraw() {
+        current().mapFrameRedraws++;
+    }
+
+    public synchronized void recordMapFrameFallback() {
+        current().mapFrameFallbacks++;
+    }
+
+    public synchronized void recordMapFrameToFogDraw(long callbackToDrawNs) {
+        current().mapFrameToFogDraw.add(callbackToDrawNs);
+    }
+
     public synchronized void recordProjectionFallback() {
         current().projectionFallbacks++;
     }
@@ -180,6 +212,7 @@ public final class FogPerformanceDiagnostics {
         s.append("\nIMPORTANT: Android Window FrameMetrics may exclude MapLibre "
                 + "GL SurfaceView composition/GPU. Window and Java timings do NOT "
                 + "establish actual map FPS or render-thread/GPU stalls. "
+                + "Map-frame callback durations are NOT presentation latency. "
                 + "Compare fog ON/OFF and use Perfetto for root cause.\n");
         s.append("No location coordinates, trips, saved history or personal "
                 + "identifiers are included.\n");
