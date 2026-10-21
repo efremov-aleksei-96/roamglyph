@@ -151,9 +151,11 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private long lastCameraMotionAtNanos;
     private long lastCameraMotionHandledAtNanos;
     private boolean frameFallbackPending;
+    private boolean frameFallbackIsRetry;
     private final Runnable frameFallback = new Runnable() {
         @Override public void run() {
             frameFallbackPending = false;
+            frameFallbackIsRetry = false;
             if (!isDestroyed() && mapLifecycleResumed && store != null
                     && store.isFogMapFrameSyncEnabled() && fogOverlayView != null) {
                 // MapLibre may skip a finish callback even AFTER camera idle.
@@ -166,6 +168,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 if (lastCameraMotionAtNanos > lastCameraMotionHandledAtNanos
                         && mapView != null) {
                     frameFallbackPending = true;
+                    frameFallbackIsRetry = true;
                     mapView.postDelayed(this, 250L);
                 }
             }
@@ -635,9 +638,16 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     }
 
     private void scheduleMapFrameFallback() {
-        if (frameFallbackPending || mapView == null) return;
+        if (mapView == null) return;
+        if (frameFallbackPending) {
+            if (!frameFallbackIsRetry) return;
+            // An older camera's 250ms retry must NOT delay a new camera
+            // generation. Replace it with a fresh rescue within 80ms.
+            mapView.removeCallbacks(frameFallback);
+            frameFallbackPending = false;
+            frameFallbackIsRetry = false;
+        }
         frameFallbackPending = true;
-        // Deliberately slower than a normal frame; never block motion.
         mapView.postDelayed(frameFallback, 80L);
     }
 
@@ -645,6 +655,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         if (mapView != null && frameFallbackPending) {
             mapView.removeCallbacks(frameFallback);
             frameFallbackPending = false;
+            frameFallbackIsRetry = false;
         }
     }
 
