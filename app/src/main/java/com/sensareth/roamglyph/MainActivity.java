@@ -616,17 +616,20 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         if (!mapLifecycleResumed || isFinishing() || isDestroyed()
                 || fogOverlayView == null || store == null) return;
         boolean moved = lastCameraMotionAtNanos > lastCameraMotionHandledAtNanos;
-        long deltaNs = moved && callbackAtNs >= lastCameraMotionAtNanos
+        // A queued callback may predate a newer camera event. It must not
+        // consume that event or cancel its rescue redraw on the UI thread.
+        boolean corresponding = moved && callbackAtNs >= lastCameraMotionAtNanos;
+        long deltaNs = corresponding
                 ? callbackAtNs - lastCameraMotionAtNanos : -1L;
         if (performanceDiagnostics != null) {
             performanceDiagnostics.recordRenderedMapFrame(deltaNs);
         }
         // An actual rendered frame is preferable to the 80ms fallback.
-        if (moved) {
+        if (corresponding) {
             lastCameraMotionHandledAtNanos = lastCameraMotionAtNanos;
             cancelMapFrameFallback();
         }
-        boolean redraw = store.isFogMapFrameSyncEnabled() && moved;
+        boolean redraw = store.isFogMapFrameSyncEnabled() && corresponding;
         fogOverlayView.onMapFrameCallback(callbackAtNs, redraw);
         if (redraw && performanceDiagnostics != null) {
             performanceDiagnostics.recordMapFrameRedraw();
