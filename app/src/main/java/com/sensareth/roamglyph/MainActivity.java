@@ -20,6 +20,7 @@ import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Looper;
+import android.os.SystemClock;
 import android.text.format.Formatter;
 import android.view.Gravity;
 import android.view.View;
@@ -143,6 +144,28 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private TextView gpsText;
     private TextView mapZoomText;
     private int displayedZoomTenth = Integer.MIN_VALUE;
+    private boolean mapLifecycleResumed;
+    private long lastCameraMotionAtNanos;
+    private long lastCameraMotionHandledAtNanos;
+    private boolean frameFallbackPending;
+    private final Runnable frameFallback = () -> {
+        frameFallbackPending = false;
+        if (!isDestroyed() && mapLifecycleResumed && store != null
+                && store.isFogMapFrameSyncEnabled() && fogOverlayView != null) {
+            // Never leave stale on-screen geography after a missed GL callback.
+            fogOverlayView.invalidate();
+            if (performanceDiagnostics != null) performanceDiagnostics.recordMapFrameFallback();
+        }
+    };
+    private final MapView.OnDidFinishRenderingFrameListener mapFrameListener =
+            (fully, frameEncodingTime, frameRenderingTime) -> {
+                long callbackAtNs = SystemClock.elapsedRealtimeNanos();
+                if (Looper.myLooper() == Looper.getMainLooper()) {
+                    onRenderedMapFrame(callbackAtNs);
+                } else {
+                    runOnUiThread(() -> onRenderedMapFrame(callbackAtNs));
+                }
+            };
 
     private final Set<String> visited = new HashSet<>();
     private final AtomicBoolean refreshPending = new AtomicBoolean(false);
@@ -346,6 +369,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         fogOverlayView.setRendererV2(store.isRendererV2Enabled());
         fogOverlayView.setRendererV3(store.isRendererV3Enabled());
         fogOverlayView.setRendererV4(store.isRendererV4Enabled());
+        fogOverlayView.setMapFrameSyncEnabled(store.isFogMapFrameSyncEnabled());
         fogOverlayView.setFogEnabled(store.isFogEnabled());
         root.addView(
                 fogOverlayView,
@@ -544,14 +568,20 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         if (h3 != null) fogOverlayView.attachCoverage(h3, coverageIndex);
         updateMapZoomLabel();
 
+        mapView.addOnDidFinishRenderingFrameListener(mapFrameListener);
         map.addOnCameraMoveListener(() -> {
             updateMapZoomLabel();
-            // Existing world tiles move synchronously with MapLibre;
-            // only missing neighbours are queued in the background.
-            fogOverlayView.invalidate();
+            lastCameraMotionAtNanos = SystemClock.elapsedRealtimeNanos();
+            if (store.isFogMapFrameSyncEnabled()) {
+                scheduleMapFrameFallback();
+            } else {
+                fogOverlayView.invalidate();
+            }
+            // Request missing geography independently of frame invalidation.
             fogOverlayView.requestTiles();
         });
         map.addOnCameraIdleListener(() -> {
+            cancelMapFrameFallback();
             updateMapZoomLabel();
             fogOverlayView.invalidate();
             scheduleViewportOverlay();
@@ -566,6 +596,41 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         mapView.addOnDidBecomeIdleListener(this::requestDiscoveryScan);
 
         loadActiveMapStyle();
+    }
+
+    private void scheduleMapFrameFallback() {
+        if (frameFallbackPending || mapView == null) return;
+        frameFallbackPending = true;
+        // Deliberately slower than a normal frame; never block motion.
+        mapView.postDelayed(frameFallback, 80L);
+    }
+
+    private void cancelMapFrameFallback() {
+        if (mapView != null && frameFallbackPending) {
+            mapView.removeCallbacks(frameFallback);
+            frameFallbackPending = false;
+        }
+    }
+
+    private void onRenderedMapFrame(long callbackAtNs) {
+        if (!mapLifecycleResumed || isFinishing() || isDestroyed()
+                || fogOverlayView == null || store == null) return;
+        boolean moved = lastCameraMotionAtNanos > lastCameraMotionHandledAtNanos;
+        long deltaNs = moved && callbackAtNs >= lastCameraMotionAtNanos
+                ? callbackAtNs - lastCameraMotionAtNanos : -1L;
+        if (performanceDiagnostics != null) {
+            performanceDiagnostics.recordRenderedMapFrame(deltaNs);
+        }
+        // An actual rendered frame is preferable to the 80ms fallback.
+        if (moved) {
+            lastCameraMotionHandledAtNanos = lastCameraMotionAtNanos;
+            cancelMapFrameFallback();
+        }
+        boolean redraw = store.isFogMapFrameSyncEnabled() && moved;
+        fogOverlayView.onMapFrameCallback(callbackAtNs, redraw);
+        if (redraw && performanceDiagnostics != null) {
+            performanceDiagnostics.recordMapFrameRedraw();
+        }
     }
 
     private void updateMapZoomLabel() {
@@ -960,6 +1025,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                             ? "Renderer V4 ✓ — organic contour"
                             : "Try V4 — organic shape (test)");
             popup.getMenu().add(0, 14, 14, R.string.menu_performance_diagnostics);
+            popup.getMenu().add(0, 19, 16,
+                    store.isFogMapFrameSyncEnabled()
+                            ? "Fog synchronization: Map frame ✓ — switch to Standard"
+                            : "Fog synchronization: Standard ✓ — try Map frame");
             popup.getMenu().add(0, 18, 15,
                     store.isTextureMapTestEnabled()
                             ? "Map compositor: TextureView ✓ — switch to SurfaceView"
@@ -1129,6 +1198,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             }
             if (item.getItemId() == 18 && performanceDiagnostics != null) {
                 showMapCompositorExperiment();
+                return true;
+            }
+            if (item.getItemId() == 19 && performanceDiagnostics != null) {
+                showFrameSyncExperiment();
                 return true;
             }
             if (item.getItemId() == 4) {
@@ -1606,6 +1679,28 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         }
     }
 
+    private void showFrameSyncExperiment() {
+        boolean next = !store.isFogMapFrameSyncEnabled();
+        new AlertDialog.Builder(this)
+                .setTitle("Experimental fog frame synchronization")
+                .setMessage(next
+                        ? "Schedule fog redraw after MapLibre rendered-frame callbacks? "
+                                + "This may reduce visible map/fog offset, or increase "
+                                + "lag. An 80ms fallback prevents a frozen overlay. "
+                                + "Existing coverage and GPS history do not change."
+                        : "Restore standard camera-driven fog redraw? "
+                                + "No restart or exploration-data change is needed.")
+                .setPositiveButton("Switch", (dialog, which) -> {
+                    cancelMapFrameFallback();
+                    store.setFogMapFrameSyncEnabled(next);
+                    fogOverlayView.setMapFrameSyncEnabled(next);
+                    if (performanceDiagnostics != null) performanceDiagnostics.reset();
+                    fogOverlayView.requestTilesNow();
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
     private void showMapCompositorExperiment() {
         if (tracking) {
             new AlertDialog.Builder(this)
@@ -1646,6 +1741,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         report.append("Offline map: ").append(store.isOfflineMapEnabled())
                 .append("; discoveries: ").append(store.isDiscoveriesEnabled())
                 .append("; tracking: ").append(tracking).append('\n');
+        report.append("Fog synchronization: ")
+                .append(store.isFogMapFrameSyncEnabled()
+                        ? "MapLibre frame (experimental)" : "Standard camera events")
+                .append('\n');
         report.append("Map compositor: ")
                 .append(mapView != null
                         && mapView.getRenderView() instanceof android.view.TextureView
@@ -1950,6 +2049,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     @Override
     protected void onResume() {
         super.onResume();
+        mapLifecycleResumed = true;
         mapView.onResume();
         // A live Activity can survive onLowMemory without detaching the
         // fog view. Restart geographic tile demand even if the camera
@@ -1968,6 +2068,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     @Override
     protected void onPause() {
+        mapLifecycleResumed = false;
+        cancelMapFrameFallback();
         if (appUpdates != null) appUpdates.onPause();
         mapView.onPause();
         super.onPause();
@@ -1996,6 +2098,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     @Override
     protected void onDestroy() {
+        cancelMapFrameFallback();
+        if (mapView != null) mapView.removeOnDidFinishRenderingFrameListener(mapFrameListener);
         if (frameMetrics != null) frameMetrics.stop();
         if (appUpdates != null) appUpdates.close();
         mapView.onDestroy();
