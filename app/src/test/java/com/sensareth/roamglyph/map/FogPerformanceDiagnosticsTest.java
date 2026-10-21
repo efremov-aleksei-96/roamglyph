@@ -50,4 +50,33 @@ public class FogPerformanceDiagnosticsTest {
         assertTrue(report.contains("No location coordinates"));
         assertTrue(report.contains("may exclude MapLibre GL SurfaceView"));
     }
+    @Test public void mapFrameAndFogDrawTimingsAreSeparateAndPrivacyPreserving() {
+        FogPerformanceDiagnostics diagnostics = new FogPerformanceDiagnostics(true);
+        diagnostics.recordRenderedMapFrame(12_000_000L);
+        diagnostics.recordMapFrameRedraw();
+        diagnostics.recordMapFrameToFogDraw(4_000_000L);
+        diagnostics.recordRenderedMapFrame(-1L);
+        diagnostics.recordMapFrameFallback();
+        String report = diagnostics.report();
+        assertTrue(report.contains("MapLibre rendered-frame callbacks: 2; redraws=1; fallbacks=1"));
+        assertTrue(report.contains(
+                "Camera event -> MapLibre frame callback: n=1; avg=12.00ms"));
+        assertTrue(report.contains(
+                "MapLibre frame callback -> Fog.onDraw CPU start: n=1; avg=4.00ms"));
+        diagnostics.reset();
+        String reset = diagnostics.report();
+        assertTrue(reset.contains("MapLibre rendered-frame callbacks: 0; redraws=0; fallbacks=0"));
+        assertTrue(reset.contains("Camera event -> MapLibre frame callback: none"));
+    }
+
+    @Test public void mapFrameMetricsSeparateFogOnOffPhases() {
+        FogPerformanceDiagnostics diagnostics = new FogPerformanceDiagnostics(true);
+        diagnostics.recordRenderedMapFrame(5_000_000L);
+        diagnostics.setFogEnabled(false);
+        diagnostics.recordRenderedMapFrame(25_000_000L);
+        String report = diagnostics.report();
+        assertTrue(report.contains("[FOG ON]\nWindow frame TOTAL_DURATION: none\nMapLibre rendered-frame callbacks: 1"));
+        assertTrue(report.contains("[FOG OFF]\nWindow frame TOTAL_DURATION: none\nMapLibre rendered-frame callbacks: 1"));
+    }
+
 }
