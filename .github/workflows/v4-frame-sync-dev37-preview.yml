@@ -261,14 +261,11 @@ jobs:
               exit 1
             }
           done
-          # Fail closed unless GitHub enforces immutable release tags and assets.
-          # The publisher token cannot change this repository-wide admin setting.
-          if ! gh api -H "X-GitHub-Api-Version: 2026-03-10" \
-              "repos/$GITHUB_REPOSITORY/immutable-releases" --jq '.enabled' \
-              | grep -qx true; then
-            echo "::error::Enable immutable releases in Settings > General > Releases before publishing."
-            exit 1
-          fi
+          # The owner confirmed Release Immutability in GitHub Settings.
+          # This repository-admin-only GET API cannot be called with the
+          # least-privileged built-in GITHUB_TOKEN (contents/actions scopes).
+          # gh release create stages both assets in a draft before publishing;
+          # after publish, enforce the server's actual immutable=true result.
           if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
             echo "::error::Release already exists; refuse replacement."
             exit 1
@@ -278,7 +275,7 @@ jobs:
             exit 1
           fi
 
-      - name: Publish immutable Fog map-frame A/B test prerelease
+      - name: Stage both assets in a draft and publish protected dev37
         shell: bash
         run: |
           set -euo pipefail
@@ -295,11 +292,20 @@ jobs:
           set -euo pipefail
           RELEASE="$(gh api "repos/$GITHUB_REPOSITORY/releases/tags/$RELEASE_TAG")"
           DIGEST="sha256:$(sha256sum "dist/$APK_NAME" | cut -d' ' -f1)"
-          jq -e --arg name "$APK_NAME" --arg digest "$DIGEST" \
+          if ! jq -e --arg name "$APK_NAME" --arg digest "$DIGEST" \
             '(.draft == false and .prerelease == true and .immutable == true) and
              ([.assets[] | select(.name == $name and .digest == $digest
                and (.browser_download_url | startswith("https://github.com/")))]
-              | length == 1)' <<<"$RELEASE" >/dev/null
+              | length == 1)' <<<"$RELEASE" >/dev/null; then
+            echo "::error::Release is not immutable, or signed APK digest/asset verification failed."
+            # If immutability was disabled despite the owner's confirmation,
+            # remove ONLY this newly published mutable release and its tag
+            # so an unprotected APK is not left visible in update discovery.
+            if [[ "$(jq -r '.immutable // false' <<<"$RELEASE")" != "true" ]]; then
+              gh release delete "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" --yes --cleanup-tag || true
+            fi
+            exit 1
+          fi
           TAG_SHA="$(gh api "repos/$GITHUB_REPOSITORY/git/ref/tags/$RELEASE_TAG" --jq '.object.sha')"
           test "$TAG_SHA" = "$SOURCE_SHA"
           echo "Verified: https://github.com/$GITHUB_REPOSITORY/releases/tag/$RELEASE_TAG"
