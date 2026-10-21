@@ -48,6 +48,7 @@ import com.sensareth.roamglyph.map.DiscoveryOverlayBuilder;
 import com.sensareth.roamglyph.map.ExplorationCoverageIndex;
 import com.sensareth.roamglyph.map.FogOverlayView;
 import com.sensareth.roamglyph.map.FogGpsCorridors;
+import com.sensareth.roamglyph.map.FogMapFrameGate;
 import com.sensareth.roamglyph.map.FogFrameMetrics;
 import com.sensareth.roamglyph.map.FogPerformanceDiagnostics;
 import com.sensareth.roamglyph.map.OfflineMapStore;
@@ -92,6 +93,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Set;
+import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -145,7 +147,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private TextView mapZoomText;
     private int displayedZoomTenth = Integer.MIN_VALUE;
     private VisitedStore store;
-    private boolean mapLifecycleResumed;
+    private volatile boolean mapLifecycleResumed;
     private long lastCameraMotionAtNanos;
     private long lastCameraMotionHandledAtNanos;
     private boolean frameFallbackPending;
@@ -158,13 +160,27 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             if (performanceDiagnostics != null) performanceDiagnostics.recordMapFrameFallback();
         }
     };
+    // Pair MapLibre render-start and render-finish notifications in FIFO order.
+    // A finish notification's timestamp alone can describe an OLD camera frame
+    // that finished AFTER a newer camera position was requested.
+    // Bounded queue: lost/mismatched callbacks fail closed to the 80ms fallback.
+    private final ArrayBlockingQueue<Long> frameStartTimes = new ArrayBlockingQueue<>(64);
+    private final MapView.OnWillStartRenderingFrameListener mapFrameStartListener = () -> {
+        long startedAtNs = SystemClock.elapsedRealtimeNanos();
+        if (!frameStartTimes.offer(startedAtNs)) {
+            frameStartTimes.poll();
+            frameStartTimes.offer(startedAtNs);
+        }
+    };
     private final MapView.OnDidFinishRenderingFrameListener mapFrameListener =
             (fully, frameEncodingTime, frameRenderingTime) -> {
                 long callbackAtNs = SystemClock.elapsedRealtimeNanos();
+                Long startNs = frameStartTimes.poll();
+                long frameStartedAtNs = startNs == null ? -1L : startNs;
                 if (Looper.myLooper() == Looper.getMainLooper()) {
-                    onRenderedMapFrame(callbackAtNs);
+                    onRenderedMapFrame(callbackAtNs, frameStartedAtNs);
                 } else {
-                    runOnUiThread(() -> onRenderedMapFrame(callbackAtNs));
+                    runOnUiThread(() -> onRenderedMapFrame(callbackAtNs, frameStartedAtNs));
                 }
             };
 
@@ -568,6 +584,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         if (h3 != null) fogOverlayView.attachCoverage(h3, coverageIndex);
         updateMapZoomLabel();
 
+        mapView.addOnWillStartRenderingFrameListener(mapFrameStartListener);
         mapView.addOnDidFinishRenderingFrameListener(mapFrameListener);
         map.addOnCameraMoveListener(() -> {
             updateMapZoomLabel();
@@ -612,13 +629,15 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         }
     }
 
-    private void onRenderedMapFrame(long callbackAtNs) {
+    private void onRenderedMapFrame(long callbackAtNs, long frameStartedAtNs) {
         if (!mapLifecycleResumed || isFinishing() || isDestroyed()
                 || fogOverlayView == null || store == null) return;
-        boolean moved = lastCameraMotionAtNanos > lastCameraMotionHandledAtNanos;
-        // A queued callback may predate a newer camera event. It must not
-        // consume that event or cancel its rescue redraw on the UI thread.
-        boolean corresponding = moved && callbackAtNs >= lastCameraMotionAtNanos;
+        // The current camera may move DURING an older frame's rendering.
+        // Accept only a frame whose render-start comes after that movement.
+        // Otherwise keep the fallback armed for the most recent camera.
+        boolean corresponding = FogMapFrameGate.isCurrentCameraFrame(
+                lastCameraMotionAtNanos, lastCameraMotionHandledAtNanos,
+                frameStartedAtNs, callbackAtNs);
         long deltaNs = corresponding
                 ? callbackAtNs - lastCameraMotionAtNanos : -1L;
         if (performanceDiagnostics != null) {
@@ -2073,6 +2092,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     protected void onPause() {
         mapLifecycleResumed = false;
         cancelMapFrameFallback();
+        frameStartTimes.clear();
         if (appUpdates != null) appUpdates.onPause();
         mapView.onPause();
         super.onPause();
@@ -2102,7 +2122,11 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     @Override
     protected void onDestroy() {
         cancelMapFrameFallback();
-        if (mapView != null) mapView.removeOnDidFinishRenderingFrameListener(mapFrameListener);
+        if (mapView != null) {
+            mapView.removeOnDidFinishRenderingFrameListener(mapFrameListener);
+            mapView.removeOnWillStartRenderingFrameListener(mapFrameStartListener);
+        }
+        frameStartTimes.clear();
         if (frameMetrics != null) frameMetrics.stop();
         if (appUpdates != null) appUpdates.close();
         mapView.onDestroy();
