@@ -5,7 +5,7 @@ name: Signed radio options dev.39 preview
 on:
   push:
     branches: [main]
-    paths: [.github/workflows/v4-compact-menu-dev39-preview.yml]
+    paths: [.github/workflows/v4-compact-menu-dev38-preview.yml]
   workflow_dispatch:
 
 permissions:
