@@ -47,6 +47,7 @@ import com.sensareth.roamglyph.map.DiscoveryHitPolicy;
 import com.sensareth.roamglyph.map.DiscoveryOverlayBuilder;
 import com.sensareth.roamglyph.map.ExplorationCoverageIndex;
 import com.sensareth.roamglyph.map.FogOverlayView;
+import com.sensareth.roamglyph.map.FogRendererChoice;
 import com.sensareth.roamglyph.map.FogGpsCorridors;
 import com.sensareth.roamglyph.map.FogMapFrameGate;
 import com.sensareth.roamglyph.map.FogFrameMetrics;
@@ -1083,33 +1084,94 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         showMenuSection(R.string.menu_data_offline, ids, labels, anchor);
     }
 
-    /** Developer-only options remain accessible but don't crowd the menu. */
+    /** Small category list; every value is also visible without opening it. */
     private void showRenderingMenu(View anchor) {
         List<Integer> ids = new ArrayList<>();
         List<CharSequence> labels = new ArrayList<>();
+        ids.add(23);
+        labels.add(getString(R.string.menu_fog_renderer)
+                + "\n" + FogRendererChoice.label(currentRendererChoice()));
+        ids.add(24);
+        labels.add(getString(R.string.menu_map_compositor)
+                + "\n" + (store.isTextureMapTestEnabled()
+                        ? "TextureView" : "GLSurfaceView"));
+        ids.add(25);
+        labels.add(getString(R.string.menu_fog_synchronization)
+                + "\n" + (store.isFogMapFrameSyncEnabled()
+                        ? "Map frame" : "Standard"));
         ids.add(14);
         labels.add(getString(R.string.menu_performance_diagnostics));
-        ids.add(17);
-        labels.add(store.isRendererV4Enabled()
-                ? "Renderer V4 ✓ — organic contour"
-                : "Try V4 — organic shape (test)");
-        ids.add(18);
-        labels.add(store.isTextureMapTestEnabled()
-                ? "Map compositor: TextureView ✓ — switch to SurfaceView"
-                : "Map compositor: SurfaceView ✓ — try TextureView");
-        ids.add(19);
-        labels.add(store.isFogMapFrameSyncEnabled()
-                ? "Fog synchronization: Map frame ✓ — switch to Standard"
-                : "Fog synchronization: Standard ✓ — try Map frame");
-        ids.add(15);
-        labels.add(store.isRendererV2Enabled()
-                ? "Renderer V2 ✓ — switch to V1"
-                : "Renderer V1 ✓ — try V2 (test)");
-        ids.add(16);
-        labels.add(store.isRendererV3Enabled()
-                ? "Renderer V3 ✓ — GPS corridors"
-                : "Try Renderer V3 — smooth GPS corridors");
         showMenuSection(R.string.menu_rendering_diagnostics, ids, labels, anchor);
+    }
+
+    private int currentRendererChoice() {
+        return FogRendererChoice.current(store.isRendererV2Enabled(),
+                store.isRendererV3Enabled(), store.isRendererV4Enabled());
+    }
+
+    /** Radio choices replace ambiguous independent toggles. A selected item is a no-op. */
+    private void showRendererChoices(View anchor) {
+        showRenderingChoices(R.string.menu_fog_renderer,
+                FogRendererChoice.LABELS,
+                currentRendererChoice(), anchor, selected -> {
+                    int old = currentRendererChoice();
+                    if (selected == old) return;
+                    boolean v2 = selected == 1;
+                    boolean v3 = selected == 2;
+                    boolean v4 = selected == 3;
+                    // Persist one of V1/V2/V3/V4 without touching any GPS/H3 data.
+                    store.setRendererV2Enabled(v2);
+                    store.setRendererV3Enabled(v3);
+                    store.setRendererV4Enabled(v4);
+                    // Disable old renderer before enabling the new renderer.
+                    fogOverlayView.setRendererV4(false);
+                    fogOverlayView.setRendererV3(false);
+                    fogOverlayView.setRendererV2(false);
+                    if (v2) fogOverlayView.setRendererV2(true);
+                    if (v3) fogOverlayView.setRendererV3(true);
+                    if (v4) fogOverlayView.setRendererV4(true);
+                    if (v3 || v4) {
+                        lastGpsCorridorLoadAt = 0;
+                        refreshGpsCorridors();
+                    }
+                    if (performanceDiagnostics != null) performanceDiagnostics.reset();
+                });
+    }
+
+    private void showCompositorChoices(View anchor) {
+        showRenderingChoices(R.string.menu_map_compositor,
+                new String[]{"GLSurfaceView — Default", "TextureView — Experimental"},
+                store.isTextureMapTestEnabled() ? 1 : 0,
+                anchor, selected -> {
+                    // Keep the existing stop-tracking guard, confirmation,
+                    // signing-neutral Activity recreate and data preservation.
+                    if ((selected == 1) != store.isTextureMapTestEnabled())
+                        showMapCompositorExperiment();
+                });
+    }
+
+    private void showSynchronizationChoices(View anchor) {
+        showRenderingChoices(R.string.menu_fog_synchronization,
+                new String[]{"Standard — Camera events", "Map frame — Experimental"},
+                store.isFogMapFrameSyncEnabled() ? 1 : 0,
+                anchor, selected -> {
+                    if ((selected == 1) != store.isFogMapFrameSyncEnabled())
+                        showFrameSyncExperiment();
+                });
+    }
+
+    private void showRenderingChoices(int title, String[] labels,
+                                      int selected, View anchor,
+                                      java.util.function.IntConsumer onSelect) {
+        new AlertDialog.Builder(this)
+                .setTitle(title)
+                .setSingleChoiceItems(labels, selected, (dialog, which) -> {
+                    dialog.dismiss();
+                    if (which != selected) onSelect.accept(which);
+                })
+                .setNegativeButton(R.string.menu_back,
+                        (dialog, which) -> showRenderingMenu(anchor))
+                .show();
     }
 
     private void showAboutUpdatesMenu(View anchor) {
@@ -1134,7 +1196,11 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 .setTitle(title)
                 .setItems(items, (dialog, which) -> {
                     if (which >= 0 && which < ids.size()) {
-                        handleDataMenuAction(ids.get(which));
+                        int id = ids.get(which);
+                        if (id == 23) showRendererChoices(anchor);
+                        else if (id == 24) showCompositorChoices(anchor);
+                        else if (id == 25) showSynchronizationChoices(anchor);
+                        else handleDataMenuAction(id);
                     }
                 })
                 .setNegativeButton(R.string.menu_back, (dialog, which) ->
