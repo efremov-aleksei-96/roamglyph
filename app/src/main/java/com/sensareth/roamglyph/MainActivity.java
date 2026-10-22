@@ -968,6 +968,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         lastLat = store.getLastLatitude();
         lastLng = store.getLastLongitude();
         lastAccuracy = store.getLastAccuracy();
+        // Background tracking can replace this stored location while our
+        // receiver is unregistered. Never attach an old rejection reason
+        // to a different, newly loaded GPS observation.
+        lastTrackingFixRejectionReason = null;
     }
 
     private void toggleTracking() {
