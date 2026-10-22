@@ -3,6 +3,9 @@
     <string name="menu_description">Menu</string>
     <string name="menu_data_offline">Data &amp; offline maps…</string>
     <string name="menu_rendering_diagnostics">Rendering &amp; diagnostics…</string>
+    <string name="menu_fog_renderer">Fog renderer</string>
+    <string name="menu_map_compositor">Map compositor</string>
+    <string name="menu_fog_synchronization">Fog synchronization</string>
     <string name="menu_about_updates">About &amp; updates…</string>
     <string name="menu_back">Back</string>
     <string name="menu_version_changelog">Version %1$s · Changelog</string>
