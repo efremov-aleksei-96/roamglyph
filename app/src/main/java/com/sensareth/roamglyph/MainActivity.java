@@ -48,6 +48,7 @@ import com.sensareth.roamglyph.map.DiscoveryOverlayBuilder;
 import com.sensareth.roamglyph.map.ExplorationCoverageIndex;
 import com.sensareth.roamglyph.map.FogOverlayView;
 import com.sensareth.roamglyph.map.FogGpsCorridors;
+import com.sensareth.roamglyph.data.GpsFixStatus;
 import com.sensareth.roamglyph.map.FogMapFrameGate;
 import com.sensareth.roamglyph.map.FogFrameMetrics;
 import com.sensareth.roamglyph.map.FogPerformanceDiagnostics;
@@ -224,6 +225,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private double lastLat;
     private double lastLng;
     private float lastAccuracy;
+    // UI-only latest tracking rejection, not persisted or used for fog coverage.
+    private String lastTrackingFixRejectionReason;
 
     private final BroadcastReceiver trackingReceiver = new BroadcastReceiver() {
         @Override
@@ -244,6 +247,11 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 lastLat = intent.getDoubleExtra(TrackingService.EXTRA_LAT, 0.0);
                 lastLng = intent.getDoubleExtra(TrackingService.EXTRA_LNG, 0.0);
                 lastAccuracy = intent.getFloatExtra(TrackingService.EXTRA_ACCURACY, 0f);
+                lastTrackingFixRejectionReason = accepted ? null :
+                        intent.getStringExtra(TrackingService.EXTRA_REJECTION_REASON);
+                if (!accepted && lastTrackingFixRejectionReason == null) {
+                    lastTrackingFixRejectionReason = "ignored";
+                }
                 renderCurrentLocation();
                 setLocateAvailable(true);
 
@@ -281,7 +289,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     refreshVisitedFromDatabase();
                 }
             }
-            updateUi(accepted);
+            updateUi();
             if (accepted && (store.isRendererV3Enabled()
                     || store.isRendererV4Enabled())) refreshGpsCorridors();
         }
@@ -292,7 +300,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         public void onReceive(Context context, Intent intent) {
             boolean wasEnabled = locationEnabled;
             locationEnabled = isSystemLocationEnabled();
-            updateUi(true);
+            updateUi();
 
             if (!wasEnabled && locationEnabled && hasLocationPermission()) {
                 requestCurrentLocation(false);
@@ -578,7 +586,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             frameMetrics.start();
         }
         setLocateAvailable(hasLocation);
-        updateUi(true);
+        updateUi();
 
         if (hasLocationPermission()) {
             requestCurrentLocation(!hasLocation);
@@ -940,11 +948,12 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         lastLat = location.getLatitude();
         lastLng = location.getLongitude();
         lastAccuracy = location.hasAccuracy() ? location.getAccuracy() : 0f;
+        lastTrackingFixRejectionReason = null;
         store.saveLastLocation(location);
 
         renderCurrentLocation();
         setLocateAvailable(true);
-        updateUi(true);
+        updateUi();
 
         if (centerWhenReady && map != null) {
             centerOnCurrentLocation(true);
@@ -1003,8 +1012,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         if (tracking) return;
 
         tracking = true;
+        lastTrackingFixRejectionReason = null;
         store.setTrackingActive(true);
-        updateUi(true);
+        updateUi();
         gpsText.setText(R.string.location_starting);
 
         Intent service = new Intent(this, TrackingService.class)
@@ -1014,8 +1024,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     private void stopTracking() {
         tracking = false;
+        lastTrackingFixRejectionReason = null;
         store.setTrackingActive(false);
-        updateUi(true);
+        updateUi();
 
         Intent service = new Intent(this, TrackingService.class)
                 .setAction(TrackingService.ACTION_STOP);
@@ -1493,7 +1504,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         });
     }
 
-    private void updateUi(boolean accepted) {
+    private void updateUi() {
         stateText.setText(tracking ? R.string.state_active : R.string.state_paused);
         stateText.setTextColor(tracking ? 0xFF81C995 : Color.WHITE);
 
@@ -1518,7 +1529,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             String gps = Float.isFinite(lastAccuracy) && lastAccuracy > 0f
                     ? "GPS ±" + Math.round(lastAccuracy) + " m"
                     : "GPS accuracy unavailable";
-            if (!accepted) gps += " · fix ignored";
+            gps += GpsFixStatus.suffix(tracking, lastAccuracy,
+                    lastTrackingFixRejectionReason);
             gpsText.setText(gps);
         } else if (tracking) {
             gpsText.setText(R.string.location_waiting);
@@ -1569,7 +1581,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                         scheduleViewportOverlay();
                         requestDiscoveryScan();
                     }
-                    updateUi(true);
+                    updateUi();
                 });
             } catch (RuntimeException error) {
                 refreshPending.set(false);
@@ -1733,7 +1745,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 }
 
                 if (result.newlyDiscovered > 0) {
-                    updateUi(true);
+                    updateUi();
                 }
 
                 GeoJsonSource discoveredSource =
@@ -2139,7 +2151,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         refreshVisitedFromDatabase();
         renderCurrentLocation();
         setLocateAvailable(hasLocation);
-        updateUi(true);
+        updateUi();
         requestDiscoveryScan();
 
         if (tracking && hasLocationPermission() && locationEnabled) {
@@ -2165,7 +2177,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         refreshVisitedFromDatabase();
         renderCurrentLocation();
         setLocateAvailable(hasLocation);
-        updateUi(true);
+        updateUi();
         if (appUpdates != null) appUpdates.onResume();
     }
 
