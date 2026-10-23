@@ -46,6 +46,44 @@ public final class FogOrganicContourTest {
         assertEquals(255, shape[50*w+50] >>> 24);
     }
 
+    @Test public void diagonalUnvisitedPocketStaysDarkBeyondEuclideanExteriorBudget() {
+        int w = 51, h = 51, cx = 25, cy = 25;
+        int[] coverage = new int[w * h];
+        Arrays.fill(coverage, 0xFFFFFFFF);
+        // An unvisited circular pocket whose nearest visited sample is
+        // sqrt(5) pixels away from its centre. The old square-integral
+        // neighbourhood included diagonal source pixels with dx=2,dy=1
+        // and falsely cleared the centre despite a 2-pixel radius cap.
+        for (int y = cy - 2; y <= cy + 2; y++) {
+            for (int x = cx - 2; x <= cx + 2; x++) {
+                int dx = x - cx, dy = y - cy;
+                if (dx * dx + dy * dy <= 4) coverage[y * w + x] = 0;
+            }
+        }
+        FogOrganicContour.renderInPlace(coverage, w, h, 4, 2, () -> false);
+        assertEquals("2.5m budget must be Euclidean, not a square", 0,
+                coverage[cy * w + cx] >>> 24);
+        assertEquals("Surrounding explored geography must remain open", 255,
+                coverage[10 * w + 10] >>> 24);
+    }
+
+    @Test public void zeroExteriorBudgetCannotOpenUnvisitedPixels() {
+        int w = 37, h = 31;
+        int[] coverage = new int[w * h];
+        for (int y = 9; y <= 23; y++) {
+            for (int x = 7; x <= 29; x++) coverage[y * w + x] = 0xFFFFFFFF;
+        }
+        FogOrganicContour.renderInPlace(coverage, w, h, 5, 0, () -> false);
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < w; x++) {
+                if (y < 9 || y > 23 || x < 7 || x > 29) {
+                    assertEquals("Zero-budget contour must never expand", 0,
+                            coverage[y * w + x] >>> 24);
+                }
+            }
+        }
+    }
+
     @Test public void preservesConnectedTwentyMetreCorridors() {
         int w=120,h=80;
         int[] route = new int[w*h];
