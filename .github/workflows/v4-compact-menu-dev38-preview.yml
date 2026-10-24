@@ -20,9 +20,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      CANDIDATE_SHA: a0f60cf591ea96acd1773226c5327f42c7d8f51f
+      CANDIDATE_SHA: 3e449143c89548aac46864f5296c90f4dceaf60d
       BASE_SHA: 243532d9116e6ee20c7c6f22da3fa8add53d69c3
-      ROAMGLYPH_SOURCE_SHA: a0f60cf591ea96acd1773226c5327f42c7d8f51f
+      ROAMGLYPH_SOURCE_SHA: 3e449143c89548aac46864f5296c90f4dceaf60d
     steps:
       - name: Check out trusted main workflow repository
         uses: actions/checkout@v5
@@ -180,7 +180,7 @@ jobs:
           BADGING="$("$AAPT" dump badging "$INPUT" | head -n 1)"
           [[ "$BADGING" == *"name='com.sensareth.roamglyph'"* ]]
           [[ "$BADGING" == *"versionCode='42'"* ]]
-          [[ "$BADGING" == *"versionName='0.5.0-dev.42+ga0f60cf5'"* ]]
+          [[ "$BADGING" == *"versionName='0.5.0-dev.42+g3e449143'"* ]]
           if "$APKSIGNER" verify "$INPUT" >/dev/null 2>&1; then
             echo "::error::Refusing an already signed candidate."
             exit 1
@@ -196,7 +196,7 @@ jobs:
             exit 1
           }
           mkdir -p dist
-          OUTPUT=dist/roamglyph-0.5.0-dev.42-ga0f60cf5.apk
+          OUTPUT=dist/roamglyph-0.5.0-dev.42-g3e449143.apk
           "$APKSIGNER" sign --ks "$KEYSTORE" --ks-type PKCS12 \
             --ks-key-alias roamglyph-dev \
             --ks-pass env:ROAMGLYPH_DEV_KEYSTORE_PASSWORD \
@@ -213,7 +213,7 @@ jobs:
         with:
           name: roamglyph-pr56-dev42-pixel-preview-signed
           path: |
-            dist/roamglyph-0.5.0-dev.42-ga0f60cf5.apk
+            dist/roamglyph-0.5.0-dev.42-g3e449143.apk
             dist/SHA256SUMS.txt
           retention-days: 14
           if-no-files-found: error
@@ -229,9 +229,9 @@ jobs:
       actions: read
     env:
       GH_TOKEN: ${{ github.token }}
-      SOURCE_SHA: a0f60cf591ea96acd1773226c5327f42c7d8f51f
-      RELEASE_TAG: dev-vc42-ga0f60cf5
-      APK_NAME: roamglyph-0.5.0-dev.42-ga0f60cf5.apk
+      SOURCE_SHA: 3e449143c89548aac46864f5296c90f4dceaf60d
+      RELEASE_TAG: dev-vc42-g3e449143
+      APK_NAME: roamglyph-0.5.0-dev.42-g3e449143.apk
       PIN: 89defa011682172a6d892cda46cd6132393dccda22cecf1175f825596db80758
     steps:
       - name: Get certified APK, not candidate code
@@ -292,7 +292,7 @@ jobs:
             --target "$SOURCE_SHA" \
             --prerelease --latest=false \
             --title "RoamGlyph 0.5.0-dev.42 (Automatic camera benchmark)" \
-            --notes "RoamGlyph dev.42 adds the opt-in Automatic camera benchmark (Quick V4 4-mode or Full 16-mode) under Rendering & diagnostics, using source PR #56 pinned to a0f60cf5. It runs camera-only sweeps, collects one shareable local report and restores stored renderer/compositor settings without changing GPS/H3/Room history. This experimental Pixel QA preview is not a stable release. Stop Exploration and export JSON backup before in-place updating. PR #56 remains outside main."
+            --notes "RoamGlyph dev.42 adds the opt-in Automatic camera benchmark (Quick V4 4-mode or Full 16-mode) under Rendering & diagnostics, using source PR #56 pinned to 3e449143. It runs camera-only sweeps, collects one shareable local report and restores stored renderer/compositor settings without changing GPS/H3/Room history. This experimental Pixel QA preview is not a stable release. Stop Exploration and export JSON backup before in-place updating. PR #56 remains outside main."
 
       - name: Verify public prerelease is detectable by in-app updater
         shell: bash
