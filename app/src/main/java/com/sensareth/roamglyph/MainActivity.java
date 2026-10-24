@@ -1241,6 +1241,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     /** Fast map shortcut: exactly three rendering groups; standard menu stays intact. */
     private void showQuickRenderingMenu(View anchor) {
+        if (AutoBenchmarkRunner.isRunning()) {
+            benchmarkRunner.showStopDialog();
+            return;
+        }
         String[] labels = {
                 getString(R.string.menu_fog_renderer)
                         + "\n" + FogRendererChoice.label(currentRendererChoice()),
@@ -2164,6 +2168,11 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     }
 
     private void sharePerformanceDiagnostics(String content) {
+        if (AutoBenchmarkRunner.isRunning()) {
+            Toast.makeText(this, "Benchmark running: use main menu to stop",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
         if (performanceDiagnostics == null) return;
         Intent send = new Intent(Intent.ACTION_SEND);
         send.setType("text/plain");
@@ -2173,6 +2182,11 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     }
 
     private void resetPerformanceDiagnostics() {
+        if (AutoBenchmarkRunner.isRunning()) {
+            Toast.makeText(this, "Diagnostics reset automatically during benchmark",
+                    Toast.LENGTH_SHORT).show();
+            return;
+        }
         if (performanceDiagnostics == null) return;
         // Keep GPS/Room/H3 coverage, fog caches and renderer settings intact.
         performanceDiagnostics.reset();
@@ -2241,6 +2255,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private boolean onMapClickForDiscovery(
             @NonNull org.maplibre.android.geometry.LatLng point
     ) {
+        if (AutoBenchmarkRunner.isRunning()) return false;
         if (map == null || map.getStyle() == null) return false;
 
         PointF screenPoint = map.getProjection().toScreenLocation(point);
@@ -2317,7 +2332,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     }
 
     private void zoomMap(boolean zoomIn) {
-        if (map == null) return;
+        if (AutoBenchmarkRunner.isRunning() || map == null) return;
         map.animateCamera(
                 zoomIn
                         ? org.maplibre.android.camera.CameraUpdateFactory.zoomIn()
@@ -2339,6 +2354,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     }
 
     private void centerOnCurrentLocation(boolean zoomIn) {
+        if (AutoBenchmarkRunner.isRunning()) return;
         if (!hasLocation) {
             gpsText.setText(R.string.location_not_determined);
             return;
