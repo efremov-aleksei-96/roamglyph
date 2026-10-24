@@ -274,6 +274,9 @@ public final class AutoBenchmarkRunner {
             for (String part : run.reports) report.append(part);
             session = null;
             finished = new Finished(run.original, report.toString());
+            // MapLibre persists UiSettings gesture flags through saved state.
+            // Undo the transient benchmark restriction BEFORE recreate().
+            if (map != null) map.getUiSettings().setAllGesturesEnabled(true);
             activity.recreate(); // Return to the user's real saved preferences.
         } else if (mode.textureView != run.mode().textureView) {
             activity.recreate();
@@ -289,6 +292,7 @@ public final class AutoBenchmarkRunner {
         stageStarted = false;
         session = null;
         finished = new Finished(run.original, null);
+        if (map != null) map.getUiSettings().setAllGesturesEnabled(true);
         activity.recreate();
     }
 
