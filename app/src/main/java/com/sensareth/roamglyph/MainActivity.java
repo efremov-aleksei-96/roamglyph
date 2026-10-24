@@ -1520,7 +1520,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 return true;
             }
             if (id == 15 && performanceDiagnostics != null) {
-                boolean next = !AutoBenchmarkRunner.rendererChoice(store) == 1;
+                boolean next = AutoBenchmarkRunner.rendererChoice(store) != 1;
                 store.setRendererV2Enabled(next);
                 fogOverlayView.setRendererV2(next);
                 if (next) {
@@ -1537,7 +1537,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 return true;
             }
             if (id == 16 && performanceDiagnostics != null) {
-                boolean next = !AutoBenchmarkRunner.rendererChoice(store) == 2;
+                boolean next = AutoBenchmarkRunner.rendererChoice(store) != 2;
                 store.setRendererV3Enabled(next);
                 if (next) {
                     store.setRendererV2Enabled(false);
@@ -1554,7 +1554,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 return true;
             }
             if (id == 17 && performanceDiagnostics != null) {
-                boolean next = !AutoBenchmarkRunner.rendererChoice(store) == 3;
+                boolean next = AutoBenchmarkRunner.rendererChoice(store) != 3;
                 store.setRendererV4Enabled(next);
                 if (next) {
                     store.setRendererV2Enabled(false);
@@ -1852,7 +1852,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     /** Background route snapshot. The persisted H3 and GPS rows are untouched. */
     private void refreshGpsCorridors() {
         if (dataExecutor == null || repository == null || fogOverlayView == null
-                || (!AutoBenchmarkRunner.rendererChoice(store) == 2 && !AutoBenchmarkRunner.rendererChoice(store) == 3)) return;
+                || (AutoBenchmarkRunner.rendererChoice(store) != 2 && AutoBenchmarkRunner.rendererChoice(store) != 3)) return;
         long now = android.os.SystemClock.uptimeMillis();
         if (now - lastGpsCorridorLoadAt < 15_000L) return;
         lastGpsCorridorLoadAt = now;
