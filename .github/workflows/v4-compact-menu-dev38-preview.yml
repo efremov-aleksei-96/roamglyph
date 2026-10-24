@@ -20,9 +20,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      CANDIDATE_SHA: 7b2f6f89ac5bfc9d497c6d129205106541aea7e1
+      CANDIDATE_SHA: f1994519d63117849d9ebbbd8007c6f277382cc9
       BASE_SHA: 243532d9116e6ee20c7c6f22da3fa8add53d69c3
-      ROAMGLYPH_SOURCE_SHA: 7b2f6f89ac5bfc9d497c6d129205106541aea7e1
+      ROAMGLYPH_SOURCE_SHA: f1994519d63117849d9ebbbd8007c6f277382cc9
     steps:
       - name: Check out trusted main workflow repository
         uses: actions/checkout@v5
@@ -182,7 +182,7 @@ jobs:
           BADGING="$("$AAPT" dump badging "$INPUT" | head -n 1)"
           [[ "$BADGING" == *"name='com.sensareth.roamglyph'"* ]]
           [[ "$BADGING" == *"versionCode='43'"* ]]
-          [[ "$BADGING" == *"versionName='0.5.0-dev.43+g7b2f6f89'"* ]]
+          [[ "$BADGING" == *"versionName='0.5.0-dev.43+gf1994519'"* ]]
           if "$APKSIGNER" verify "$INPUT" >/dev/null 2>&1; then
             echo "::error::Refusing an already signed candidate."
             exit 1
@@ -198,7 +198,7 @@ jobs:
             exit 1
           }
           mkdir -p dist
-          OUTPUT=dist/roamglyph-0.5.0-dev.43-g7b2f6f89.apk
+          OUTPUT=dist/roamglyph-0.5.0-dev.43-gf1994519.apk
           "$APKSIGNER" sign --ks "$KEYSTORE" --ks-type PKCS12 \
             --ks-key-alias roamglyph-dev \
             --ks-pass env:ROAMGLYPH_DEV_KEYSTORE_PASSWORD \
@@ -215,7 +215,7 @@ jobs:
         with:
           name: roamglyph-pr59-dev43-pixel-preview-signed
           path: |
-            dist/roamglyph-0.5.0-dev.43-g7b2f6f89.apk
+            dist/roamglyph-0.5.0-dev.43-gf1994519.apk
             dist/SHA256SUMS.txt
           retention-days: 14
           if-no-files-found: error
@@ -231,9 +231,9 @@ jobs:
       actions: read
     env:
       GH_TOKEN: ${{ github.token }}
-      SOURCE_SHA: 7b2f6f89ac5bfc9d497c6d129205106541aea7e1
-      RELEASE_TAG: dev-vc43-g7b2f6f89
-      APK_NAME: roamglyph-0.5.0-dev.43-g7b2f6f89.apk
+      SOURCE_SHA: f1994519d63117849d9ebbbd8007c6f277382cc9
+      RELEASE_TAG: dev-vc43-gf1994519
+      APK_NAME: roamglyph-0.5.0-dev.43-gf1994519.apk
       PIN: 89defa011682172a6d892cda46cd6132393dccda22cecf1175f825596db80758
     steps:
       - name: Get certified APK, not candidate code
@@ -294,7 +294,7 @@ jobs:
             --target "$SOURCE_SHA" \
             --prerelease --latest=false \
             --title "RoamGlyph 0.5.0-dev.43 (New-territory benchmark)" \
-            --notes "RoamGlyph dev.43 adds one-tap new-territory benchmark across four V4 compositor/synchronization modes: 24 camera waypoints across multiple rings at zoom 17.5, combined comparison summary, separate cancelled/no-result fog-tile build counts, and LOW TILE WORKLOAD warnings. Based on reviewed experimental source PR #59 pinned to 7b2f6f89. It does not modify GPS, H3 or Room history; saved settings restored. Stop Exploration and export a JSON backup before in-place updating. PR #59 stays unmerged outside main pending Pixel stress validation."
+            --notes "RoamGlyph dev.43 adds one-tap new-territory benchmark across four V4 compositor/synchronization modes: 24 camera waypoints across multiple rings at zoom 17.5, combined comparison summary, separate cancelled/no-result fog-tile build counts, and LOW TILE WORKLOAD warnings. Based on reviewed experimental source PR #59 pinned to f1994519. It does not modify GPS, H3 or Room history; saved settings restored. Stop Exploration and export a JSON backup before in-place updating. PR #59 stays unmerged outside main pending Pixel stress validation."
 
       - name: Verify public prerelease is detectable by in-app updater
         shell: bash
