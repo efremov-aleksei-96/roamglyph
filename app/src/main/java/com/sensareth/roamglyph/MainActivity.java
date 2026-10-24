@@ -1164,26 +1164,32 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         boolean shortWindow = availableHeightPx < dp(520);
         int orientation = shortWindow
                 ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL;
-        if (quickMapTools.getOrientation() == orientation) return;
-
-        quickMapTools.setOrientation(orientation);
-        View divider = quickMapTools.getChildAt(1);
-        divider.setLayoutParams(new LinearLayout.LayoutParams(
-                shortWindow ? dp(1) : dp(56),
-                shortWindow ? dp(52) : dp(1)
-        ));
+        boolean orientationChanged = quickMapTools.getOrientation() != orientation;
+        if (orientationChanged) {
+            quickMapTools.setOrientation(orientation);
+            View divider = quickMapTools.getChildAt(1);
+            divider.setLayoutParams(new LinearLayout.LayoutParams(
+                    shortWindow ? dp(1) : dp(56),
+                    shortWindow ? dp(52) : dp(1)
+            ));
+        }
         FrameLayout.LayoutParams lp =
                 (FrameLayout.LayoutParams) quickMapTools.getLayoutParams();
-        // The horizontal row needs the width of all three 56dp controls.
-        // Keep the compact fixed width only for the vertical portrait stack.
+        // Full horizontal tools take 169dp; vertical column takes 56dp.
         lp.width = shortWindow
                 ? FrameLayout.LayoutParams.WRAP_CONTENT : dp(56);
-        if (shortWindow) {
-            // Below top status card, 80dp left of the zoom/location controls.
+        if (availableHeightPx < dp(320)) {
+            // In very short multi-window, the space below the status card
+            // would collide with Stop exploration. Place the row ABOVE that
+            // card instead: the existing status starts 52dp below root top.
+            lp.gravity = Gravity.TOP | Gravity.START;
+            lp.setMargins(dp(8), 0, 0, 0);
+        } else if (shortWindow) {
+            // Beneath status card and left of the zoom/location controls.
             lp.gravity = Gravity.TOP | Gravity.END;
             lp.setMargins(0, dp(166), dp(80), 0);
         } else {
-            // Normal portrait: 16dp above the zoom group.
+            // Portrait: 16dp above zoom controls.
             lp.gravity = Gravity.BOTTOM | Gravity.END;
             lp.setMargins(0, 0, dp(16), dp(328));
         }
