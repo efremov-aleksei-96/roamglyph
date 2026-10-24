@@ -136,6 +136,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private static final String LOCATION_LAYER_ID = "roamglyph-current-location-dot";
 
     private MapView mapView;
+    private AutoBenchmarkRunner benchmarkRunner;
     private FogOverlayView fogOverlayView;
     private FogFrameMetrics frameMetrics;
     private FogPerformanceDiagnostics performanceDiagnostics;
@@ -162,7 +163,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             frameFallbackPending = false;
             frameFallbackIsRetry = false;
             if (!isDestroyed() && mapLifecycleResumed && store != null
-                    && store.isFogMapFrameSyncEnabled() && fogOverlayView != null) {
+                    && AutoBenchmarkRunner.mapFrameSync(store) && fogOverlayView != null) {
                 // MapLibre may skip a finish callback even AFTER camera idle.
                 // Keep showing the latest conservative fog projection while
                 // awaiting a matching render-start/finish pair.
@@ -252,7 +253,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 renderCurrentLocation();
                 setLocateAvailable(true);
 
-                if (!autoCentered) {
+                if (!autoCentered && !AutoBenchmarkRunner.isRunning()) {
                     centerOnCurrentLocation(true);
                     autoCentered = true;
                 }
@@ -287,8 +288,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 }
             }
             updateUi(accepted);
-            if (accepted && (store.isRendererV3Enabled()
-                    || store.isRendererV4Enabled())) refreshGpsCorridors();
+            if (accepted && (AutoBenchmarkRunner.rendererChoice(store) == 2
+                    || AutoBenchmarkRunner.rendererChoice(store) == 3)) refreshGpsCorridors();
         }
     };
 
@@ -381,7 +382,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         // Optional diagnostic A/B: same exact fog/GPS data with different
         // Android compositor paths. Default remains fast GLSurfaceView.
         mapView = new MapView(this, new MapLibreMapOptions()
-                .textureMode(store.isTextureMapTestEnabled()));
+                .textureMode(AutoBenchmarkRunner.textureView(store)));
         mapView.onCreate(savedInstanceState);
         mapView.getMapAsync(this);
         root.addView(
@@ -394,18 +395,18 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
         if ((getApplicationInfo().flags
                 & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
-            performanceDiagnostics = new FogPerformanceDiagnostics(store.isFogEnabled());
+            performanceDiagnostics = new FogPerformanceDiagnostics(AutoBenchmarkRunner.fogEnabled(store));
         }
 
         // Foreground screen-space fog cannot expose a strip during a rapid
         // gesture while MapLibre updates/clips its world GeoJSON sources.
         fogOverlayView = new FogOverlayView(this);
         fogOverlayView.setPerformanceDiagnostics(performanceDiagnostics);
-        fogOverlayView.setRendererV2(store.isRendererV2Enabled());
-        fogOverlayView.setRendererV3(store.isRendererV3Enabled());
-        fogOverlayView.setRendererV4(store.isRendererV4Enabled());
-        fogOverlayView.setMapFrameSyncEnabled(store.isFogMapFrameSyncEnabled());
-        fogOverlayView.setFogEnabled(store.isFogEnabled());
+        fogOverlayView.setRendererV2(AutoBenchmarkRunner.rendererChoice(store) == 1);
+        fogOverlayView.setRendererV3(AutoBenchmarkRunner.rendererChoice(store) == 2);
+        fogOverlayView.setRendererV4(AutoBenchmarkRunner.rendererChoice(store) == 3);
+        fogOverlayView.setMapFrameSyncEnabled(AutoBenchmarkRunner.mapFrameSync(store));
+        fogOverlayView.setFogEnabled(AutoBenchmarkRunner.fogEnabled(store));
         root.addView(
                 fogOverlayView,
                 new FrameLayout.LayoutParams(
@@ -630,11 +631,16 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         }
 
         setContentView(root);
+        benchmarkRunner = new AutoBenchmarkRunner(this, mapView, fogOverlayView,
+                performanceDiagnostics, () -> {
+                    lastGpsCorridorLoadAt = 0L;
+                    refreshGpsCorridors();
+                });
         appUpdates = new AppUpdateManager(this, () -> tracking);
         if ((getApplicationInfo().flags
                 & android.content.pm.ApplicationInfo.FLAG_DEBUGGABLE) != 0) {
             frameMetrics = new FogFrameMetrics(
-                    getWindow(), store.isFogEnabled(), performanceDiagnostics);
+                    getWindow(), AutoBenchmarkRunner.fogEnabled(store), performanceDiagnostics);
             frameMetrics.start();
         }
         setLocateAvailable(hasLocation);
@@ -654,6 +660,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     @Override
     public void onMapReady(@NonNull MapLibreMap mapLibreMap) {
         map = mapLibreMap;
+        benchmarkRunner.setMap(map);
         fogOverlayView.attachMap(map);
         if (h3 != null) fogOverlayView.attachCoverage(h3, coverageIndex);
         updateMapZoomLabel();
@@ -663,7 +670,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         map.addOnCameraMoveListener(() -> {
             updateMapZoomLabel();
             lastCameraMotionAtNanos = SystemClock.elapsedRealtimeNanos();
-            if (store.isFogMapFrameSyncEnabled()) {
+            if (AutoBenchmarkRunner.mapFrameSync(store)) {
                 scheduleMapFrameFallback();
             } else {
                 fogOverlayView.invalidate();
@@ -673,7 +680,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         });
         map.addOnCameraIdleListener(() -> {
             updateMapZoomLabel();
-            if (store.isFogMapFrameSyncEnabled()) {
+            if (AutoBenchmarkRunner.mapFrameSync(store)) {
                 // Camera idle is NOT proof that the latest GL frame rendered.
                 // A late/missing finish callback must leave the rescue armed.
                 if (lastCameraMotionAtNanos > lastCameraMotionHandledAtNanos) {
@@ -738,7 +745,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             lastCameraMotionHandledAtNanos = lastCameraMotionAtNanos;
             cancelMapFrameFallback();
         }
-        boolean redraw = store.isFogMapFrameSyncEnabled() && corresponding;
+        boolean redraw = AutoBenchmarkRunner.mapFrameSync(store) && corresponding;
         fogOverlayView.onMapFrameCallback(callbackAtNs, redraw);
         if (redraw && performanceDiagnostics != null) {
             performanceDiagnostics.recordMapFrameRedraw();
@@ -845,7 +852,11 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         renderCurrentLocation();
 
         if (!initialMapCameraSet) {
-            if (hasLocation) {
+            CameraPosition benchmarkCamera = AutoBenchmarkRunner.initialCamera();
+            if (benchmarkCamera != null) {
+                map.setCameraPosition(benchmarkCamera);
+                autoCentered = true;
+            } else if (hasLocation) {
                 map.setCameraPosition(
                         new CameraPosition.Builder()
                                 .target(new org.maplibre.android.geometry.LatLng(lastLat, lastLng))
@@ -866,6 +877,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
         scheduleViewportOverlay();
         requestDiscoveryScan();
+        benchmarkRunner.onStyleReady();
     }
 
     private void requestLocationPermission(boolean forTracking) {
@@ -1022,6 +1034,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     }
 
     private void toggleTracking() {
+        if (AutoBenchmarkRunner.isRunning()) return;
         if (h3 == null) {
             gpsText.setText(R.string.h3_unavailable);
             return;
@@ -1087,10 +1100,14 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
      * actions live in compact category dialogs; no existing action is removed.
      */
     private void showDataMenu(View anchor) {
+        if (AutoBenchmarkRunner.isRunning()) {
+            benchmarkRunner.showStopDialog();
+            return;
+        }
         PopupMenu popup = new PopupMenu(this, anchor);
         popup.getMenu().add(0, 11, 0, R.string.menu_history);
         popup.getMenu().add(0, 6, 1,
-                store.isFogEnabled() ? R.string.menu_fog_on : R.string.menu_fog_off);
+                AutoBenchmarkRunner.fogEnabled(store) ? R.string.menu_fog_on : R.string.menu_fog_off);
         popup.getMenu().add(0, 7, 2,
                 store.isDiscoveriesEnabled()
                         ? R.string.menu_discoveries_on : R.string.menu_discoveries_off);
@@ -1228,10 +1245,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 getString(R.string.menu_fog_renderer)
                         + "\n" + FogRendererChoice.label(currentRendererChoice()),
                 getString(R.string.menu_map_compositor)
-                        + "\n" + (store.isTextureMapTestEnabled()
+                        + "\n" + (AutoBenchmarkRunner.textureView(store)
                                 ? "TextureView" : "GLSurfaceView"),
                 getString(R.string.menu_fog_synchronization)
-                        + "\n" + (store.isFogMapFrameSyncEnabled()
+                        + "\n" + (AutoBenchmarkRunner.mapFrameSync(store)
                                 ? "Map frame" : "Standard")
         };
         new AlertDialog.Builder(this)
@@ -1253,23 +1270,24 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 + "\n" + FogRendererChoice.label(currentRendererChoice()));
         ids.add(24);
         labels.add(getString(R.string.menu_map_compositor)
-                + "\n" + (store.isTextureMapTestEnabled()
+                + "\n" + (AutoBenchmarkRunner.textureView(store)
                         ? "TextureView" : "GLSurfaceView"));
         ids.add(25);
         labels.add(getString(R.string.menu_fog_synchronization)
-                + "\n" + (store.isFogMapFrameSyncEnabled()
+                + "\n" + (AutoBenchmarkRunner.mapFrameSync(store)
                         ? "Map frame" : "Standard"));
         ids.add(26);
         labels.add(getString(R.string.menu_quick_map_access)
                 + "\n" + QuickMapAccessMode.label(store.getQuickMapAccessMode()));
         ids.add(14);
         labels.add(getString(R.string.menu_performance_diagnostics));
+        ids.add(27);
+        labels.add("Automatic camera benchmark");
         showMenuSection(R.string.menu_rendering_diagnostics, ids, labels, anchor);
     }
 
     private int currentRendererChoice() {
-        return FogRendererChoice.current(store.isRendererV2Enabled(),
-                store.isRendererV3Enabled(), store.isRendererV4Enabled());
+        return AutoBenchmarkRunner.rendererChoice(store);
     }
 
     /** Radio choices replace ambiguous independent toggles. A selected item is a no-op. */
@@ -1312,11 +1330,11 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private void showCompositorChoices(View anchor, boolean fromQuick) {
         showRenderingChoices(R.string.menu_map_compositor,
                 new String[]{"GLSurfaceView — Default", "TextureView — Experimental"},
-                store.isTextureMapTestEnabled() ? 1 : 0,
+                AutoBenchmarkRunner.textureView(store) ? 1 : 0,
                 anchor, selected -> {
                     // Keep the existing stop-tracking guard, confirmation,
                     // signing-neutral Activity recreate and data preservation.
-                    if ((selected == 1) != store.isTextureMapTestEnabled())
+                    if ((selected == 1) != AutoBenchmarkRunner.textureView(store))
                         showMapCompositorExperiment();
                 }, fromQuick);
     }
@@ -1328,9 +1346,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private void showSynchronizationChoices(View anchor, boolean fromQuick) {
         showRenderingChoices(R.string.menu_fog_synchronization,
                 new String[]{"Standard — Camera events", "Map frame — Experimental"},
-                store.isFogMapFrameSyncEnabled() ? 1 : 0,
+                AutoBenchmarkRunner.mapFrameSync(store) ? 1 : 0,
                 anchor, selected -> {
-                    if ((selected == 1) != store.isFogMapFrameSyncEnabled())
+                    if ((selected == 1) != AutoBenchmarkRunner.mapFrameSync(store))
                         showFrameSyncExperiment();
                 }, fromQuick);
     }
@@ -1386,6 +1404,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                         else if (id == 24) showCompositorChoices(anchor);
                         else if (id == 25) showSynchronizationChoices(anchor);
                         else if (id == 26) showQuickMapAccessChoices(anchor);
+                        else if (id == 27) benchmarkRunner.choosePlan(
+                                tracking || store.isTrackingActive());
                         else handleDataMenuAction(id);
                     }
                 })
@@ -1429,7 +1449,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 return true;
             }
             if (id == 6) {
-                boolean enabled = !store.isFogEnabled();
+                boolean enabled = !AutoBenchmarkRunner.fogEnabled(store);
                 store.setFogEnabled(enabled);
                 if (frameMetrics != null) frameMetrics.setFogEnabled(enabled);
                 if (performanceDiagnostics != null) {
@@ -1500,7 +1520,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 return true;
             }
             if (id == 15 && performanceDiagnostics != null) {
-                boolean next = !store.isRendererV2Enabled();
+                boolean next = !AutoBenchmarkRunner.rendererChoice(store) == 1;
                 store.setRendererV2Enabled(next);
                 fogOverlayView.setRendererV2(next);
                 if (next) {
@@ -1517,7 +1537,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 return true;
             }
             if (id == 16 && performanceDiagnostics != null) {
-                boolean next = !store.isRendererV3Enabled();
+                boolean next = !AutoBenchmarkRunner.rendererChoice(store) == 2;
                 store.setRendererV3Enabled(next);
                 if (next) {
                     store.setRendererV2Enabled(false);
@@ -1534,7 +1554,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 return true;
             }
             if (id == 17 && performanceDiagnostics != null) {
-                boolean next = !store.isRendererV4Enabled();
+                boolean next = !AutoBenchmarkRunner.rendererChoice(store) == 3;
                 store.setRendererV4Enabled(next);
                 if (next) {
                     store.setRendererV2Enabled(false);
@@ -1832,7 +1852,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     /** Background route snapshot. The persisted H3 and GPS rows are untouched. */
     private void refreshGpsCorridors() {
         if (dataExecutor == null || repository == null || fogOverlayView == null
-                || (!store.isRendererV3Enabled() && !store.isRendererV4Enabled())) return;
+                || (!AutoBenchmarkRunner.rendererChoice(store) == 2 && !AutoBenchmarkRunner.rendererChoice(store) == 3)) return;
         long now = android.os.SystemClock.uptimeMillis();
         if (now - lastGpsCorridorLoadAt < 15_000L) return;
         lastGpsCorridorLoadAt = now;
@@ -1842,8 +1862,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 FogGpsCorridors snapshot = FogGpsCorridors.from(repository.loadGpsPoints());
                 runOnUiThread(() -> {
                     if (!isDestroyed() && generation == gpsCorridorGeneration.get()
-                            && (store.isRendererV3Enabled()
-                                    || store.isRendererV4Enabled())) {
+                            && (AutoBenchmarkRunner.rendererChoice(store) == 2
+                                    || AutoBenchmarkRunner.rendererChoice(store) == 3)) {
                         fogOverlayView.setGpsCorridors(snapshot);
                     }
                 });
@@ -2035,7 +2055,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     }
 
     private void showFrameSyncExperiment() {
-        boolean next = !store.isFogMapFrameSyncEnabled();
+        boolean next = !AutoBenchmarkRunner.mapFrameSync(store);
         new AlertDialog.Builder(this)
                 .setTitle("Experimental fog frame synchronization")
                 .setMessage(next
@@ -2066,7 +2086,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     .show();
             return;
         }
-        boolean next = !store.isTextureMapTestEnabled();
+        boolean next = !AutoBenchmarkRunner.textureView(store);
         new AlertDialog.Builder(this)
                 .setTitle("Experimental map synchronization")
                 .setMessage(next
@@ -2097,7 +2117,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 .append("; discoveries: ").append(store.isDiscoveriesEnabled())
                 .append("; tracking: ").append(tracking).append('\n');
         report.append("Fog synchronization: ")
-                .append(store.isFogMapFrameSyncEnabled()
+                .append(AutoBenchmarkRunner.mapFrameSync(store)
                         ? "MapLibre frame (experimental)" : "Standard camera events")
                 .append('\n');
         report.append("Map compositor: ")
@@ -2106,9 +2126,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                         ? "TextureView (experimental)" : "GLSurfaceView (default)")
                 .append('\n');
         report.append("Fog renderer: ")
-                .append(store.isRendererV4Enabled() ? "V4 organic contour"
-                        : store.isRendererV3Enabled() ? "V3 GPS corridors"
-                        : store.isRendererV2Enabled() ? "V2 SDF prototype" : "V1 legacy")
+                .append(AutoBenchmarkRunner.rendererChoice(store) == 3 ? "V4 organic contour"
+                        : AutoBenchmarkRunner.rendererChoice(store) == 2 ? "V3 GPS corridors"
+                        : AutoBenchmarkRunner.rendererChoice(store) == 1 ? "V2 SDF prototype" : "V1 legacy")
                 .append('\n');
         report.append("Map zoom: ");
         if (map != null && map.getCameraPosition() != null) {
@@ -2419,6 +2439,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         super.onResume();
         mapLifecycleResumed = true;
         mapView.onResume();
+        if (benchmarkRunner != null) benchmarkRunner.onResume();
         // A live Activity can survive onLowMemory without detaching the
         // fog view. Restart geographic tile demand even if the camera
         // never moves after the user returns to the app.
@@ -2436,6 +2457,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     @Override
     protected void onPause() {
+        if (benchmarkRunner != null) benchmarkRunner.onPause();
         mapLifecycleResumed = false;
         cancelMapFrameFallback();
         frameStartTimes.clear();
