@@ -1134,6 +1134,46 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     }
 
     /** Small category list; every value is also visible without opening it. */
+    private Button makeQuickMapButton(String icon, int labelRes) {
+        Button button = new Button(this);
+        button.setAllCaps(false);
+        button.setText(icon);
+        button.setTextSize(23f);
+        button.setTextColor(Color.WHITE);
+        button.setBackgroundColor(Color.TRANSPARENT);
+        button.setPadding(0, 0, 0, 0);
+        button.setMinWidth(0);
+        button.setMinHeight(0);
+        button.setContentDescription(getString(labelRes));
+        return button;
+    }
+
+    /** Only the floating tools change; persisted exploration is untouched. */
+    private void updateQuickMapToolsVisibility() {
+        if (quickMapTools == null || store == null) return;
+        int mode = store.getQuickMapAccessMode();
+        quickMapTools.setVisibility(
+                QuickMapAccessMode.showRender(mode) ? View.VISIBLE : View.GONE);
+        int detailVisibility = QuickMapAccessMode.showDiagnostics(mode)
+                ? View.VISIBLE : View.GONE;
+        if (quickShareButton != null) quickShareButton.setVisibility(detailVisibility);
+        if (quickResetButton != null) quickResetButton.setVisibility(detailVisibility);
+        // The divider after Render should hide with optional actions.
+        if (quickMapTools.getChildCount() > 1) {
+            quickMapTools.getChildAt(1).setVisibility(detailVisibility);
+        }
+    }
+
+    private void showQuickMapAccessChoices(View anchor) {
+        int current = store.getQuickMapAccessMode();
+        showRenderingChoices(R.string.menu_quick_map_access,
+                QuickMapAccessMode.LABELS, current, anchor, selected -> {
+                    if (selected == current) return;
+                    store.setQuickMapAccessMode(selected);
+                    updateQuickMapToolsVisibility();
+                });
+    }
+
     private void showRenderingMenu(View anchor) {
         List<Integer> ids = new ArrayList<>();
         List<CharSequence> labels = new ArrayList<>();
