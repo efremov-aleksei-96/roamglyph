@@ -531,10 +531,16 @@ public final class FogOverlayView extends View {
                     }
                 }
                 FogPerformanceDiagnostics metrics = diagnostics;
-                if (metrics != null) metrics.recordTileBuild(
-                        Math.max(0L, buildStartedNanos - work.enqueuedAtNanos),
-                        SystemClock.elapsedRealtimeNanos() - buildStartedNanos,
-                        tile != null && !work.wasCancelled);
+                if (metrics != null) {
+                    int outcome = work.wasCancelled
+                            ? FogPerformanceDiagnostics.BUILD_CANCELLED
+                            : tile == null ? FogPerformanceDiagnostics.BUILD_NO_RESULT
+                            : FogPerformanceDiagnostics.BUILD_SUCCESS;
+                    metrics.recordTileBuild(
+                            Math.max(0L, buildStartedNanos - work.enqueuedAtNanos),
+                            SystemClock.elapsedRealtimeNanos() - buildStartedNanos,
+                            outcome);
+                }
                 Tile result = tile;
                 // A detached view can reject posts; do not leak the
                 // finished bitmap when no UI consumer will receive it.
