@@ -6,6 +6,10 @@
     <string name="menu_fog_renderer">Fog renderer</string>
     <string name="menu_map_compositor">Map compositor</string>
     <string name="menu_fog_synchronization">Fog synchronization</string>
+    <string name="menu_quick_map_access">Quick access on map</string>
+    <string name="quick_render_content">Quick rendering settings</string>
+    <string name="quick_share_content">Share performance diagnostics</string>
+    <string name="quick_reset_content">Reset performance diagnostics</string>
     <string name="menu_about_updates">About &amp; updates…</string>
     <string name="menu_back">Back</string>
     <string name="menu_version_changelog">Version %1$s · Changelog</string>

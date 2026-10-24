@@ -48,6 +48,7 @@ import com.sensareth.roamglyph.map.DiscoveryOverlayBuilder;
 import com.sensareth.roamglyph.map.ExplorationCoverageIndex;
 import com.sensareth.roamglyph.map.FogOverlayView;
 import com.sensareth.roamglyph.map.FogRendererChoice;
+import com.sensareth.roamglyph.map.QuickMapAccessMode;
 import com.sensareth.roamglyph.map.FogGpsCorridors;
 import com.sensareth.roamglyph.map.FogMapFrameGate;
 import com.sensareth.roamglyph.map.FogFrameMetrics;
@@ -142,6 +143,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private MapLibreMap map;
     private Button trackingButton;
     private Button locateButton;
+    private LinearLayout quickMapTools;
+    private Button quickShareButton;
+    private Button quickResetButton;
     private TextView stateText;
     private TextView statsText;
     private TextView gpsText;
@@ -569,6 +573,61 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         zoomLp.gravity = Gravity.BOTTOM | Gravity.END;
         zoomLp.setMargins(0, 0, dp(16), dp(173));
         root.addView(zoomControls, zoomLp);
+
+        // Fast A/B tools sit ABOVE existing zoom controls, never replacing
+        // the regular menu. Three actions in Full, one in Basic, none in Off.
+        if (performanceDiagnostics != null) {
+            quickMapTools = new LinearLayout(this);
+            quickMapTools.setOrientation(LinearLayout.VERTICAL);
+            GradientDrawable quickBackground = new GradientDrawable();
+            quickBackground.setColor(0xE6202124);
+            quickBackground.setCornerRadius(dp(12));
+            quickMapTools.setBackground(quickBackground);
+            quickMapTools.setElevation(dp(5));
+
+            Button renderButton = makeQuickMapButton("⚙",
+                    R.string.quick_render_content);
+            renderButton.setOnClickListener(this::showQuickRenderingMenu);
+            quickMapTools.addView(renderButton,
+                    new LinearLayout.LayoutParams(dp(56), dp(52)));
+
+            View firstSeparator = new View(this);
+            firstSeparator.setBackgroundColor(0x55FFFFFF);
+            quickMapTools.addView(firstSeparator,
+                    new LinearLayout.LayoutParams(dp(56), dp(1)));
+
+            quickShareButton = makeQuickMapButton("↗",
+                    R.string.quick_share_content);
+            quickShareButton.setOnClickListener(v -> sharePerformanceDiagnostics(
+                    buildPerformanceReport()));
+            quickMapTools.addView(quickShareButton,
+                    new LinearLayout.LayoutParams(dp(56), dp(52)));
+
+            quickResetButton = makeQuickMapButton("↻",
+                    R.string.quick_reset_content);
+            quickResetButton.setOnClickListener(v -> resetPerformanceDiagnostics());
+            quickMapTools.addView(quickResetButton,
+                    new LinearLayout.LayoutParams(dp(56), dp(52)));
+
+            FrameLayout.LayoutParams quickLp = new FrameLayout.LayoutParams(
+                    dp(56), FrameLayout.LayoutParams.WRAP_CONTENT
+            );
+            quickLp.gravity = Gravity.BOTTOM | Gravity.END;
+            // Zoom control top is 312dp above bottom; retain a 16dp gap.
+            quickLp.setMargins(0, 0, dp(16), dp(328));
+            root.addView(quickMapTools, quickLp);
+            updateQuickMapToolsVisibility();
+            // Rotation and split-screen can shorten the window without an
+            // Activity restart. Reflow shortcuts horizontally on short views
+            // so Share/Reset do not become clipped above zoom controls.
+            root.addOnLayoutChangeListener((v, left, top, right, bottom,
+                    oldLeft, oldTop, oldRight, oldBottom) -> {
+                if (bottom - top != oldBottom - oldTop
+                        || right - left != oldRight - oldLeft) {
+                    positionQuickMapTools(bottom - top);
+                }
+            });
+        }
 
         setContentView(root);
         appUpdates = new AppUpdateManager(this, () -> tracking);
@@ -1085,6 +1144,107 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     }
 
     /** Small category list; every value is also visible without opening it. */
+    private Button makeQuickMapButton(String icon, int labelRes) {
+        Button button = new Button(this);
+        button.setAllCaps(false);
+        button.setText(icon);
+        button.setTextSize(23f);
+        button.setTextColor(Color.WHITE);
+        button.setBackgroundColor(Color.TRANSPARENT);
+        button.setPadding(0, 0, 0, 0);
+        button.setMinWidth(0);
+        button.setMinHeight(0);
+        button.setContentDescription(getString(labelRes));
+        return button;
+    }
+
+    /** Only the floating tools change; persisted exploration is untouched. */
+    private void positionQuickMapTools(int availableHeightPx) {
+        if (quickMapTools == null) return;
+        // Vertical stack needs at least 640dp to clear the top menu button.
+        boolean shortWindow = availableHeightPx < dp(640);
+        int orientation = shortWindow
+                ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL;
+        boolean orientationChanged = quickMapTools.getOrientation() != orientation;
+        if (orientationChanged) {
+            quickMapTools.setOrientation(orientation);
+            View divider = quickMapTools.getChildAt(1);
+            divider.setLayoutParams(new LinearLayout.LayoutParams(
+                    shortWindow ? dp(1) : dp(56),
+                    shortWindow ? dp(52) : dp(1)
+            ));
+        }
+        FrameLayout.LayoutParams lp =
+                (FrameLayout.LayoutParams) quickMapTools.getLayoutParams();
+        // Full horizontal tools take 169dp; vertical column takes 56dp.
+        lp.width = shortWindow
+                ? FrameLayout.LayoutParams.WRAP_CONTENT : dp(56);
+        if (availableHeightPx < dp(320)) {
+            // In very short multi-window, the space below the status card
+            // would collide with Stop exploration. Place the row ABOVE that
+            // card instead: the existing status starts 52dp below root top.
+            lp.gravity = Gravity.TOP | Gravity.START;
+            lp.setMargins(dp(8), 0, 0, 0);
+        } else if (shortWindow) {
+            // Beneath status card and left of the zoom/location controls.
+            lp.gravity = Gravity.TOP | Gravity.END;
+            lp.setMargins(0, dp(166), dp(80), 0);
+        } else {
+            // Portrait: 16dp above zoom controls.
+            lp.gravity = Gravity.BOTTOM | Gravity.END;
+            lp.setMargins(0, 0, dp(16), dp(328));
+        }
+        quickMapTools.setLayoutParams(lp);
+    }
+
+    private void updateQuickMapToolsVisibility() {
+        if (quickMapTools == null || store == null) return;
+        int mode = store.getQuickMapAccessMode();
+        quickMapTools.setVisibility(
+                QuickMapAccessMode.showRender(mode) ? View.VISIBLE : View.GONE);
+        int detailVisibility = QuickMapAccessMode.showDiagnostics(mode)
+                ? View.VISIBLE : View.GONE;
+        if (quickShareButton != null) quickShareButton.setVisibility(detailVisibility);
+        if (quickResetButton != null) quickResetButton.setVisibility(detailVisibility);
+        // The divider after Render should hide with optional actions.
+        if (quickMapTools.getChildCount() > 1) {
+            quickMapTools.getChildAt(1).setVisibility(detailVisibility);
+        }
+    }
+
+    private void showQuickMapAccessChoices(View anchor) {
+        int current = store.getQuickMapAccessMode();
+        showRenderingChoices(R.string.menu_quick_map_access,
+                QuickMapAccessMode.LABELS, current, anchor, selected -> {
+                    if (selected == current) return;
+                    store.setQuickMapAccessMode(selected);
+                    updateQuickMapToolsVisibility();
+                });
+    }
+
+    /** Fast map shortcut: exactly three rendering groups; standard menu stays intact. */
+    private void showQuickRenderingMenu(View anchor) {
+        String[] labels = {
+                getString(R.string.menu_fog_renderer)
+                        + "\n" + FogRendererChoice.label(currentRendererChoice()),
+                getString(R.string.menu_map_compositor)
+                        + "\n" + (store.isTextureMapTestEnabled()
+                                ? "TextureView" : "GLSurfaceView"),
+                getString(R.string.menu_fog_synchronization)
+                        + "\n" + (store.isFogMapFrameSyncEnabled()
+                                ? "Map frame" : "Standard")
+        };
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.quick_render_content)
+                .setItems(labels, (dialog, which) -> {
+                    if (which == 0) showRendererChoices(anchor, true);
+                    else if (which == 1) showCompositorChoices(anchor, true);
+                    else if (which == 2) showSynchronizationChoices(anchor, true);
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
     private void showRenderingMenu(View anchor) {
         List<Integer> ids = new ArrayList<>();
         List<CharSequence> labels = new ArrayList<>();
@@ -1099,6 +1259,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         labels.add(getString(R.string.menu_fog_synchronization)
                 + "\n" + (store.isFogMapFrameSyncEnabled()
                         ? "Map frame" : "Standard"));
+        ids.add(26);
+        labels.add(getString(R.string.menu_quick_map_access)
+                + "\n" + QuickMapAccessMode.label(store.getQuickMapAccessMode()));
         ids.add(14);
         labels.add(getString(R.string.menu_performance_diagnostics));
         showMenuSection(R.string.menu_rendering_diagnostics, ids, labels, anchor);
@@ -1111,6 +1274,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     /** Radio choices replace ambiguous independent toggles. A selected item is a no-op. */
     private void showRendererChoices(View anchor) {
+        showRendererChoices(anchor, false);
+    }
+
+    private void showRendererChoices(View anchor, boolean fromQuick) {
         showRenderingChoices(R.string.menu_fog_renderer,
                 FogRendererChoice.LABELS,
                 currentRendererChoice(), anchor, selected -> {
@@ -1135,10 +1302,14 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                         refreshGpsCorridors();
                     }
                     if (performanceDiagnostics != null) performanceDiagnostics.reset();
-                });
+                }, fromQuick);
     }
 
     private void showCompositorChoices(View anchor) {
+        showCompositorChoices(anchor, false);
+    }
+
+    private void showCompositorChoices(View anchor, boolean fromQuick) {
         showRenderingChoices(R.string.menu_map_compositor,
                 new String[]{"GLSurfaceView — Default", "TextureView — Experimental"},
                 store.isTextureMapTestEnabled() ? 1 : 0,
@@ -1147,22 +1318,33 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     // signing-neutral Activity recreate and data preservation.
                     if ((selected == 1) != store.isTextureMapTestEnabled())
                         showMapCompositorExperiment();
-                });
+                }, fromQuick);
     }
 
     private void showSynchronizationChoices(View anchor) {
+        showSynchronizationChoices(anchor, false);
+    }
+
+    private void showSynchronizationChoices(View anchor, boolean fromQuick) {
         showRenderingChoices(R.string.menu_fog_synchronization,
                 new String[]{"Standard — Camera events", "Map frame — Experimental"},
                 store.isFogMapFrameSyncEnabled() ? 1 : 0,
                 anchor, selected -> {
                     if ((selected == 1) != store.isFogMapFrameSyncEnabled())
                         showFrameSyncExperiment();
-                });
+                }, fromQuick);
     }
 
     private void showRenderingChoices(int title, String[] labels,
                                       int selected, View anchor,
                                       java.util.function.IntConsumer onSelect) {
+        showRenderingChoices(title, labels, selected, anchor, onSelect, false);
+    }
+
+    private void showRenderingChoices(int title, String[] labels,
+                                      int selected, View anchor,
+                                      java.util.function.IntConsumer onSelect,
+                                      boolean fromQuick) {
         new AlertDialog.Builder(this)
                 .setTitle(title)
                 .setSingleChoiceItems(labels, selected, (dialog, which) -> {
@@ -1170,7 +1352,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     if (which != selected) onSelect.accept(which);
                 })
                 .setNegativeButton(R.string.menu_back,
-                        (dialog, which) -> showRenderingMenu(anchor))
+                        (dialog, which) -> {
+                            if (fromQuick) showQuickRenderingMenu(anchor);
+                            else showRenderingMenu(anchor);
+                        })
                 .show();
     }
 
@@ -1200,6 +1385,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                         if (id == 23) showRendererChoices(anchor);
                         else if (id == 24) showCompositorChoices(anchor);
                         else if (id == 25) showSynchronizationChoices(anchor);
+                        else if (id == 26) showQuickMapAccessChoices(anchor);
                         else handleDataMenuAction(id);
                     }
                 })
@@ -1900,8 +2086,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 .show();
     }
 
-    private void showPerformanceDiagnostics() {
-        if (performanceDiagnostics == null) return;
+    private String buildPerformanceReport() {
+        if (performanceDiagnostics == null) return "";
         StringBuilder report = new StringBuilder();
         report.append("App: ").append(installedVersion()).append('\n');
         report.append("Device: ").append(Build.MANUFACTURER)
@@ -1931,7 +2117,12 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             report.append("not ready");
         }
         report.append("\n\n").append(performanceDiagnostics.report());
-        String content = report.toString();
+        return report.toString();
+    }
+
+    private void showPerformanceDiagnostics() {
+        if (performanceDiagnostics == null) return;
+        String content = buildPerformanceReport();
 
         TextView notes = new TextView(this);
         notes.setText(content);
@@ -1944,20 +2135,28 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         new AlertDialog.Builder(this)
                 .setTitle(R.string.menu_performance_diagnostics)
                 .setView(scroll)
-                .setPositiveButton(R.string.diagnostics_share, (dialog, which) -> {
-                    Intent send = new Intent(Intent.ACTION_SEND);
-                    send.setType("text/plain");
-                    send.putExtra(Intent.EXTRA_TEXT, content);
-                    startActivity(Intent.createChooser(send,
-                            getString(R.string.diagnostics_share)));
-                })
-                .setNeutralButton(R.string.diagnostics_reset, (dialog, which) -> {
-                    performanceDiagnostics.reset();
-                    Toast.makeText(this, R.string.diagnostics_reset_done,
-                            Toast.LENGTH_LONG).show();
-                })
+                .setPositiveButton(R.string.diagnostics_share,
+                        (dialog, which) -> sharePerformanceDiagnostics(content))
+                .setNeutralButton(R.string.diagnostics_reset,
+                        (dialog, which) -> resetPerformanceDiagnostics())
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
+    }
+
+    private void sharePerformanceDiagnostics(String content) {
+        if (performanceDiagnostics == null) return;
+        Intent send = new Intent(Intent.ACTION_SEND);
+        send.setType("text/plain");
+        send.putExtra(Intent.EXTRA_TEXT, content);
+        startActivity(Intent.createChooser(send,
+                getString(R.string.diagnostics_share)));
+    }
+
+    private void resetPerformanceDiagnostics() {
+        if (performanceDiagnostics == null) return;
+        // Keep GPS/Room/H3 coverage, fog caches and renderer settings intact.
+        performanceDiagnostics.reset();
+        Toast.makeText(this, R.string.diagnostics_reset_done, Toast.LENGTH_SHORT).show();
     }
 
     private void showVersionAndChangelog() {
