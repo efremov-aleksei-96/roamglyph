@@ -133,8 +133,9 @@ public final class AutoBenchmarkRunner {
         // individual waypoints: clamping would silently corrupt path distances.
         double latitude = original.target.getLatitude()
                 + delta.northMeters / METERS_PER_LAT_DEGREE;
-        double scale = Math.max(0.15,
-                Math.cos(Math.toRadians(original.target.getLatitude())));
+        // Accepted anchor latitudes stay at or below 83 degrees. Use the
+        // actual cosine; a floor would silently compress the east/west ring.
+        double scale = Math.cos(Math.toRadians(original.target.getLatitude()));
         double longitude = original.target.getLongitude()
                 + delta.eastMeters / (METERS_PER_LAT_DEGREE * scale);
         return new CameraPosition.Builder().target(new LatLng(latitude, longitude))
@@ -204,7 +205,7 @@ public final class AutoBenchmarkRunner {
                             double lon = original.target.getLongitude();
                             double maxLongitudeSweep = 2200.0
                                     / (METERS_PER_LAT_DEGREE *
-                                            Math.max(0.15, Math.cos(Math.toRadians(lat))));
+                                            Math.cos(Math.toRadians(lat)));
                             // Reject pole/dateline anchors rather than changing
                             // the path shape or jumping to a different region.
                             if (!Double.isFinite(lat) || !Double.isFinite(lon)
