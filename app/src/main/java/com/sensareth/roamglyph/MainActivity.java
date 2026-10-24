@@ -1161,7 +1161,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     /** Only the floating tools change; persisted exploration is untouched. */
     private void positionQuickMapTools(int availableHeightPx) {
         if (quickMapTools == null) return;
-        boolean shortWindow = availableHeightPx < dp(520);
+        // Vertical stack needs at least 640dp to clear the top menu button.
+        boolean shortWindow = availableHeightPx < dp(640);
         int orientation = shortWindow
                 ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL;
         boolean orientationChanged = quickMapTools.getOrientation() != orientation;
