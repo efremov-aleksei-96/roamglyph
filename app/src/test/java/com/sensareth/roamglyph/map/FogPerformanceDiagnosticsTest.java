@@ -69,6 +69,30 @@ public class FogPerformanceDiagnosticsTest {
         assertTrue(reset.contains("Camera event -> MapLibre frame callback: none"));
     }
 
+    @Test public void benchmarkSnapshotSeparatesCancelledWorkAndFailure() {
+        FogPerformanceDiagnostics metrics = new FogPerformanceDiagnostics(true);
+        metrics.recordWindowFrame(10_000_000L, 0);
+        metrics.recordWindowFrame(20_000_000L, 0);
+        metrics.recordDemand(1_000_000L, 7, 4, 3, 4, 3, 8, 8_000_000);
+        metrics.recordTileBuild(30_000_000L, 70_000_000L,
+                FogPerformanceDiagnostics.BUILD_SUCCESS);
+        metrics.recordTileBuild(20_000_000L, 10_000_000L,
+                FogPerformanceDiagnostics.BUILD_CANCELLED);
+        metrics.recordTileBuild(5_000_000L, 10_000_000L,
+                FogPerformanceDiagnostics.BUILD_NO_RESULT);
+        FogPerformanceDiagnostics.BenchmarkSummary summary = metrics.benchmarkSummary();
+        assertTrue(summary.windowSamples == 2);
+        assertTrue(summary.windowAbove16 == 1);
+        assertTrue(Math.abs(summary.windowP95Ms - 20.0) < 0.001);
+        assertTrue(summary.missingLookups == 4);
+        assertTrue(summary.tileBuilds == 3);
+        assertTrue(summary.tileSuccess == 1);
+        assertTrue(summary.tileCancelled == 1);
+        assertTrue(summary.tileNoResult == 1);
+        assertTrue(summary.peakPending == 3);
+        assertTrue(metrics.report().contains("Build detail: cancelled=1; no-result=1"));
+    }
+
     @Test public void mapFrameMetricsSeparateFogOnOffPhases() {
         FogPerformanceDiagnostics diagnostics = new FogPerformanceDiagnostics(true);
         diagnostics.recordRenderedMapFrame(5_000_000L);

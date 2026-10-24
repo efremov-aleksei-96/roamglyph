@@ -9,6 +9,7 @@ import android.view.View;
 import android.widget.Toast;
 
 import com.sensareth.roamglyph.map.AutoBenchmarkPlan;
+import com.sensareth.roamglyph.map.AutoBenchmarkPath;
 import com.sensareth.roamglyph.map.FogOverlayView;
 import com.sensareth.roamglyph.map.FogPerformanceDiagnostics;
 import com.sensareth.roamglyph.map.FogRendererChoice;
@@ -21,6 +22,8 @@ import org.maplibre.android.maps.MapView;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
+import java.util.UUID;
 
 /**
  * Opt-in on-device benchmark. It moves only the MapLibre CAMERA, not the GPS.
@@ -30,23 +33,24 @@ import java.util.List;
  */
 public final class AutoBenchmarkRunner {
     private static final long WARMUP_MS = 6000L;
-    private static final int PAN_STEPS = 20;
+    private static final double METERS_PER_LAT_DEGREE = 111_320.0;
     private static Session session;
     private static Finished finished;
 
     private static final class Session {
         final List<AutoBenchmarkPlan.Mode> modes;
         final CameraPosition original;
-        final double panDelta;
+        final AutoBenchmarkPath.Scenario scenario;
+        final String runId = UUID.randomUUID().toString().substring(0, 8);
         final ArrayList<String> reports = new ArrayList<>();
+        final ArrayList<String> summaryRows = new ArrayList<>();
         int step;
 
-        Session(boolean allRenderers, CameraPosition original) {
+        Session(boolean allRenderers, AutoBenchmarkPath.Scenario scenario,
+                CameraPosition original) {
             this.modes = AutoBenchmarkPlan.modes(allRenderers);
+            this.scenario = scenario;
             this.original = original;
-            double cos = Math.max(0.2,
-                    Math.cos(Math.toRadians(original.target.getLatitude())));
-            this.panDelta = Math.min(0.006, 0.0009 / cos);
         }
 
         AutoBenchmarkPlan.Mode mode() { return modes.get(step); }
@@ -120,6 +124,24 @@ public final class AutoBenchmarkRunner {
                 .build();
     }
 
+    /** Convert a reproducible local-metre route to a camera target only.
+     * Neither the target nor GPS coordinates enter the benchmark export.
+     */
+    private static CameraPosition cameraAtOffset(CameraPosition original,
+                                                  AutoBenchmarkPath.Offset delta) {
+        // The anchor is validated when the user starts a run. Never clamp
+        // individual waypoints: clamping would silently corrupt path distances.
+        double latitude = original.target.getLatitude()
+                + delta.northMeters / METERS_PER_LAT_DEGREE;
+        // Accepted anchor latitudes stay at or below 83 degrees. Use the
+        // actual cosine; a floor would silently compress the east/west ring.
+        double scale = Math.cos(Math.toRadians(original.target.getLatitude()));
+        double longitude = original.target.getLongitude()
+                + delta.eastMeters / (METERS_PER_LAT_DEGREE * scale);
+        return new CameraPosition.Builder().target(new LatLng(latitude, longitude))
+                .zoom(17.5).bearing(original.bearing).tilt(original.tilt).build();
+    }
+
     public void setMap(MapLibreMap value) { map = value; }
 
     public void onStyleReady() {
@@ -173,12 +195,38 @@ public final class AutoBenchmarkRunner {
                 // Android AlertDialog cannot combine setMessage() and setItems().
                 // Put the short explanation in each selectable plan instead.
                 .setItems(new String[]{
-                        "Quick: V4 in 4 modes (camera only, settings preserved)",
-                        "Full: all 16 modes (camera only, settings preserved)"},
+                        "Quick: V4, 4 modes · warmed pan",
+                        "Stress: V4, 4 modes · new territory",
+                        "Full: all 16 modes · warmed pan"},
                         (dialog, selected) -> {
                             CameraPosition original = map.getCameraPosition();
                             if (original == null || original.target == null) return;
-                            session = new Session(selected == 1, original);
+                            double lat = original.target.getLatitude();
+                            double lon = original.target.getLongitude();
+                            double maxLongitudeSweep = 2200.0
+                                    / (METERS_PER_LAT_DEGREE *
+                                            Math.cos(Math.toRadians(lat)));
+                            // Reject pole/dateline anchors rather than changing
+                            // the path shape or jumping to a different region.
+                            if (!Double.isFinite(lat) || !Double.isFinite(lon)
+                                    || Math.abs(lat) > 83.0
+                                    || Math.abs(lon) > 180.0 - maxLongitudeSweep) {
+                                new AlertDialog.Builder(activity)
+                                        .setTitle("Choose a different map area")
+                                        .setMessage("Automatic benchmark needs a map "
+                                                + "position away from the poles and dateline. "
+                                                + "Move the map toward lower latitudes and retry.")
+                                        .setPositiveButton(android.R.string.ok, null)
+                                        .show();
+                                return;
+                            }
+                            // Stress and Full are intentionally separate: the 16-mode
+                            // matrix does not pretend to stress new territory.
+                            session = new Session(selected == 2,
+                                    selected == 1
+                                            ? AutoBenchmarkPath.Scenario.NEW_TERRITORY
+                                            : AutoBenchmarkPath.Scenario.WARM_PAN,
+                                    original);
                             finished = null;
                             if (session.mode().textureView
                                     != (view.getRenderView() instanceof android.view.TextureView))
@@ -227,8 +275,10 @@ public final class AutoBenchmarkRunner {
         map.setCameraPosition(centered);
         fog.requestTilesNow();
         Toast.makeText(activity,
-                "Benchmark " + (run.step + 1) + "/" + run.modes.size() +
-                        ": " + mode.label(), Toast.LENGTH_SHORT).show();
+                "Benchmark " + (run.step + 1) + "/" + run.modes.size()
+                        + " · " + (run.scenario == AutoBenchmarkPath.Scenario.NEW_TERRITORY
+                                ? "Stress" : "Warm") + ": " + mode.label(),
+                Toast.LENGTH_SHORT).show();
         // Warm-up is outside the measurement; each mode gets the same sweep.
         post(() -> {
             if (session != run || !stageStarted || !resumed) return;
@@ -240,24 +290,44 @@ public final class AutoBenchmarkRunner {
 
     private void sweep(Session run, int step) {
         if (session != run || !stageStarted || !resumed || map == null) return;
-        if (step == PAN_STEPS) {
+        if (step == AutoBenchmarkPath.steps(run.scenario)) {
             saveStep(run);
             return;
         }
-        double offset = step % 2 == 0 ? run.panDelta : -run.panDelta;
+        // A new-territory step moves to a different geographic tile region;
+        // warm pan intentionally revisits two nearby positions.
+        AutoBenchmarkPath.Offset offset =
+                AutoBenchmarkPath.waypoint(run.scenario, step);
         map.animateCamera(
-                CameraUpdateFactory.newCameraPosition(camera(run.original,
-                        run.original.target.getLongitude() + offset)), 700);
+                CameraUpdateFactory.newCameraPosition(
+                        cameraAtOffset(run.original, offset)), 700);
         post(() -> sweep(run, step + 1), 1000L);
     }
 
     private void saveStep(Session run) {
         if (session != run || !stageStarted) return;
         AutoBenchmarkPlan.Mode mode = run.mode();
+        FogPerformanceDiagnostics.BenchmarkSummary summary = metrics == null
+                ? null : metrics.benchmarkSummary();
         String result = metrics == null
                 ? "Diagnostics unavailable" : metrics.report();
+        String label = mode.label();
         run.reports.add("\n=== " + (run.step + 1) + "/" + run.modes.size()
-                + ": " + mode.label() + " ===\n" + result);
+                + ": " + label + " ===\n" + result);
+        if (summary != null) {
+            double longFrameRate = summary.windowSamples == 0
+                    ? Double.NaN
+                    : 100.0 * summary.windowAbove16 / summary.windowSamples;
+            String workload = run.scenario == AutoBenchmarkPath.Scenario.NEW_TERRITORY
+                    && summary.tileSuccess < 100 ? "LOW TILE WORKLOAD" : "measured";
+            run.summaryRows.add(String.format(Locale.US,
+                    "%s | %d | %.2f | %.2f | %.1f%% | %d | %d/%d/%d | %.1f | %s",
+                    label, summary.windowSamples, summary.windowP95Ms,
+                    summary.windowP99Ms, longFrameRate,
+                    summary.missingLookups, summary.tileSuccess,
+                    summary.tileCancelled, summary.tileNoResult,
+                    summary.queueP95Ms, workload));
+        }
         stageStarted = false;
         clearTasks();
         run.step++;
@@ -266,11 +336,22 @@ public final class AutoBenchmarkRunner {
             report.append("RoamGlyph automatic benchmark\nDevice: ")
                     .append(Build.MANUFACTURER).append(" ").append(Build.MODEL)
                     .append("; Android API ").append(Build.VERSION.SDK_INT).append("\n");
-            report.append("20 scripted camera pans, 6s unmeasured warm-up per mode, ")
-                    .append("Fog ON, zoom=17.5.\n")
-                    .append("No GPS tracks, coordinates or visited history in this report.\n")
-                    .append("Window FrameMetrics are NOT the map's GPU FPS. ")
-                    .append("Interpret percentiles together with each mode's tile workload.\n");
+            report.append("Run: ").append(run.runId)
+                    .append("; script version: ").append(AutoBenchmarkPath.SCRIPT_VERSION)
+                    .append("; app: ").append(readVersionName()).append("\n");
+            report.append("Scenario: ").append(run.scenario)
+                    .append("; ")
+                    .append(AutoBenchmarkPath.steps(run.scenario))
+                    .append(" scripted camera pans at z17.5, 6s unmeasured warm-up per mode.\n")
+                    .append("Camera positions are derived in memory. No GPS tracks, ")
+                    .append("coordinates or visited history in this report.\n")
+                    .append("Window FrameMetrics are NOT the map GPU FPS. ")
+                    .append("Stress is not proven unless substantial new tiles build.\n");
+            report.append("\n=== COMPARISON SUMMARY ===\n");
+            report.append("Mode | window n | p95 ms | p99 ms | >16.7ms | ")
+                    .append("miss lookups | built/cancelled/no-result | queue p95 ms | load\n");
+            for (String row : run.summaryRows) report.append(row).append('\n');
+            report.append("\n=== RAW DIAGNOSTICS ===\n");
             for (String part : run.reports) report.append(part);
             session = null;
             finished = new Finished(run.original, report.toString());
@@ -282,6 +363,15 @@ public final class AutoBenchmarkRunner {
             activity.recreate();
         } else {
             startStep();
+        }
+    }
+
+    private String readVersionName() {
+        try {
+            return activity.getPackageManager().getPackageInfo(
+                    activity.getPackageName(), 0).versionName;
+        } catch (android.content.pm.PackageManager.NameNotFoundException ignored) {
+            return "unavailable";
         }
     }
 
