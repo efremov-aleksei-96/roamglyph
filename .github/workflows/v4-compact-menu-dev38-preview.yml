@@ -20,9 +20,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      CANDIDATE_SHA: f5bda7cb943e9aca9ab4b2f4d6021fdd3337a362
+      CANDIDATE_SHA: 396b67c277cf7876228970456a178cd54e88b864
       BASE_SHA: 243532d9116e6ee20c7c6f22da3fa8add53d69c3
-      ROAMGLYPH_SOURCE_SHA: f5bda7cb943e9aca9ab4b2f4d6021fdd3337a362
+      ROAMGLYPH_SOURCE_SHA: 396b67c277cf7876228970456a178cd54e88b864
     steps:
       - name: Check out trusted main workflow repository
         uses: actions/checkout@v5
@@ -177,7 +177,7 @@ jobs:
           BADGING="$("$AAPT" dump badging "$INPUT" | head -n 1)"
           [[ "$BADGING" == *"name='com.sensareth.roamglyph'"* ]]
           [[ "$BADGING" == *"versionCode='40'"* ]]
-          [[ "$BADGING" == *"versionName='0.5.0-dev.40+gf5bda7cb'"* ]]
+          [[ "$BADGING" == *"versionName='0.5.0-dev.40+g396b67c2'"* ]]
           if "$APKSIGNER" verify "$INPUT" >/dev/null 2>&1; then
             echo "::error::Refusing an already signed candidate."
             exit 1
@@ -193,7 +193,7 @@ jobs:
             exit 1
           }
           mkdir -p dist
-          OUTPUT=dist/roamglyph-0.5.0-dev.40-gf5bda7cb.apk
+          OUTPUT=dist/roamglyph-0.5.0-dev.40-g396b67c2.apk
           "$APKSIGNER" sign --ks "$KEYSTORE" --ks-type PKCS12 \
             --ks-key-alias roamglyph-dev \
             --ks-pass env:ROAMGLYPH_DEV_KEYSTORE_PASSWORD \
@@ -210,7 +210,7 @@ jobs:
         with:
           name: roamglyph-pr52-dev40-pixel-preview-signed
           path: |
-            dist/roamglyph-0.5.0-dev.40-gf5bda7cb.apk
+            dist/roamglyph-0.5.0-dev.40-g396b67c2.apk
             dist/SHA256SUMS.txt
           retention-days: 14
           if-no-files-found: error
@@ -226,9 +226,9 @@ jobs:
       actions: read
     env:
       GH_TOKEN: ${{ github.token }}
-      SOURCE_SHA: f5bda7cb943e9aca9ab4b2f4d6021fdd3337a362
-      RELEASE_TAG: dev-vc40-gf5bda7cb
-      APK_NAME: roamglyph-0.5.0-dev.40-gf5bda7cb.apk
+      SOURCE_SHA: 396b67c277cf7876228970456a178cd54e88b864
+      RELEASE_TAG: dev-vc40-g396b67c2
+      APK_NAME: roamglyph-0.5.0-dev.40-g396b67c2.apk
       PIN: 89defa011682172a6d892cda46cd6132393dccda22cecf1175f825596db80758
     steps:
       - name: Get certified APK, not candidate code
