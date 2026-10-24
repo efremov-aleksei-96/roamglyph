@@ -1993,8 +1993,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 .show();
     }
 
-    private void showPerformanceDiagnostics() {
-        if (performanceDiagnostics == null) return;
+    private String buildPerformanceReport() {
+        if (performanceDiagnostics == null) return "";
         StringBuilder report = new StringBuilder();
         report.append("App: ").append(installedVersion()).append('\n');
         report.append("Device: ").append(Build.MANUFACTURER)
@@ -2024,7 +2024,12 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             report.append("not ready");
         }
         report.append("\n\n").append(performanceDiagnostics.report());
-        String content = report.toString();
+        return report.toString();
+    }
+
+    private void showPerformanceDiagnostics() {
+        if (performanceDiagnostics == null) return;
+        String content = buildPerformanceReport();
 
         TextView notes = new TextView(this);
         notes.setText(content);
@@ -2037,20 +2042,28 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         new AlertDialog.Builder(this)
                 .setTitle(R.string.menu_performance_diagnostics)
                 .setView(scroll)
-                .setPositiveButton(R.string.diagnostics_share, (dialog, which) -> {
-                    Intent send = new Intent(Intent.ACTION_SEND);
-                    send.setType("text/plain");
-                    send.putExtra(Intent.EXTRA_TEXT, content);
-                    startActivity(Intent.createChooser(send,
-                            getString(R.string.diagnostics_share)));
-                })
-                .setNeutralButton(R.string.diagnostics_reset, (dialog, which) -> {
-                    performanceDiagnostics.reset();
-                    Toast.makeText(this, R.string.diagnostics_reset_done,
-                            Toast.LENGTH_LONG).show();
-                })
+                .setPositiveButton(R.string.diagnostics_share,
+                        (dialog, which) -> sharePerformanceDiagnostics(content))
+                .setNeutralButton(R.string.diagnostics_reset,
+                        (dialog, which) -> resetPerformanceDiagnostics())
                 .setNegativeButton(android.R.string.cancel, null)
                 .show();
+    }
+
+    private void sharePerformanceDiagnostics(String content) {
+        if (performanceDiagnostics == null) return;
+        Intent send = new Intent(Intent.ACTION_SEND);
+        send.setType("text/plain");
+        send.putExtra(Intent.EXTRA_TEXT, content);
+        startActivity(Intent.createChooser(send,
+                getString(R.string.diagnostics_share)));
+    }
+
+    private void resetPerformanceDiagnostics() {
+        if (performanceDiagnostics == null) return;
+        // Keep GPS/Room/H3 coverage, fog caches and renderer settings intact.
+        performanceDiagnostics.reset();
+        Toast.makeText(this, R.string.diagnostics_reset_done, Toast.LENGTH_SHORT).show();
     }
 
     private void showVersionAndChangelog() {
