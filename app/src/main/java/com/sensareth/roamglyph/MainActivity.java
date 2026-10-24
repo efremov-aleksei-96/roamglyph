@@ -587,7 +587,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
             Button renderButton = makeQuickMapButton("⚙",
                     R.string.quick_render_content);
-            renderButton.setOnClickListener(this::showRenderingMenu);
+            renderButton.setOnClickListener(this::showQuickRenderingMenu);
             quickMapTools.addView(renderButton,
                     new LinearLayout.LayoutParams(dp(56), dp(52)));
 
@@ -1222,6 +1222,29 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 });
     }
 
+    /** Fast map shortcut: exactly three rendering groups; standard menu stays intact. */
+    private void showQuickRenderingMenu(View anchor) {
+        String[] labels = {
+                getString(R.string.menu_fog_renderer)
+                        + "\n" + FogRendererChoice.label(currentRendererChoice()),
+                getString(R.string.menu_map_compositor)
+                        + "\n" + (store.isTextureMapTestEnabled()
+                                ? "TextureView" : "GLSurfaceView"),
+                getString(R.string.menu_fog_synchronization)
+                        + "\n" + (store.isFogMapFrameSyncEnabled()
+                                ? "Map frame" : "Standard")
+        };
+        new AlertDialog.Builder(this)
+                .setTitle(R.string.quick_render_content)
+                .setItems(labels, (dialog, which) -> {
+                    if (which == 0) showRendererChoices(anchor, true);
+                    else if (which == 1) showCompositorChoices(anchor, true);
+                    else if (which == 2) showSynchronizationChoices(anchor, true);
+                })
+                .setNegativeButton(android.R.string.cancel, null)
+                .show();
+    }
+
     private void showRenderingMenu(View anchor) {
         List<Integer> ids = new ArrayList<>();
         List<CharSequence> labels = new ArrayList<>();
@@ -1251,6 +1274,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
     /** Radio choices replace ambiguous independent toggles. A selected item is a no-op. */
     private void showRendererChoices(View anchor) {
+        showRendererChoices(anchor, false);
+    }
+
+    private void showRendererChoices(View anchor, boolean fromQuick) {
         showRenderingChoices(R.string.menu_fog_renderer,
                 FogRendererChoice.LABELS,
                 currentRendererChoice(), anchor, selected -> {
@@ -1275,10 +1302,14 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                         refreshGpsCorridors();
                     }
                     if (performanceDiagnostics != null) performanceDiagnostics.reset();
-                });
+                }, fromQuick);
     }
 
     private void showCompositorChoices(View anchor) {
+        showCompositorChoices(anchor, false);
+    }
+
+    private void showCompositorChoices(View anchor, boolean fromQuick) {
         showRenderingChoices(R.string.menu_map_compositor,
                 new String[]{"GLSurfaceView — Default", "TextureView — Experimental"},
                 store.isTextureMapTestEnabled() ? 1 : 0,
@@ -1287,22 +1318,33 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     // signing-neutral Activity recreate and data preservation.
                     if ((selected == 1) != store.isTextureMapTestEnabled())
                         showMapCompositorExperiment();
-                });
+                }, fromQuick);
     }
 
     private void showSynchronizationChoices(View anchor) {
+        showSynchronizationChoices(anchor, false);
+    }
+
+    private void showSynchronizationChoices(View anchor, boolean fromQuick) {
         showRenderingChoices(R.string.menu_fog_synchronization,
                 new String[]{"Standard — Camera events", "Map frame — Experimental"},
                 store.isFogMapFrameSyncEnabled() ? 1 : 0,
                 anchor, selected -> {
                     if ((selected == 1) != store.isFogMapFrameSyncEnabled())
                         showFrameSyncExperiment();
-                });
+                }, fromQuick);
     }
 
     private void showRenderingChoices(int title, String[] labels,
                                       int selected, View anchor,
                                       java.util.function.IntConsumer onSelect) {
+        showRenderingChoices(title, labels, selected, anchor, onSelect, false);
+    }
+
+    private void showRenderingChoices(int title, String[] labels,
+                                      int selected, View anchor,
+                                      java.util.function.IntConsumer onSelect,
+                                      boolean fromQuick) {
         new AlertDialog.Builder(this)
                 .setTitle(title)
                 .setSingleChoiceItems(labels, selected, (dialog, which) -> {
@@ -1310,7 +1352,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     if (which != selected) onSelect.accept(which);
                 })
                 .setNegativeButton(R.string.menu_back,
-                        (dialog, which) -> showRenderingMenu(anchor))
+                        (dialog, which) -> {
+                            if (fromQuick) showQuickRenderingMenu(anchor);
+                            else showRenderingMenu(anchor);
+                        })
                 .show();
     }
 
