@@ -70,6 +70,7 @@ public final class AutoBenchmarkRunner {
     private MapLibreMap map;
     private boolean resumed;
     private boolean stageStarted;
+    private boolean completionShowing;
 
     public AutoBenchmarkRunner(Activity activity, MapView view, FogOverlayView fog,
                                FogPerformanceDiagnostics metrics, Runnable refreshCorridors) {
@@ -169,11 +170,11 @@ public final class AutoBenchmarkRunner {
         }
         new AlertDialog.Builder(activity)
                 .setTitle("Automatic camera benchmark")
-                .setMessage("The app will move the map, warm the tile cache, and test "
-                        + "each mode automatically. Keep it open. No saved GPS tracks "
-                        + "or normal renderer preferences will change. "
-                        + "Use the main menu to stop the test.")
-                .setItems(new String[]{"Quick: V4 in 4 modes", "Full: all 16 modes"},
+                // Android AlertDialog cannot combine setMessage() and setItems().
+                // Put the short explanation in each selectable plan instead.
+                .setItems(new String[]{
+                        "Quick: V4 in 4 modes (camera only, settings preserved)",
+                        "Full: all 16 modes (camera only, settings preserved)"},
                         (dialog, selected) -> {
                             CameraPosition original = map.getCameraPosition();
                             if (original == null || original.target == null) return;
@@ -206,6 +207,8 @@ public final class AutoBenchmarkRunner {
         }
         stageStarted = true;
         clearTasks();
+        // Ignore accidental touch gestures; camera motion must be reproducible.
+        map.getUiSettings().setAllGesturesEnabled(false);
         AutoBenchmarkPlan.Mode mode = run.mode();
         fog.setRendererV4(false);
         fog.setRendererV3(false);
@@ -293,22 +296,33 @@ public final class AutoBenchmarkRunner {
         Finished completion = finished;
         if (completion == null || !resumed || map == null || map.getStyle() == null)
             return;
-        finished = null;
         if (completion.report == null) {
+            finished = null;
             Toast.makeText(activity, "Benchmark stopped; settings restored",
                     Toast.LENGTH_LONG).show();
             return;
         }
-        new AlertDialog.Builder(activity)
+        if (completionShowing) return;
+        completionShowing = true;
+        // Keep the report across Activity recreation until the user chooses
+        // Share or Close. Rotation must never destroy the only full report.
+        AlertDialog dialog = new AlertDialog.Builder(activity)
                 .setTitle("Benchmark completed")
                 .setMessage("All modes checked. Your original renderer and compositor "
                         + "settings are restored. Share a single privacy-safe report.")
-                .setPositiveButton("Share report", (dialog, which) -> {
+                .setPositiveButton("Share report", (d, which) -> {
+                    if (finished == completion) finished = null;
                     Intent send = new Intent(Intent.ACTION_SEND);
                     send.setType("text/plain");
                     send.putExtra(Intent.EXTRA_TEXT, completion.report);
                     activity.startActivity(Intent.createChooser(send, "Share benchmark"));
                 })
-                .setNegativeButton("Close", null).show();
+                .setNegativeButton("Close", (d, which) -> {
+                    if (finished == completion) finished = null;
+                })
+                .setCancelable(false)
+                .create();
+        dialog.setOnDismissListener(d -> completionShowing = false);
+        dialog.show();
     }
 }
