@@ -617,6 +617,16 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
             quickLp.setMargins(0, 0, dp(16), dp(328));
             root.addView(quickMapTools, quickLp);
             updateQuickMapToolsVisibility();
+            // Rotation and split-screen can shorten the window without an
+            // Activity restart. Reflow shortcuts horizontally on short views
+            // so Share/Reset do not become clipped above zoom controls.
+            root.addOnLayoutChangeListener((v, left, top, right, bottom,
+                    oldLeft, oldTop, oldRight, oldBottom) -> {
+                if (bottom - top != oldBottom - oldTop
+                        || right - left != oldRight - oldLeft) {
+                    positionQuickMapTools(bottom - top);
+                }
+            });
         }
 
         setContentView(root);
@@ -1149,6 +1159,33 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     }
 
     /** Only the floating tools change; persisted exploration is untouched. */
+    private void positionQuickMapTools(int availableHeightPx) {
+        if (quickMapTools == null) return;
+        boolean shortWindow = availableHeightPx < dp(520);
+        int orientation = shortWindow
+                ? LinearLayout.HORIZONTAL : LinearLayout.VERTICAL;
+        if (quickMapTools.getOrientation() == orientation) return;
+
+        quickMapTools.setOrientation(orientation);
+        View divider = quickMapTools.getChildAt(1);
+        divider.setLayoutParams(new LinearLayout.LayoutParams(
+                shortWindow ? dp(1) : dp(56),
+                shortWindow ? dp(52) : dp(1)
+        ));
+        FrameLayout.LayoutParams lp =
+                (FrameLayout.LayoutParams) quickMapTools.getLayoutParams();
+        if (shortWindow) {
+            // Below top status card, 80dp left of the zoom/location controls.
+            lp.gravity = Gravity.TOP | Gravity.END;
+            lp.setMargins(0, dp(166), dp(80), 0);
+        } else {
+            // Normal portrait: 16dp above the zoom group.
+            lp.gravity = Gravity.BOTTOM | Gravity.END;
+            lp.setMargins(0, 0, dp(16), dp(328));
+        }
+        quickMapTools.setLayoutParams(lp);
+    }
+
     private void updateQuickMapToolsVisibility() {
         if (quickMapTools == null || store == null) return;
         int mode = store.getQuickMapAccessMode();
