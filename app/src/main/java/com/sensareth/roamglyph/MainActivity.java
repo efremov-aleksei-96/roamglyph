@@ -660,6 +660,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     @Override
     public void onMapReady(@NonNull MapLibreMap mapLibreMap) {
         map = mapLibreMap;
+        // A process may die after MapView saved disabled benchmark gestures.
+        // The benchmark is process-local: restore regular gestures when absent.
+        if (!AutoBenchmarkRunner.isRunning())
+            map.getUiSettings().setAllGesturesEnabled(true);
         benchmarkRunner.setMap(map);
         fogOverlayView.attachMap(map);
         if (h3 != null) fogOverlayView.attachCoverage(h3, coverageIndex);
