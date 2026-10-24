@@ -48,6 +48,7 @@ import com.sensareth.roamglyph.map.DiscoveryOverlayBuilder;
 import com.sensareth.roamglyph.map.ExplorationCoverageIndex;
 import com.sensareth.roamglyph.map.FogOverlayView;
 import com.sensareth.roamglyph.map.FogRendererChoice;
+import com.sensareth.roamglyph.map.QuickMapAccessMode;
 import com.sensareth.roamglyph.map.FogGpsCorridors;
 import com.sensareth.roamglyph.map.FogMapFrameGate;
 import com.sensareth.roamglyph.map.FogFrameMetrics;
@@ -142,6 +143,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private MapLibreMap map;
     private Button trackingButton;
     private Button locateButton;
+    private LinearLayout quickMapTools;
+    private Button quickShareButton;
+    private Button quickResetButton;
     private TextView stateText;
     private TextView statsText;
     private TextView gpsText;
@@ -569,6 +573,51 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         zoomLp.gravity = Gravity.BOTTOM | Gravity.END;
         zoomLp.setMargins(0, 0, dp(16), dp(173));
         root.addView(zoomControls, zoomLp);
+
+        // Fast A/B tools sit ABOVE existing zoom controls, never replacing
+        // the regular menu. Three actions in Full, one in Basic, none in Off.
+        if (performanceDiagnostics != null) {
+            quickMapTools = new LinearLayout(this);
+            quickMapTools.setOrientation(LinearLayout.VERTICAL);
+            GradientDrawable quickBackground = new GradientDrawable();
+            quickBackground.setColor(0xE6202124);
+            quickBackground.setCornerRadius(dp(12));
+            quickMapTools.setBackground(quickBackground);
+            quickMapTools.setElevation(dp(5));
+
+            Button renderButton = makeQuickMapButton("⚙",
+                    R.string.quick_render_content);
+            renderButton.setOnClickListener(this::showRenderingMenu);
+            quickMapTools.addView(renderButton,
+                    new LinearLayout.LayoutParams(dp(56), dp(52)));
+
+            View firstSeparator = new View(this);
+            firstSeparator.setBackgroundColor(0x55FFFFFF);
+            quickMapTools.addView(firstSeparator,
+                    new LinearLayout.LayoutParams(dp(56), dp(1)));
+
+            quickShareButton = makeQuickMapButton("↗",
+                    R.string.quick_share_content);
+            quickShareButton.setOnClickListener(v -> sharePerformanceDiagnostics(
+                    buildPerformanceReport()));
+            quickMapTools.addView(quickShareButton,
+                    new LinearLayout.LayoutParams(dp(56), dp(52)));
+
+            quickResetButton = makeQuickMapButton("↻",
+                    R.string.quick_reset_content);
+            quickResetButton.setOnClickListener(v -> resetPerformanceDiagnostics());
+            quickMapTools.addView(quickResetButton,
+                    new LinearLayout.LayoutParams(dp(56), dp(52)));
+
+            FrameLayout.LayoutParams quickLp = new FrameLayout.LayoutParams(
+                    dp(56), FrameLayout.LayoutParams.WRAP_CONTENT
+            );
+            quickLp.gravity = Gravity.BOTTOM | Gravity.END;
+            // Zoom control top is 312dp above bottom; retain a 16dp gap.
+            quickLp.setMargins(0, 0, dp(16), dp(328));
+            root.addView(quickMapTools, quickLp);
+            updateQuickMapToolsVisibility();
+        }
 
         setContentView(root);
         appUpdates = new AppUpdateManager(this, () -> tracking);
@@ -1099,6 +1148,9 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         labels.add(getString(R.string.menu_fog_synchronization)
                 + "\n" + (store.isFogMapFrameSyncEnabled()
                         ? "Map frame" : "Standard"));
+        ids.add(26);
+        labels.add(getString(R.string.menu_quick_map_access)
+                + "\n" + QuickMapAccessMode.label(store.getQuickMapAccessMode()));
         ids.add(14);
         labels.add(getString(R.string.menu_performance_diagnostics));
         showMenuSection(R.string.menu_rendering_diagnostics, ids, labels, anchor);
@@ -1200,6 +1252,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                         if (id == 23) showRendererChoices(anchor);
                         else if (id == 24) showCompositorChoices(anchor);
                         else if (id == 25) showSynchronizationChoices(anchor);
+                        else if (id == 26) showQuickMapAccessChoices(anchor);
                         else handleDataMenuAction(id);
                     }
                 })
