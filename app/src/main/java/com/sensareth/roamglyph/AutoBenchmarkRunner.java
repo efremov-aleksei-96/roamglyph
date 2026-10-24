@@ -129,13 +129,14 @@ public final class AutoBenchmarkRunner {
      */
     private static CameraPosition cameraAtOffset(CameraPosition original,
                                                   AutoBenchmarkPath.Offset delta) {
-        double latitude = Math.max(-84.0, Math.min(84.0,
-                original.target.getLatitude() + delta.northMeters / METERS_PER_LAT_DEGREE));
+        // The anchor is validated when the user starts a run. Never clamp
+        // individual waypoints: clamping would silently corrupt path distances.
+        double latitude = original.target.getLatitude()
+                + delta.northMeters / METERS_PER_LAT_DEGREE;
         double scale = Math.max(0.15,
                 Math.cos(Math.toRadians(original.target.getLatitude())));
         double longitude = original.target.getLongitude()
                 + delta.eastMeters / (METERS_PER_LAT_DEGREE * scale);
-        longitude = ((longitude + 180.0) % 360.0 + 360.0) % 360.0 - 180.0;
         return new CameraPosition.Builder().target(new LatLng(latitude, longitude))
                 .zoom(17.5).bearing(original.bearing).tilt(original.tilt).build();
     }
@@ -199,6 +200,25 @@ public final class AutoBenchmarkRunner {
                         (dialog, selected) -> {
                             CameraPosition original = map.getCameraPosition();
                             if (original == null || original.target == null) return;
+                            double lat = original.target.getLatitude();
+                            double lon = original.target.getLongitude();
+                            double maxLongitudeSweep = 2200.0
+                                    / (METERS_PER_LAT_DEGREE *
+                                            Math.max(0.15, Math.cos(Math.toRadians(lat))));
+                            // Reject pole/dateline anchors rather than changing
+                            // the path shape or jumping to a different region.
+                            if (!Double.isFinite(lat) || !Double.isFinite(lon)
+                                    || Math.abs(lat) > 83.0
+                                    || Math.abs(lon) > 180.0 - maxLongitudeSweep) {
+                                new AlertDialog.Builder(activity)
+                                        .setTitle("Choose a different map area")
+                                        .setMessage("Automatic benchmark needs a map "
+                                                + "position away from the poles and dateline. "
+                                                + "Move the map toward lower latitudes and retry.")
+                                        .setPositiveButton(android.R.string.ok, null)
+                                        .show();
+                                return;
+                            }
                             // Stress and Full are intentionally separate: the 16-mode
                             // matrix does not pretend to stress new territory.
                             session = new Session(selected == 2,
@@ -298,7 +318,7 @@ public final class AutoBenchmarkRunner {
                     ? Double.NaN
                     : 100.0 * summary.windowAbove16 / summary.windowSamples;
             String workload = run.scenario == AutoBenchmarkPath.Scenario.NEW_TERRITORY
-                    && summary.tileBuilds < 100 ? "LOW TILE WORKLOAD" : "measured";
+                    && summary.tileSuccess < 100 ? "LOW TILE WORKLOAD" : "measured";
             run.summaryRows.add(String.format(Locale.US,
                     "%s | %d | %.2f | %.2f | %.1f%% | %d | %d/%d/%d | %.1f | %s",
                     label, summary.windowSamples, summary.windowP95Ms,
