@@ -13,6 +13,40 @@ import java.util.Locale;
  */
 public final class FogPerformanceDiagnostics {
     private static final int MAX_SAMPLES = 8192;
+    public static final int BUILD_SUCCESS = 0;
+    public static final int BUILD_CANCELLED = 1;
+    public static final int BUILD_NO_RESULT = 2;
+
+    /** Immutable in-memory summary; counts have their own sample denominators. */
+    public static final class BenchmarkSummary {
+        public final long windowSamples;
+        public final double windowAverageMs, windowP95Ms, windowP99Ms;
+        public final long windowAbove16;
+        public final double fogDrawP95Ms, queueP95Ms;
+        public final long tileBuilds, tileSuccess, tileCancelled, tileNoResult;
+        public final long missingLookups;
+        public final int peakPending;
+        public final long mapFrameRedraws, mapFrameFallbacks;
+
+        private BenchmarkSummary(Phase p) {
+            windowSamples = p.uiFrame.totalCount;
+            windowAverageMs = p.uiFrame.totalCount == 0 ? Double.NaN
+                    : p.uiFrame.totalMillis / p.uiFrame.totalCount;
+            windowP95Ms = p.uiFrame.percentileValue(95);
+            windowP99Ms = p.uiFrame.percentileValue(99);
+            windowAbove16 = p.uiFrame.above16;
+            fogDrawP95Ms = p.fogDraw.percentileValue(95);
+            queueP95Ms = p.queueWait.percentileValue(95);
+            tileBuilds = p.tileBuild.totalCount;
+            tileSuccess = p.builtTiles;
+            tileCancelled = p.cancelledTiles;
+            tileNoResult = p.noResultTiles;
+            missingLookups = p.requestedMissingTiles;
+            peakPending = p.peakPending;
+            mapFrameRedraws = p.mapFrameRedraws;
+            mapFrameFallbacks = p.mapFrameFallbacks;
+        }
+    }
 
     private boolean fogEnabled;
     private long startedAtMillis;
@@ -40,6 +74,13 @@ public final class FogPerformanceDiagnostics {
             if (ms > 8.33) above8++;
             if (ms > 16.67) above16++;
             if (ms > 33.33) above33++;
+        }
+
+        double percentileValue(double p) {
+            if (count == 0) return Double.NaN;
+            double[] sample = Arrays.copyOf(values, count);
+            Arrays.sort(sample);
+            return percentile(sample, p);
         }
 
         String report() {
@@ -78,6 +119,9 @@ public final class FogPerformanceDiagnostics {
         long queuedTiles;
         long builtTiles;
         long failedTiles;
+        long cancelledTiles;
+        long noResultTiles;
+        int peakPending;
         int visibleTiles;
         int residentTiles;
         int pendingTiles;
@@ -110,6 +154,9 @@ public final class FogPerformanceDiagnostics {
                     .append("; queued=").append(queuedTiles).append('\n');
             s.append("Build outcomes: success=").append(builtTiles)
                     .append("; aborted/failed=").append(failedTiles).append('\n');
+            s.append("Build detail: cancelled=").append(cancelledTiles)
+                    .append("; no-result=").append(noResultTiles).append('\n');
+            s.append("Peak pending tiles: ").append(peakPending).append('\n');
             s.append("Last cache: ").append(residentTiles)
                     .append(" tiles / ").append(residentBytes / (1024 * 1024))
                     .append(" MiB; visible=").append(visibleTiles)
@@ -161,17 +208,35 @@ public final class FogPerformanceDiagnostics {
         p.queuedTiles += Math.max(0, queued);
         p.visibleTiles = Math.max(0, visible);
         p.pendingTiles = Math.max(0, pending);
+        p.peakPending = Math.max(p.peakPending, p.pendingTiles);
         p.residentTiles = Math.max(0, cacheCount);
         p.residentBytes = Math.max(0, cacheBytes);
     }
 
-    /** Includes preparation/geometry/raster/mipmaps on the single tile worker. */
+    /** Compatibility overload for existing diagnostic callers and tests. */
     public synchronized void recordTileBuild(long queueDelayNs,
                                              long processingNs, boolean success) {
+        recordTileBuild(queueDelayNs, processingNs,
+                success ? BUILD_SUCCESS : BUILD_NO_RESULT);
+    }
+
+    /** Distinguish obsolete work from builds which produced no tile. */
+    public synchronized void recordTileBuild(long queueDelayNs,
+                                             long processingNs, int outcome) {
         Phase p = current();
         p.queueWait.add(queueDelayNs);
         p.tileBuild.add(processingNs);
-        if (success) p.builtTiles++; else p.failedTiles++;
+        if (outcome == BUILD_SUCCESS) p.builtTiles++;
+        else {
+            p.failedTiles++;
+            if (outcome == BUILD_CANCELLED) p.cancelledTiles++;
+            else p.noResultTiles++;
+        }
+    }
+
+    /** Snapshot is called at mode end, off the hot per-frame rendering path. */
+    public synchronized BenchmarkSummary benchmarkSummary() {
+        return new BenchmarkSummary(current());
     }
 
     /** Callback timestamps do not represent physical display presentation. */
