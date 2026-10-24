@@ -1,4 +1,4 @@
-name: Signed quick map tools dev.41 hotfix preview
+name: Signed automatic benchmark dev.42 preview
 
 # One-off, source-pinned preview. Publish verified in-app prerelease.
 # Push fires only when this trusted main-branch workflow itself is added/changed.
@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: signed-pr52-dev41-hotfix-release
+  group: signed-pr56-dev42-benchmark-release
   cancel-in-progress: false
 
 jobs:
@@ -20,16 +20,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      CANDIDATE_SHA: fcfe1fc6f7a50b3fcc0b4e7403c1755a13f651f4
+      CANDIDATE_SHA: 3e449143c89548aac46864f5296c90f4dceaf60d
       BASE_SHA: 243532d9116e6ee20c7c6f22da3fa8add53d69c3
-      ROAMGLYPH_SOURCE_SHA: fcfe1fc6f7a50b3fcc0b4e7403c1755a13f651f4
+      ROAMGLYPH_SOURCE_SHA: 3e449143c89548aac46864f5296c90f4dceaf60d
     steps:
       - name: Check out trusted main workflow repository
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Require exact previously CI-tested PR52 source and safe diff
+      - name: Require exact previously CI-tested PR56 source and safe diff
         shell: bash
         run: |
           set -euo pipefail
@@ -63,16 +63,19 @@ jobs:
             'app/src/main/java/com/sensareth/roamglyph/map/FogRendererChoice.java' \
             'app/src/test/java/com/sensareth/roamglyph/map/FogRendererChoiceTest.java' \
             'app/src/main/java/com/sensareth/roamglyph/map/QuickMapAccessMode.java' \
-            'app/src/test/java/com/sensareth/roamglyph/map/QuickMapAccessModeTest.java' | sort)"
+            'app/src/test/java/com/sensareth/roamglyph/map/QuickMapAccessModeTest.java' \
+            'app/src/main/java/com/sensareth/roamglyph/AutoBenchmarkRunner.java' \
+            'app/src/main/java/com/sensareth/roamglyph/map/AutoBenchmarkPlan.java' \
+            'app/src/test/java/com/sensareth/roamglyph/map/AutoBenchmarkPlanTest.java' | sort)"
           ACTUAL="$(git diff --name-only "$BASE_SHA" "$CANDIDATE_SHA" | sort)"
           if [[ "$ACTUAL" != "$EXPECTED" ]]; then
-            echo "::error::Candidate differs outside twenty-four reviewed V4/updater/compositor/frame-sync/menu files."
+            echo "::error::Candidate differs outside twenty-seven reviewed V4/updater/compositor/frame-sync/menu files."
             git diff --name-only "$BASE_SHA" "$CANDIDATE_SHA"
             exit 1
           fi
           git checkout --detach "$CANDIDATE_SHA"
 
-      - name: Prepare isolated dev.41 preview with no embedded signing key
+      - name: Prepare isolated dev.42 preview with no embedded signing key
         shell: bash
         run: |
           set -euo pipefail
@@ -81,9 +84,9 @@ jobs:
           p = Path("app/build.gradle.kts")
           data = p.read_text()
           changes = (
-              ('versionCode = 32', 'versionCode = 41'),
+              ('versionCode = 32', 'versionCode = 42'),
               ('versionName = "0.5.0-dev.32+g$devRevision"',
-               'versionName = "0.5.0-dev.41+g$devRevision"'),
+               'versionName = "0.5.0-dev.42+g$devRevision"'),
               ('getByName("debug") {\n            if (hasDevSigning)',
                'getByName("debug") {\n            signingConfig = null\n            if (hasDevSigning)'),
           )
@@ -129,13 +132,13 @@ jobs:
             echo "::error::Build artifact was already signed; refuse to pass it to signing job."
             exit 1
           fi
-          cp "$APK" unsigned/roamglyph-pr52-dev41-unsigned.apk
+          cp "$APK" unsigned/roamglyph-pr56-dev42-unsigned.apk
 
       - name: Transfer unsigned preview to isolated signing job
         uses: actions/upload-artifact@v4
         with:
-          name: pr52-dev41-unsigned-intermediate
-          path: unsigned/roamglyph-pr52-dev41-unsigned.apk
+          name: pr56-dev42-unsigned-intermediate
+          path: unsigned/roamglyph-pr56-dev42-unsigned.apk
           if-no-files-found: error
           retention-days: 1
 
@@ -148,7 +151,7 @@ jobs:
       - name: Download verified unsigned APK only
         uses: actions/download-artifact@v4
         with:
-          name: pr52-dev41-unsigned-intermediate
+          name: pr56-dev42-unsigned-intermediate
           path: unsigned
 
       - name: Set up signing and Android build tools
@@ -165,19 +168,19 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
-          KEYSTORE="$RUNNER_TEMP/roamglyph-pr52-dev-signing.p12"
+          KEYSTORE="$RUNNER_TEMP/roamglyph-pr56-dev-signing.p12"
           trap 'rm -f "$KEYSTORE"' EXIT
           test -n "$KEYSTORE_BASE64" && test -n "$ROAMGLYPH_DEV_KEYSTORE_PASSWORD"
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
           test -x "$APKSIGNER" && test -x "$AAPT"
-          INPUT=unsigned/roamglyph-pr52-dev41-unsigned.apk
+          INPUT=unsigned/roamglyph-pr56-dev42-unsigned.apk
           test -s "$INPUT"
           BADGING="$("$AAPT" dump badging "$INPUT" | head -n 1)"
           [[ "$BADGING" == *"name='com.sensareth.roamglyph'"* ]]
-          [[ "$BADGING" == *"versionCode='41'"* ]]
-          [[ "$BADGING" == *"versionName='0.5.0-dev.41+gfcfe1fc6'"* ]]
+          [[ "$BADGING" == *"versionCode='42'"* ]]
+          [[ "$BADGING" == *"versionName='0.5.0-dev.42+g3e449143'"* ]]
           if "$APKSIGNER" verify "$INPUT" >/dev/null 2>&1; then
             echo "::error::Refusing an already signed candidate."
             exit 1
@@ -193,7 +196,7 @@ jobs:
             exit 1
           }
           mkdir -p dist
-          OUTPUT=dist/roamglyph-0.5.0-dev.41-gfcfe1fc6.apk
+          OUTPUT=dist/roamglyph-0.5.0-dev.42-g3e449143.apk
           "$APKSIGNER" sign --ks "$KEYSTORE" --ks-type PKCS12 \
             --ks-key-alias roamglyph-dev \
             --ks-pass env:ROAMGLYPH_DEV_KEYSTORE_PASSWORD \
@@ -208,15 +211,15 @@ jobs:
       - name: Upload signed Pixel APK for in-app development update test
         uses: actions/upload-artifact@v4
         with:
-          name: roamglyph-pr52-dev41-pixel-preview-signed
+          name: roamglyph-pr56-dev42-pixel-preview-signed
           path: |
-            dist/roamglyph-0.5.0-dev.41-gfcfe1fc6.apk
+            dist/roamglyph-0.5.0-dev.42-g3e449143.apk
             dist/SHA256SUMS.txt
           retention-days: 14
           if-no-files-found: error
 
-  publish-dev41:
-    name: Publish signed dev41 to developer updates
+  publish-dev42:
+    name: Publish signed dev42 to developer updates
     needs: sign-preview
     if: github.repository == 'efremov-aleksei-96/roamglyph' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -226,15 +229,15 @@ jobs:
       actions: read
     env:
       GH_TOKEN: ${{ github.token }}
-      SOURCE_SHA: fcfe1fc6f7a50b3fcc0b4e7403c1755a13f651f4
-      RELEASE_TAG: dev-vc41-gfcfe1fc6
-      APK_NAME: roamglyph-0.5.0-dev.41-gfcfe1fc6.apk
+      SOURCE_SHA: 3e449143c89548aac46864f5296c90f4dceaf60d
+      RELEASE_TAG: dev-vc42-g3e449143
+      APK_NAME: roamglyph-0.5.0-dev.42-g3e449143.apk
       PIN: 89defa011682172a6d892cda46cd6132393dccda22cecf1175f825596db80758
     steps:
       - name: Get certified APK, not candidate code
         uses: actions/download-artifact@v4
         with:
-          name: roamglyph-pr52-dev41-pixel-preview-signed
+          name: roamglyph-pr56-dev42-pixel-preview-signed
           path: dist
 
       - name: Verify release bytes, key and fixed source
@@ -249,7 +252,7 @@ jobs:
           CERT="$("$APKSIGNER" verify --print-certs "dist/$APK_NAME" |
             sed -n 's/^.*certificate SHA-256 digest: //p' | head -n 1)"
           test "$CERT" = "$PIN"
-          PR_HEAD="$(gh api "repos/$GITHUB_REPOSITORY/pulls/52" --jq '.head.sha')"
+          PR_HEAD="$(gh api "repos/$GITHUB_REPOSITORY/pulls/56" --jq '.head.sha')"
           test "$PR_HEAD" = "$SOURCE_SHA"
           # Enforce the acceptance gates in the job that has permission to
           # publish. A healthy workflow PR is not proof that candidate PR #45
@@ -280,7 +283,7 @@ jobs:
             exit 1
           fi
 
-      - name: Stage both assets in a draft and publish immutable dev41
+      - name: Stage both assets in a draft and publish immutable dev42
         shell: bash
         run: |
           set -euo pipefail
@@ -288,8 +291,8 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$SOURCE_SHA" \
             --prerelease --latest=false \
-            --title "RoamGlyph 0.5.0-dev.41 (Quick Render button hotfix)" \
-            --notes "RoamGlyph dev.41 fixes the Quick Render on-map button missing click handler in the immutable dev.40 APK. Uses PR #52 latest reviewed source commit fcfe1fc6, adds quick renderer/comp/sync selector and back navigation while retaining Share, Reset, Off/Basic/Full preference, dev.39 and dev.40 GPS/H3/Room/history data unchanged. Stop Exploration and export JSON backup before in-place updating. PR #52 is not merged to main pending Pixel validation."
+            --title "RoamGlyph 0.5.0-dev.42 (Automatic camera benchmark)" \
+            --notes "RoamGlyph dev.42 adds the opt-in Automatic camera benchmark (Quick V4 4-mode or Full 16-mode) under Rendering & diagnostics, using source PR #56 pinned to 3e449143. It runs camera-only sweeps, collects one shareable local report and restores stored renderer/compositor settings without changing GPS/H3/Room history. This experimental Pixel QA preview is not a stable release. Stop Exploration and export JSON backup before in-place updating. PR #56 remains outside main."
 
       - name: Verify public prerelease is detectable by in-app updater
         shell: bash
