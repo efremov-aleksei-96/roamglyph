@@ -27,6 +27,7 @@ public final class VisitedStore {
     private static final String KEY_TEXTURE_MAP_TEST = "texture_map_composition_test";
     // Purely experimental visual frame-trigger preference. Default unchanged.
     private static final String KEY_FOG_MAP_FRAME_SYNC = "fog_map_frame_sync_test";
+    private static final String KEY_QUICK_MAP_ACCESS_MODE = "quick_map_access_mode";
     private static final String KEY_DISCOVERIES_ENABLED = "discoveries_enabled";
     private static final String KEY_HAS_LOCATION = "has_location";
     private static final String KEY_LAT = "last_lat";
@@ -149,6 +150,18 @@ public final class VisitedStore {
 
     public void setFogMapFrameSyncEnabled(boolean enabled) {
         prefs.edit().putBoolean(KEY_FOG_MAP_FRAME_SYNC, enabled).apply();
+    }
+
+    /** Full on dev builds by default; purely a UI shortcut preference. */
+    public int getQuickMapAccessMode() {
+        return com.sensareth.roamglyph.map.QuickMapAccessMode.normalize(
+                prefs.getInt(KEY_QUICK_MAP_ACCESS_MODE,
+                        com.sensareth.roamglyph.map.QuickMapAccessMode.FULL));
+    }
+
+    public void setQuickMapAccessMode(int mode) {
+        prefs.edit().putInt(KEY_QUICK_MAP_ACCESS_MODE,
+                com.sensareth.roamglyph.map.QuickMapAccessMode.normalize(mode)).apply();
     }
 
     public boolean isDiscoveriesEnabled() {
