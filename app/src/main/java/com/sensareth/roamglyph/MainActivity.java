@@ -1174,6 +1174,10 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         ));
         FrameLayout.LayoutParams lp =
                 (FrameLayout.LayoutParams) quickMapTools.getLayoutParams();
+        // The horizontal row needs the width of all three 56dp controls.
+        // Keep the compact fixed width only for the vertical portrait stack.
+        lp.width = shortWindow
+                ? FrameLayout.LayoutParams.WRAP_CONTENT : dp(56);
         if (shortWindow) {
             // Below top status card, 80dp left of the zoom/location controls.
             lp.gravity = Gravity.TOP | Gravity.END;
