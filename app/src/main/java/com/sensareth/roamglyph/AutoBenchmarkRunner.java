@@ -43,27 +43,30 @@ public final class AutoBenchmarkRunner {
         final AutoBenchmarkPath.Scenario scenario;
         final boolean comparePruning;
         final boolean comparePrefetch;
+        final boolean compareRedraw;
         final String runId = UUID.randomUUID().toString().substring(0, 8);
         final ArrayList<String> reports = new ArrayList<>();
         final ArrayList<String> summaryRows = new ArrayList<>();
         int step;
 
         Session(boolean allRenderers, AutoBenchmarkPath.Scenario scenario,
-                boolean comparePruning, boolean comparePrefetch,
+                boolean comparePruning, boolean comparePrefetch, boolean compareRedraw,
                 CameraPosition original) {
-            List<AutoBenchmarkPlan.Mode> base = comparePrefetch
+            List<AutoBenchmarkPlan.Mode> base = comparePrefetch || compareRedraw
                     ? java.util.Collections.singletonList(
                             new AutoBenchmarkPlan.Mode(3, false, false))
                     : AutoBenchmarkPlan.modes(allRenderers);
             ArrayList<AutoBenchmarkPlan.Mode> expanded = new ArrayList<>();
             for (AutoBenchmarkPlan.Mode mode : base) {
                 expanded.add(mode);
-                if (comparePruning || comparePrefetch) expanded.add(mode);
+                if (comparePruning || comparePrefetch || compareRedraw)
+                    expanded.add(mode);
             }
             this.modes = java.util.Collections.unmodifiableList(expanded);
             this.scenario = scenario;
             this.comparePruning = comparePruning;
             this.comparePrefetch = comparePrefetch;
+            this.compareRedraw = compareRedraw;
             this.original = original;
         }
 
@@ -77,11 +80,18 @@ public final class AutoBenchmarkRunner {
             return AutoBenchmarkPlan.prefetchDeferralEnabledAt(step, comparePrefetch);
         }
 
+        boolean coalesceRedraw() {
+            return AutoBenchmarkPlan.tileRedrawCoalescingAt(step, compareRedraw);
+        }
+
         String label() {
             return mode().label() + (comparePruning
                     ? pruningEnabled() ? " / Prune ON" : " / Prune OFF" : "")
                     + (comparePrefetch
                         ? deferPrefetch() ? " / Visible-first ON" : " / Visible-first OFF"
+                        : "")
+                    + (compareRedraw
+                        ? coalesceRedraw() ? " / Vsync redraw" : " / Immediate redraw"
                         : "");
         }
     }
@@ -229,7 +239,8 @@ public final class AutoBenchmarkRunner {
                         "Stress: V4, 4 modes · new territory",
                         "Stress A/B: 4 modes × pruning OFF/ON",
                         "Full: all 16 modes · warmed pan",
-                        "Visible-first A/B: V4 GL, prefetch OFF/ON"},
+                        "Visible-first A/B: V4 GL, prefetch OFF/ON",
+                        "Tile redraw A/B: V4 GL, immediate/vsync"},
                         (dialog, selected) -> {
                             CameraPosition original = map.getCameraPosition();
                             if (original == null || original.target == null) return;
@@ -256,9 +267,11 @@ public final class AutoBenchmarkRunner {
                             // matrix does not pretend to stress new territory.
                             session = new Session(selected == 3,
                                     selected == 1 || selected == 2 || selected == 4
+                                            || selected == 5
                                             ? AutoBenchmarkPath.Scenario.NEW_TERRITORY
                                             : AutoBenchmarkPath.Scenario.WARM_PAN,
-                                    selected == 2, selected == 4, original);
+                                    selected == 2, selected == 4,
+                                    selected == 5, original);
                             finished = null;
                             if (session.mode().textureView
                                     != (view.getRenderView() instanceof android.view.TextureView))
@@ -294,6 +307,7 @@ public final class AutoBenchmarkRunner {
         // The normal production default remains eagerPruningEnabled=true.
         fog.setEagerPruningEnabled(run.pruningEnabled());
         fog.setDeferPrefetchWhileVisibleMissing(run.deferPrefetch());
+        fog.setCoalesceTileFinishRedraw(run.coalesceRedraw());
         fog.setRendererV4(false);
         fog.setRendererV3(false);
         fog.setRendererV2(false);
@@ -381,6 +395,7 @@ public final class AutoBenchmarkRunner {
             report.append("Scenario: ").append(run.scenario)
                     .append("; pruning A/B=").append(run.comparePruning)
                     .append("; visible-first A/B=").append(run.comparePrefetch)
+                    .append("; redraw A/B=").append(run.compareRedraw)
                     .append("; ")
                     .append(AutoBenchmarkPath.steps(run.scenario))
                     .append(" scripted camera pans at z17.5, 6s unmeasured warm-up per mode.\n")
@@ -397,6 +412,11 @@ public final class AutoBenchmarkRunner {
                     + "Compare successful-only queue p95, success count, "
                     + "deferred prefetch and UI tile-demand p95. "
                     + "Map GPU presentation remains unmeasured.\n");
+            if (run.compareRedraw) report.append(
+                    "Paired experimental immediate/vsync tile-completion redraw "
+                    + "A/B on V4 GLSurfaceView Standard. Compare window p95/p99, "
+                    + ">16.7ms, Fog.onDraw and successful queue latency. "
+                    + "Window FrameMetrics are NOT the map GPU presentation FPS.\n");
             report.append("\n=== COMPARISON SUMMARY ===\n");
             report.append("Mode | window n | p95 ms | p99 ms | >16.7ms | ")
                     .append("miss lookups | built/cancelled/no-result | pruned | queue peak | deferred-prefetch | "
@@ -407,6 +427,7 @@ public final class AutoBenchmarkRunner {
             for (String part : run.reports) report.append(part);
             fog.setEagerPruningEnabled(true);
             fog.setDeferPrefetchWhileVisibleMissing(true);
+            fog.setCoalesceTileFinishRedraw(true);
             session = null;
             finished = new Finished(run.original, report.toString());
             // MapLibre persists UiSettings gesture flags through saved state.
@@ -436,6 +457,7 @@ public final class AutoBenchmarkRunner {
         stageStarted = false;
         fog.setEagerPruningEnabled(true);
         fog.setDeferPrefetchWhileVisibleMissing(true);
+        fog.setCoalesceTileFinishRedraw(true);
         session = null;
         finished = new Finished(run.original, null);
         if (map != null) map.getUiSettings().setAllGesturesEnabled(true);
