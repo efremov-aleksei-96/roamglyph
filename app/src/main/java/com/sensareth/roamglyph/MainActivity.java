@@ -449,13 +449,6 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         // avoids overlap even when its localized text is wide.
         scaleLp.setMargins(dp(10), 0, 0, dp(100));
         root.addView(mapScaleRuler, scaleLp);
-        root.addOnLayoutChangeListener((v, left, top, right, bottom,
-                oldLeft, oldTop, oldRight, oldBottom) -> {
-            if (right - left != oldRight - oldLeft
-                    || bottom - top != oldBottom - oldTop) {
-                updateMapScaleRuler(true);
-            }
-        });
 
         LinearLayout statusCard = new LinearLayout(this);
         statusCard.setOrientation(LinearLayout.VERTICAL);
@@ -493,6 +486,31 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         statusLp.gravity = Gravity.TOP;
         statusLp.setMargins(dp(16), dp(52), dp(72), 0);
         root.addView(statusCard, statusLp);
+
+        // In split screen, hide the ruler if the raised bottom position
+        // collides with the (variable-height) status card. Restore it once
+        // the window grows or the card contracts, with a fresh projection.
+        Runnable fitRulerToWindow = () -> {
+            int rulerTop = root.getHeight() - dp(100) - dp(48);
+            boolean fits = root.getHeight() > 0 && statusCard.getHeight() > 0
+                    && rulerTop >= statusCard.getBottom() + dp(12);
+            boolean wasAllowed = mapScaleRuler.isLayoutAllowed();
+            mapScaleRuler.setLayoutAllowed(fits);
+            if (fits && (!wasAllowed || mapScaleRuler.getWidth() > 0)) {
+                root.post(() -> updateMapScaleRuler(true));
+            }
+        };
+        root.addOnLayoutChangeListener((v, left, top, right, bottom,
+                oldLeft, oldTop, oldRight, oldBottom) -> {
+            if (right - left != oldRight - oldLeft
+                    || bottom - top != oldBottom - oldTop) {
+                fitRulerToWindow.run();
+            }
+        });
+        statusCard.addOnLayoutChangeListener((v, left, top, right, bottom,
+                oldLeft, oldTop, oldRight, oldBottom) -> {
+            if (bottom - top != oldBottom - oldTop) fitRulerToWindow.run();
+        });
 
         Button menuButton = new Button(this);
         menuButton.setAllCaps(false);
@@ -801,6 +819,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
      */
     private void updateMapScaleRuler(boolean forced) {
         if (map == null || mapScaleRuler == null || mapView == null
+                || !mapScaleRuler.isLayoutAllowed()
                 || AutoBenchmarkRunner.isRunning()) return;
         int width = mapView.getWidth();
         int height = mapView.getHeight();
