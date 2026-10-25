@@ -49,6 +49,8 @@ import com.sensareth.roamglyph.map.ExplorationCoverageIndex;
 import com.sensareth.roamglyph.map.FogOverlayView;
 import com.sensareth.roamglyph.map.FogRendererChoice;
 import com.sensareth.roamglyph.map.QuickMapAccessMode;
+import com.sensareth.roamglyph.map.MapScaleMath;
+import com.sensareth.roamglyph.map.MapScaleRulerView;
 import com.sensareth.roamglyph.map.FogGpsCorridors;
 import com.sensareth.roamglyph.map.FogMapFrameGate;
 import com.sensareth.roamglyph.map.FogFrameMetrics;
@@ -151,6 +153,8 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
     private TextView statsText;
     private TextView gpsText;
     private TextView mapZoomText;
+    private MapScaleRulerView mapScaleRuler;
+    private long lastMapScaleRefreshMs;
     private int displayedZoomTenth = Integer.MIN_VALUE;
     private VisitedStore store;
     private volatile boolean mapLifecycleResumed;
@@ -434,6 +438,18 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         attributionLp.setMargins(dp(10), 0, 0, dp(6));
         root.addView(mapAttribution, attributionLp);
 
+        // Everyday exploration feature: a projection-based metric ruler,
+        // entirely offline, independent of GPS/tracking/fog renderer.
+        // Reserve the entire tracking button zone in narrow portrait windows.
+        mapScaleRuler = new MapScaleRulerView(this);
+        FrameLayout.LayoutParams scaleLp = new FrameLayout.LayoutParams(
+                dp(144), dp(48));
+        scaleLp.gravity = Gravity.BOTTOM | Gravity.START;
+        // Tracking button occupies bottom 32–84dp; a 16dp clearance
+        // avoids overlap even when its localized text is wide.
+        scaleLp.setMargins(dp(10), 0, 0, dp(100));
+        root.addView(mapScaleRuler, scaleLp);
+
         LinearLayout statusCard = new LinearLayout(this);
         statusCard.setOrientation(LinearLayout.VERTICAL);
         statusCard.setPadding(dp(16), dp(12), dp(16), dp(12));
@@ -470,6 +486,31 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         statusLp.gravity = Gravity.TOP;
         statusLp.setMargins(dp(16), dp(52), dp(72), 0);
         root.addView(statusCard, statusLp);
+
+        // In split screen, hide the ruler if the raised bottom position
+        // collides with the (variable-height) status card. Restore it once
+        // the window grows or the card contracts, with a fresh projection.
+        Runnable fitRulerToWindow = () -> {
+            int rulerTop = root.getHeight() - dp(100) - dp(48);
+            boolean fits = root.getHeight() > 0 && statusCard.getHeight() > 0
+                    && rulerTop >= statusCard.getBottom() + dp(12);
+            boolean wasAllowed = mapScaleRuler.isLayoutAllowed();
+            mapScaleRuler.setLayoutAllowed(fits);
+            if (fits && (!wasAllowed || mapScaleRuler.getWidth() > 0)) {
+                root.post(() -> updateMapScaleRuler(true));
+            }
+        };
+        root.addOnLayoutChangeListener((v, left, top, right, bottom,
+                oldLeft, oldTop, oldRight, oldBottom) -> {
+            if (right - left != oldRight - oldLeft
+                    || bottom - top != oldBottom - oldTop) {
+                fitRulerToWindow.run();
+            }
+        });
+        statusCard.addOnLayoutChangeListener((v, left, top, right, bottom,
+                oldLeft, oldTop, oldRight, oldBottom) -> {
+            if (bottom - top != oldBottom - oldTop) fitRulerToWindow.run();
+        });
 
         Button menuButton = new Button(this);
         menuButton.setAllCaps(false);
@@ -668,11 +709,13 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         fogOverlayView.attachMap(map);
         if (h3 != null) fogOverlayView.attachCoverage(h3, coverageIndex);
         updateMapZoomLabel();
+        updateMapScaleRuler(true);
 
         mapView.addOnWillStartRenderingFrameListener(mapFrameStartListener);
         mapView.addOnDidFinishRenderingFrameListener(mapFrameListener);
         map.addOnCameraMoveListener(() -> {
             updateMapZoomLabel();
+            updateMapScaleRuler(false);
             lastCameraMotionAtNanos = SystemClock.elapsedRealtimeNanos();
             if (AutoBenchmarkRunner.mapFrameSync(store)) {
                 scheduleMapFrameFallback();
@@ -684,6 +727,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         });
         map.addOnCameraIdleListener(() -> {
             updateMapZoomLabel();
+            updateMapScaleRuler(true);
             if (AutoBenchmarkRunner.mapFrameSync(store)) {
                 // Camera idle is NOT proof that the latest GL frame rendered.
                 // A late/missing finish callback must leave the rescue armed.
@@ -766,6 +810,46 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         String zoom = String.format(Locale.US, "%.1f", tenth / 10.0);
         mapZoomText.setText("z" + zoom);
         mapZoomText.setContentDescription("Current map zoom level " + zoom);
+    }
+
+    /**
+     * Local scale near the lower-left ruler using the *actual* MapLibre
+     * projection, so latitude, tilt and device pixel density are respected.
+     * Never stores or exports the projected coordinates.
+     */
+    private void updateMapScaleRuler(boolean forced) {
+        if (map == null || mapScaleRuler == null || mapView == null
+                || !mapScaleRuler.isLayoutAllowed()
+                || AutoBenchmarkRunner.isRunning()) return;
+        int width = mapView.getWidth();
+        int height = mapView.getHeight();
+        if (width < dp(190) || height < dp(165)
+                || mapScaleRuler.getWidth() <= 0
+                || mapScaleRuler.getHeight() <= 0) return;
+        long now = SystemClock.uptimeMillis();
+        if (!forced && now - lastMapScaleRefreshMs < 160L) return;
+        lastMapScaleRefreshMs = now;
+        try {
+            // Use the exact physical row where the ruler paints its bar.
+            // At non-zero map tilt, meters/pixel change with screen y.
+            float x = mapScaleRuler.getLeft()
+                    + mapScaleRuler.distanceBarLeftX() - mapView.getLeft();
+            float y = mapScaleRuler.getTop()
+                    + mapScaleRuler.distanceBarCenterY() - mapView.getTop();
+            float referencePixels = dp(110);
+            org.maplibre.android.geometry.LatLng first =
+                    map.getProjection().fromScreenLocation(new PointF(x, y));
+            org.maplibre.android.geometry.LatLng second =
+                    map.getProjection().fromScreenLocation(
+                            new PointF(x + referencePixels, y));
+            if (first == null || second == null) return;
+            mapScaleRuler.update(MapScaleMath.distanceMeters(
+                    first.getLatitude(), first.getLongitude(),
+                    second.getLatitude(), second.getLongitude()), referencePixels);
+        } catch (IllegalStateException ignored) {
+            // The MapLibre projection can be transiently unavailable while
+            // rotating or recreating a compositor; a later move retries.
+        }
     }
 
     private void loadActiveMapStyle() {
