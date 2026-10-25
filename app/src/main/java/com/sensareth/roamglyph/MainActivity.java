@@ -843,9 +843,25 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                     map.getProjection().fromScreenLocation(
                             new PointF(x, y + referencePixels));
             if (first == null || second == null) return;
-            mapScaleRuler.update(MapScaleMath.distanceMeters(
+            double referenceMeters = MapScaleMath.distanceMeters(
                     first.getLatitude(), first.getLongitude(),
-                    second.getLatitude(), second.getLongitude()), referencePixels);
+                    second.getLatitude(), second.getLongitude());
+            double nice = MapScaleMath.niceDistanceMeters(referenceMeters);
+            if (!Double.isFinite(nice)) return;
+            // Vertical screen projection is nonlinear when the map is pitched.
+            // Solve the painted lower tick Y directly from the projection.
+            float exactPixels = MapScaleMath.projectedLengthForDistance(
+                    nice, referencePixels, pixelOffset -> {
+                        org.maplibre.android.geometry.LatLng target =
+                                map.getProjection().fromScreenLocation(
+                                        new PointF(x, y + (float) pixelOffset));
+                        return target == null ? Double.NaN
+                                : MapScaleMath.distanceMeters(
+                                        first.getLatitude(), first.getLongitude(),
+                                        target.getLatitude(), target.getLongitude());
+                    });
+            if (!Float.isFinite(exactPixels)) return;
+            mapScaleRuler.updateExact(nice, exactPixels);
         } catch (IllegalStateException ignored) {
             // The MapLibre projection can be transiently unavailable while
             // rotating or recreating a compositor; a later move retries.
