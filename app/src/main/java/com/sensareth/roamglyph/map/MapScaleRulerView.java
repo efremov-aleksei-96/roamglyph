@@ -63,9 +63,9 @@ public final class MapScaleRulerView extends View {
 
     private float lastWidthPx;
 
-    /** The exact local X at which the vertical bar is painted and projected. */
+    /** The exact bar X, separate from the transparent caption area's width. */
     public float distanceBarX() {
-        return getWidth() - 11f * density;
+        return 44f * density; // parent 10dp margin -> 54dp screen X, previously 81dp.
     }
 
     /** The exact local Y at which the vertical bar starts. */
@@ -102,13 +102,21 @@ public final class MapScaleRulerView extends View {
 
         float labelY = Math.max(16f * d, Math.min(getHeight() - 6f * d,
                 (start + end) * 0.5f + 4f * d));
+        // Keep the caption to the RIGHT of the ruler. Long kilometre
+        // labels must never collide with the painted bar or be clipped.
+        float labelX = distanceBarX() + 8f * d;
+        float available = Math.max(1f, getWidth() - labelX - 4f * d);
         paint.setTextSize(13f * d);
+        float measured = paint.measureText(distanceLabel);
+        if (measured > available) {
+            paint.setTextSize(Math.max(8f * d, 13f * d * available / measured));
+        }
         paint.setStyle(Paint.Style.STROKE);
         paint.setStrokeWidth(3.5f * d);
         paint.setColor(Color.WHITE);
-        canvas.drawText(distanceLabel, 3f * d, labelY, paint);
+        canvas.drawText(distanceLabel, labelX, labelY, paint);
         paint.setStyle(Paint.Style.FILL);
         paint.setColor(0xFF202124);
-        canvas.drawText(distanceLabel, 3f * d, labelY, paint);
+        canvas.drawText(distanceLabel, labelX, labelY, paint);
     }
 }
