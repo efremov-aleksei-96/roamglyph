@@ -24,6 +24,17 @@ public class MapScaleMathTest {
         assertTrue(Double.isNaN(MapScaleMath.niceDistanceMeters(0)));
     }
 
+    @Test public void pitchedPerspectiveSolvesActualGroundLengthNotLinearRatio() {
+        // Simulated camera pitch: projected ground distance increases
+        // non-linearly toward the foot of the display.
+        java.util.function.DoubleUnaryOperator pitched = px -> px + px * px / 100.0;
+        float span = MapScaleMath.projectedLengthForDistance(100.0, 115f, pitched);
+        assertEquals(100.0, pitched.applyAsDouble(span), 0.5);
+        assertTrue(span < 100f);
+        assertTrue(Float.isNaN(MapScaleMath.projectedLengthForDistance(
+                0.0, 115f, pitched)));
+    }
+
     @Test public void rulerLabelsUseCompactMetricUnits() {
         assertEquals("50 m", MapScaleMath.label(50));
         assertEquals("2 km", MapScaleMath.label(2000));
