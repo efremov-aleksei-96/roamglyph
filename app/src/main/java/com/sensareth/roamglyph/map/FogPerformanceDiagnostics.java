@@ -25,7 +25,8 @@ public final class FogPerformanceDiagnostics {
         public final double fogDrawP95Ms, queueP95Ms;
         public final long tileBuilds, tileSuccess, tileCancelled, tileNoResult;
         public final long missingLookups;
-        public final int peakPending;
+        public final int peakPending, peakQueueDepth;
+        public final long prunedQueuedJobs;
         public final long mapFrameRedraws, mapFrameFallbacks;
 
         private BenchmarkSummary(Phase p) {
@@ -43,6 +44,8 @@ public final class FogPerformanceDiagnostics {
             tileNoResult = p.noResultTiles;
             missingLookups = p.requestedMissingTiles;
             peakPending = p.peakPending;
+            peakQueueDepth = p.peakQueueDepth;
+            prunedQueuedJobs = p.prunedQueuedJobs;
             mapFrameRedraws = p.mapFrameRedraws;
             mapFrameFallbacks = p.mapFrameFallbacks;
         }
@@ -121,6 +124,8 @@ public final class FogPerformanceDiagnostics {
         long failedTiles;
         long cancelledTiles;
         long noResultTiles;
+        long prunedQueuedJobs;
+        int peakQueueDepth;
         int peakPending;
         int visibleTiles;
         int residentTiles;
@@ -157,6 +162,8 @@ public final class FogPerformanceDiagnostics {
             s.append("Build detail: cancelled=").append(cancelledTiles)
                     .append("; no-result=").append(noResultTiles).append('\n');
             s.append("Peak pending tiles: ").append(peakPending).append('\n');
+            s.append("Worker queue hygiene: pruned-obsolete=").append(prunedQueuedJobs)
+                    .append("; peak-queued=").append(peakQueueDepth).append('\n');
             s.append("Last cache: ").append(residentTiles)
                     .append(" tiles / ").append(residentBytes / (1024 * 1024))
                     .append(" MiB; visible=").append(visibleTiles)
@@ -211,6 +218,16 @@ public final class FogPerformanceDiagnostics {
         p.peakPending = Math.max(p.peakPending, p.pendingTiles);
         p.residentTiles = Math.max(0, cacheCount);
         p.residentBytes = Math.max(0, cacheBytes);
+    }
+
+    /**
+     * Queue pruning happens on the UI camera-demand path. It is NOT a
+     * finished build and must not be counted as a worker cancellation.
+     */
+    public synchronized void recordQueueMaintenance(int pruned, int queuedDepth) {
+        Phase p = current();
+        p.prunedQueuedJobs += Math.max(0, pruned);
+        p.peakQueueDepth = Math.max(p.peakQueueDepth, Math.max(0, queuedDepth));
     }
 
     /** Compatibility overload for existing diagnostic callers and tests. */
