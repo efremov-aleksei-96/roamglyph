@@ -80,6 +80,8 @@ public class FogPerformanceDiagnosticsTest {
                 FogPerformanceDiagnostics.BUILD_CANCELLED);
         metrics.recordTileBuild(5_000_000L, 10_000_000L,
                 FogPerformanceDiagnostics.BUILD_NO_RESULT);
+        metrics.recordQueueMaintenance(9, 15);
+        metrics.recordQueueMaintenance(3, 5);
         FogPerformanceDiagnostics.BenchmarkSummary summary = metrics.benchmarkSummary();
         assertTrue(summary.windowSamples == 2);
         assertTrue(summary.windowAbove16 == 1);
@@ -90,7 +92,10 @@ public class FogPerformanceDiagnosticsTest {
         assertTrue(summary.tileCancelled == 1);
         assertTrue(summary.tileNoResult == 1);
         assertTrue(summary.peakPending == 3);
+        assertTrue(summary.prunedQueuedJobs == 12);
+        assertTrue(summary.peakQueueDepth == 15);
         assertTrue(metrics.report().contains("Build detail: cancelled=1; no-result=1"));
+        assertTrue(metrics.report().contains("Worker queue hygiene: pruned-obsolete=12; peak-queued=15"));
     }
 
     @Test public void mapFrameMetricsSeparateFogOnOffPhases() {
