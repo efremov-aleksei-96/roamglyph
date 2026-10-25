@@ -42,6 +42,12 @@ public final class AutoBenchmarkPlan {
         return ((step & 1) == 1) == ((pair & 1) == 0);
     }
 
+    /** Two-case A/B for visible-tile-first halo deferral, OFF then ON. */
+    public static boolean prefetchDeferralEnabledAt(int step, boolean paired) {
+        if (step < 0) throw new IllegalArgumentException("benchmark step");
+        return !paired || (step & 1) == 1;
+    }
+
     /** Group by compositor to minimize costly MapView recreation. */
     public static List<Mode> modes(boolean allRenderers) {
         ArrayList<Mode> result = new ArrayList<>();
