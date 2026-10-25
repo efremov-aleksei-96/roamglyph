@@ -391,7 +391,7 @@ public final class FogOverlayView extends View {
         if (!forced && now - lastDemandAt < DEMAND_INTERVAL_MS) return;
         lastDemandAt = now;
         long startedNanos = SystemClock.elapsedRealtimeNanos();
-        int hits = 0, misses = 0, queued = 0;
+        int hits = 0, misses = 0, queued = 0, pruned = 0;
         try {
             org.maplibre.android.camera.CameraPosition camera = map.getCameraPosition();
             if (camera == null) return;
@@ -429,6 +429,13 @@ public final class FogOverlayView extends View {
             }
             wanted = Collections.unmodifiableSet(new HashSet<>(prioritized));
             visibleWanted = Collections.unmodifiableSet(new HashSet<>(newVisible));
+            // Camera movement can obsolete dozens of pending prefetch jobs.
+            // Prune on the UI producer BEFORE enqueueing the new viewport.
+            // Release pending only after queue.remove() succeeds, so a job
+            // already running on the worker keeps ownership until finishTile.
+            pruned = FogTileQueuePriority.pruneObsolete(
+                    jobs, wanted, candidate -> candidate.key,
+                    candidate -> pending.remove(candidate.key));
 
             // Protect both the new visible set and the old visible zoom
             // during a transition. Halo tiles may be evicted first.
@@ -495,10 +502,13 @@ public final class FogOverlayView extends View {
             // Unprojectable poles/dateline or an incomplete style: fail dark.
         } finally {
             FogPerformanceDiagnostics current = diagnostics;
-            if (current != null) current.recordDemand(
-                    SystemClock.elapsedRealtimeNanos() - startedNanos,
-                    hits, misses, queued, visible.size(), pending.size(),
-                    cache.size(), cacheBytes);
+            if (current != null) {
+                current.recordDemand(
+                        SystemClock.elapsedRealtimeNanos() - startedNanos,
+                        hits, misses, queued, visible.size(), pending.size(),
+                        cache.size(), cacheBytes);
+                current.recordQueueMaintenance(pruned, jobs.size());
+            }
         }
     }
 
