@@ -23,6 +23,9 @@ public final class FogPerformanceDiagnostics {
         public final double windowAverageMs, windowP95Ms, windowP99Ms;
         public final long windowAbove16;
         public final double fogDrawP95Ms, queueP95Ms;
+        public final double successfulQueueP95Ms, successfulQueueP99Ms,
+                successfulBuildP95Ms;
+        public final long successfulQueueSamples;
         public final long tileBuilds, tileSuccess, tileCancelled, tileNoResult;
         public final long missingLookups;
         public final int peakPending, peakQueueDepth;
@@ -38,6 +41,10 @@ public final class FogPerformanceDiagnostics {
             windowAbove16 = p.uiFrame.above16;
             fogDrawP95Ms = p.fogDraw.percentileValue(95);
             queueP95Ms = p.queueWait.percentileValue(95);
+            successfulQueueP95Ms = p.successQueueWait.percentileValue(95);
+            successfulQueueP99Ms = p.successQueueWait.percentileValue(99);
+            successfulBuildP95Ms = p.successTileBuild.percentileValue(95);
+            successfulQueueSamples = p.successQueueWait.totalCount;
             tileBuilds = p.tileBuild.totalCount;
             tileSuccess = p.builtTiles;
             tileCancelled = p.cancelledTiles;
@@ -111,6 +118,8 @@ public final class FogPerformanceDiagnostics {
         final Samples demand = new Samples();
         final Samples tileBuild = new Samples();
         final Samples queueWait = new Samples();
+        final Samples successTileBuild = new Samples();
+        final Samples successQueueWait = new Samples();
         final Samples cameraToMapFrame = new Samples();
         final Samples mapFrameToFogDraw = new Samples();
         long mapFrameCallbacks;
@@ -157,6 +166,10 @@ public final class FogPerformanceDiagnostics {
             s.append("Tile demand lookups: cached=").append(requestedPresentTiles)
                     .append("; missing=").append(requestedMissingTiles)
                     .append("; queued=").append(queuedTiles).append('\n');
+            s.append("Successful tile queue delay (worker): ")
+                    .append(successQueueWait.report()).append('\n');
+            s.append("Successful tile build time (worker): ")
+                    .append(successTileBuild.report()).append('\n');
             s.append("Build outcomes: success=").append(builtTiles)
                     .append("; aborted/failed=").append(failedTiles).append('\n');
             s.append("Build detail: cancelled=").append(cancelledTiles)
@@ -243,8 +256,11 @@ public final class FogPerformanceDiagnostics {
         Phase p = current();
         p.queueWait.add(queueDelayNs);
         p.tileBuild.add(processingNs);
-        if (outcome == BUILD_SUCCESS) p.builtTiles++;
-        else {
+        if (outcome == BUILD_SUCCESS) {
+            p.builtTiles++;
+            p.successQueueWait.add(queueDelayNs);
+            p.successTileBuild.add(processingNs);
+        } else {
             p.failedTiles++;
             if (outcome == BUILD_CANCELLED) p.cancelledTiles++;
             else p.noResultTiles++;
