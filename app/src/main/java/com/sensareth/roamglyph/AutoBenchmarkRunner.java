@@ -42,22 +42,28 @@ public final class AutoBenchmarkRunner {
         final CameraPosition original;
         final AutoBenchmarkPath.Scenario scenario;
         final boolean comparePruning;
+        final boolean comparePrefetch;
         final String runId = UUID.randomUUID().toString().substring(0, 8);
         final ArrayList<String> reports = new ArrayList<>();
         final ArrayList<String> summaryRows = new ArrayList<>();
         int step;
 
         Session(boolean allRenderers, AutoBenchmarkPath.Scenario scenario,
-                boolean comparePruning, CameraPosition original) {
-            List<AutoBenchmarkPlan.Mode> base = AutoBenchmarkPlan.modes(allRenderers);
+                boolean comparePruning, boolean comparePrefetch,
+                CameraPosition original) {
+            List<AutoBenchmarkPlan.Mode> base = comparePrefetch
+                    ? java.util.Collections.singletonList(
+                            new AutoBenchmarkPlan.Mode(3, false, false))
+                    : AutoBenchmarkPlan.modes(allRenderers);
             ArrayList<AutoBenchmarkPlan.Mode> expanded = new ArrayList<>();
             for (AutoBenchmarkPlan.Mode mode : base) {
                 expanded.add(mode);
-                if (comparePruning) expanded.add(mode);
+                if (comparePruning || comparePrefetch) expanded.add(mode);
             }
             this.modes = java.util.Collections.unmodifiableList(expanded);
             this.scenario = scenario;
             this.comparePruning = comparePruning;
+            this.comparePrefetch = comparePrefetch;
             this.original = original;
         }
 
@@ -67,9 +73,16 @@ public final class AutoBenchmarkRunner {
             return AutoBenchmarkPlan.pruningEnabledAt(step, comparePruning);
         }
 
+        boolean deferPrefetch() {
+            return AutoBenchmarkPlan.prefetchDeferralEnabledAt(step, comparePrefetch);
+        }
+
         String label() {
             return mode().label() + (comparePruning
-                    ? pruningEnabled() ? " / Prune ON" : " / Prune OFF" : "");
+                    ? pruningEnabled() ? " / Prune ON" : " / Prune OFF" : "")
+                    + (comparePrefetch
+                        ? deferPrefetch() ? " / Visible-first ON" : " / Visible-first OFF"
+                        : "");
         }
     }
 
@@ -215,7 +228,8 @@ public final class AutoBenchmarkRunner {
                         "Quick: V4, 4 modes · warmed pan",
                         "Stress: V4, 4 modes · new territory",
                         "Stress A/B: 4 modes × pruning OFF/ON",
-                        "Full: all 16 modes · warmed pan"},
+                        "Full: all 16 modes · warmed pan",
+                        "Visible-first A/B: V4 GL, prefetch OFF/ON"},
                         (dialog, selected) -> {
                             CameraPosition original = map.getCameraPosition();
                             if (original == null || original.target == null) return;
@@ -241,10 +255,10 @@ public final class AutoBenchmarkRunner {
                             // Stress and Full are intentionally separate: the 16-mode
                             // matrix does not pretend to stress new territory.
                             session = new Session(selected == 3,
-                                    selected == 1 || selected == 2
+                                    selected == 1 || selected == 2 || selected == 4
                                             ? AutoBenchmarkPath.Scenario.NEW_TERRITORY
                                             : AutoBenchmarkPath.Scenario.WARM_PAN,
-                                    selected == 2, original);
+                                    selected == 2, selected == 4, original);
                             finished = null;
                             if (session.mode().textureView
                                     != (view.getRenderView() instanceof android.view.TextureView))
@@ -279,6 +293,7 @@ public final class AutoBenchmarkRunner {
         // Reset renderer and tile cache for every paired trial.
         // The normal production default remains eagerPruningEnabled=true.
         fog.setEagerPruningEnabled(run.pruningEnabled());
+        fog.setDeferPrefetchWhileVisibleMissing(run.deferPrefetch());
         fog.setRendererV4(false);
         fog.setRendererV3(false);
         fog.setRendererV2(false);
@@ -342,13 +357,14 @@ public final class AutoBenchmarkRunner {
             String workload = run.scenario == AutoBenchmarkPath.Scenario.NEW_TERRITORY
                     && summary.tileSuccess < 100 ? "LOW TILE WORKLOAD" : "measured";
             run.summaryRows.add(String.format(Locale.US,
-                    "%s | %d | %.2f | %.2f | %.1f%% | %d | %d/%d/%d | %d | %d | %.1f | %.1f | %.1f | %s",
+                    "%s | %d | %.2f | %.2f | %.1f%% | %d | %d/%d/%d | %d | %d | %d | %.1f | %.1f | %.1f | %s",
                     label, summary.windowSamples, summary.windowP95Ms,
                     summary.windowP99Ms, longFrameRate,
                     summary.missingLookups, summary.tileSuccess,
                     summary.tileCancelled, summary.tileNoResult,
                     summary.prunedQueuedJobs, summary.peakQueueDepth,
-                    summary.queueP95Ms, summary.successfulQueueP95Ms,
+                    summary.deferredPrefetchRequests, summary.queueP95Ms,
+                    summary.successfulQueueP95Ms,
                     summary.successfulBuildP95Ms, workload));
         }
         stageStarted = false;
@@ -364,6 +380,7 @@ public final class AutoBenchmarkRunner {
                     .append("; app: ").append(readVersionName()).append("\n");
             report.append("Scenario: ").append(run.scenario)
                     .append("; pruning A/B=").append(run.comparePruning)
+                    .append("; visible-first A/B=").append(run.comparePrefetch)
                     .append("; ")
                     .append(AutoBenchmarkPath.steps(run.scenario))
                     .append(" scripted camera pans at z17.5, 6s unmeasured warm-up per mode.\n")
@@ -375,15 +392,21 @@ public final class AutoBenchmarkRunner {
                     "A/B trial order alternates OFF/ON and ON/OFF per mode. "
                     + "Metrics from successful worker jobs are reported separately. "
                     + "Cross-trial cache, OS load and thermal state can still differ.\n");
+            if (run.comparePrefetch) report.append(
+                    "Paired experimental OFF/ON tests on V4 GLSurfaceView Standard. "
+                    + "Compare successful-only queue p95, success count, "
+                    + "deferred prefetch and UI tile-demand p95. "
+                    + "Map GPU presentation remains unmeasured.\n");
             report.append("\n=== COMPARISON SUMMARY ===\n");
             report.append("Mode | window n | p95 ms | p99 ms | >16.7ms | ")
-                    .append("miss lookups | built/cancelled/no-result | pruned | queue peak | "
+                    .append("miss lookups | built/cancelled/no-result | pruned | queue peak | deferred-prefetch | "
                             + "all-job queue p95 ms | successful queue p95 ms | "
                             + "successful build p95 ms | load\n");
             for (String row : run.summaryRows) report.append(row).append('\n');
             report.append("\n=== RAW DIAGNOSTICS ===\n");
             for (String part : run.reports) report.append(part);
             fog.setEagerPruningEnabled(true);
+            fog.setDeferPrefetchWhileVisibleMissing(true);
             session = null;
             finished = new Finished(run.original, report.toString());
             // MapLibre persists UiSettings gesture flags through saved state.
@@ -412,6 +435,7 @@ public final class AutoBenchmarkRunner {
         clearTasks();
         stageStarted = false;
         fog.setEagerPruningEnabled(true);
+        fog.setDeferPrefetchWhileVisibleMissing(true);
         session = null;
         finished = new Finished(run.original, null);
         if (map != null) map.getUiSettings().setAllGesturesEnabled(true);

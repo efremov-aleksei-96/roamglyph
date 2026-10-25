@@ -29,7 +29,7 @@ public final class FogPerformanceDiagnostics {
         public final long tileBuilds, tileSuccess, tileCancelled, tileNoResult;
         public final long missingLookups;
         public final int peakPending, peakQueueDepth;
-        public final long prunedQueuedJobs;
+        public final long prunedQueuedJobs, deferredPrefetchRequests;
         public final long mapFrameRedraws, mapFrameFallbacks;
 
         private BenchmarkSummary(Phase p) {
@@ -53,6 +53,7 @@ public final class FogPerformanceDiagnostics {
             peakPending = p.peakPending;
             peakQueueDepth = p.peakQueueDepth;
             prunedQueuedJobs = p.prunedQueuedJobs;
+            deferredPrefetchRequests = p.deferredPrefetchRequests;
             mapFrameRedraws = p.mapFrameRedraws;
             mapFrameFallbacks = p.mapFrameFallbacks;
         }
@@ -134,6 +135,7 @@ public final class FogPerformanceDiagnostics {
         long cancelledTiles;
         long noResultTiles;
         long prunedQueuedJobs;
+        long deferredPrefetchRequests;
         int peakQueueDepth;
         int peakPending;
         int visibleTiles;
@@ -176,7 +178,9 @@ public final class FogPerformanceDiagnostics {
                     .append("; no-result=").append(noResultTiles).append('\n');
             s.append("Peak pending tiles: ").append(peakPending).append('\n');
             s.append("Worker queue hygiene: pruned-obsolete=").append(prunedQueuedJobs)
-                    .append("; peak-queued=").append(peakQueueDepth).append('\n');
+                    .append("; peak-queued=").append(peakQueueDepth)
+                    .append("; deferred-prefetch=").append(deferredPrefetchRequests)
+                    .append('\n');
             s.append("Last cache: ").append(residentTiles)
                     .append(" tiles / ").append(residentBytes / (1024 * 1024))
                     .append(" MiB; visible=").append(visibleTiles)
@@ -241,6 +245,11 @@ public final class FogPerformanceDiagnostics {
         Phase p = current();
         p.prunedQueuedJobs += Math.max(0, pruned);
         p.peakQueueDepth = Math.max(p.peakQueueDepth, Math.max(0, queuedDepth));
+    }
+
+    /** Counts halo requests postponed until required screen tiles are ready. */
+    public synchronized void recordPrefetchDeferral(int deferred) {
+        current().deferredPrefetchRequests += Math.max(0, deferred);
     }
 
     /** Compatibility overload for existing diagnostic callers and tests. */

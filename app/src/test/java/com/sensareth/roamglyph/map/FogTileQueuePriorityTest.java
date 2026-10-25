@@ -73,6 +73,13 @@ public final class FogTileQueuePriorityTest {
                 jobs, Collections.singleton(key(7)), x -> x));
     }
 
+    @Test public void newPrefetchWaitsButOnScreenJobsNeverDo() {
+        assertTrue(FogTileQueuePriority.deferPrefetch(true, true, false));
+        assertTrue(!FogTileQueuePriority.deferPrefetch(true, true, true));
+        assertTrue(!FogTileQueuePriority.deferPrefetch(true, false, false));
+        assertTrue(!FogTileQueuePriority.deferPrefetch(false, true, false));
+    }
+
     @Test public void emptyQueueReturnsNull() {
         Queue<FogWorldTileScheme.Key> jobs = new ConcurrentLinkedQueue<>();
         assertNull(FogTileQueuePriority.pollVisibleFirst(

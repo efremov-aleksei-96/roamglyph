@@ -95,6 +95,9 @@ public final class FogOverlayView extends View {
     private boolean mapFrameSyncEnabled;
     // Benchmark-only, process-local A/B switch; normal behavior remains ON.
     private boolean eagerPruningEnabled = true;
+    // Experimental scheduling policy: visible tile needs before halo prefetch.
+    private boolean deferPrefetchWhileVisibleMissing = true;
+    private boolean deferredPrefetchAwaitingVisible;
     private long lastMapFrameCallbackAtNanos = -1L;
     private volatile FogGpsCorridors gpsCorridors = FogGpsCorridors.empty();
     private volatile int coverageEpoch = 1;
@@ -209,6 +212,12 @@ public final class FogOverlayView extends View {
     /** Temporary benchmarking option. Does not touch GPS history, cache format or preferences. */
     public void setEagerPruningEnabled(boolean enabled) {
         eagerPruningEnabled = enabled;
+    }
+
+    /** Session-only switch for controlled priority A/B; never persisted. */
+    public void setDeferPrefetchWhileVisibleMissing(boolean enabled) {
+        deferPrefetchWhileVisibleMissing = enabled;
+        deferredPrefetchAwaitingVisible = false;
     }
 
     /** A/B comparison against standard camera-driven fog invalidation. */
@@ -398,7 +407,7 @@ public final class FogOverlayView extends View {
         if (!forced && now - lastDemandAt < DEMAND_INTERVAL_MS) return;
         lastDemandAt = now;
         long startedNanos = SystemClock.elapsedRealtimeNanos();
-        int hits = 0, misses = 0, queued = 0, pruned = 0;
+        int hits = 0, misses = 0, queued = 0, pruned = 0, deferred = 0;
         try {
             org.maplibre.android.camera.CameraPosition camera = map.getCameraPosition();
             if (camera == null) return;
@@ -486,23 +495,32 @@ public final class FogOverlayView extends View {
             if (cache.size() > MAX_CACHE || cacheBytes > MAX_CACHE_BYTES) {
                 trimCacheToBudget();
             }
+            boolean missingVisible = false;
             for (FogWorldTileScheme.Key key : prioritized) {
                 Tile current = cache.get(key);
                 if (current == null) misses++; else hits++;
-                // Zooming back into a normal-size viewport can restore a
-                // higher raster budget after visible mipmaps were coarsened.
-                // Rebuild such cells asynchronously; retain the old tile
-                // until the sharper replacement is ready.
+                // Rebuild tiles whose resident mipmap is below current demand.
                 boolean undersampled = current != null
                         && current.mipmaps.length > 0
                         && FogWorldTileScheme.needsSharperRaster(
                                 current.effectiveScale(), rasterScale);
-                if ((current == null || current.epoch != epoch || undersampled)
-                        && pending.add(key)) {
+                boolean needsTile = current == null || current.epoch != epoch
+                        || undersampled;
+                // The LinkedHashSet is ordered visible-first. Once a visible
+                // key is missing, defer NEW prefetch jobs until it is ready.
+                if (visibleWanted.contains(key) && needsTile) missingVisible = true;
+                if (FogTileQueuePriority.deferPrefetch(
+                        deferPrefetchWhileVisibleMissing, missingVisible,
+                        visibleWanted.contains(key))) {
+                    if (needsTile && !pending.contains(key)) deferred++;
+                    continue;
+                }
+                if (needsTile && pending.add(key)) {
                     jobs.add(new TileJob(key, epoch, rasterScale));
                     queued++;
                 }
             }
+            deferredPrefetchAwaitingVisible = deferred > 0;
             startWorker();
             // In sync mode, camera movement requests geometry but map frame
             // events schedule drawing; tile completions can still invalidate.
@@ -517,6 +535,7 @@ public final class FogOverlayView extends View {
                         hits, misses, queued, visible.size(), pending.size(),
                         cache.size(), cacheBytes);
                 current.recordQueueMaintenance(pruned, jobs.size());
+                current.recordPrefetchDeferral(deferred);
             }
         }
     }
@@ -706,6 +725,24 @@ public final class FogOverlayView extends View {
             startWorker();
         }
         invalidate();
+        // The last required on-screen tile just finished. Release deferred
+        // halo requests once rather than waiting for another camera gesture.
+        if (deferPrefetchWhileVisibleMissing && deferredPrefetchAwaitingVisible
+                && visibleWanted.contains(job.key)) {
+            boolean visibleReady = true;
+            for (FogWorldTileScheme.Key key : visibleWanted) {
+                Tile resident = cache.get(key);
+                if (resident == null || resident.epoch != coverageEpoch
+                        || pending.contains(key)) {
+                    visibleReady = false;
+                    break;
+                }
+            }
+            if (visibleReady) {
+                deferredPrefetchAwaitingVisible = false;
+                requestTiles(true);
+            }
+        }
     }
 
     private void coarsenCachedTilesTo(float targetScale) {

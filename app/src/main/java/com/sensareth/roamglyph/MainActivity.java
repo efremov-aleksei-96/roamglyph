@@ -443,7 +443,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         // Reserve the entire tracking button zone in narrow portrait windows.
         mapScaleRuler = new MapScaleRulerView(this);
         FrameLayout.LayoutParams scaleLp = new FrameLayout.LayoutParams(
-                dp(144), dp(48));
+                dp(82), dp(144));
         scaleLp.gravity = Gravity.BOTTOM | Gravity.START;
         // Tracking button occupies bottom 32–84dp; a 16dp clearance
         // avoids overlap even when its localized text is wide.
@@ -491,7 +491,7 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         // collides with the (variable-height) status card. Restore it once
         // the window grows or the card contracts, with a fresh projection.
         Runnable fitRulerToWindow = () -> {
-            int rulerTop = root.getHeight() - dp(100) - dp(48);
+            int rulerTop = root.getHeight() - dp(100) - dp(144);
             boolean fits = root.getHeight() > 0 && statusCard.getHeight() > 0
                     && rulerTop >= statusCard.getBottom() + dp(12);
             boolean wasAllowed = mapScaleRuler.isLayoutAllowed();
@@ -823,29 +823,45 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 || AutoBenchmarkRunner.isRunning()) return;
         int width = mapView.getWidth();
         int height = mapView.getHeight();
-        if (width < dp(190) || height < dp(165)
+        if (width < dp(120) || height < dp(255)
                 || mapScaleRuler.getWidth() <= 0
                 || mapScaleRuler.getHeight() <= 0) return;
         long now = SystemClock.uptimeMillis();
         if (!forced && now - lastMapScaleRefreshMs < 160L) return;
         lastMapScaleRefreshMs = now;
         try {
-            // Use the exact physical row where the ruler paints its bar.
-            // At non-zero map tilt, meters/pixel change with screen y.
+            // Use the actual vertical line endpoints. In pitched maps,
+            // ground meters per pixel depend on the row being sampled.
             float x = mapScaleRuler.getLeft()
-                    + mapScaleRuler.distanceBarLeftX() - mapView.getLeft();
+                    + mapScaleRuler.distanceBarX() - mapView.getLeft();
             float y = mapScaleRuler.getTop()
-                    + mapScaleRuler.distanceBarCenterY() - mapView.getTop();
-            float referencePixels = dp(110);
+                    + mapScaleRuler.distanceBarTopY() - mapView.getTop();
+            float referencePixels = dp(115);
             org.maplibre.android.geometry.LatLng first =
                     map.getProjection().fromScreenLocation(new PointF(x, y));
             org.maplibre.android.geometry.LatLng second =
                     map.getProjection().fromScreenLocation(
-                            new PointF(x + referencePixels, y));
+                            new PointF(x, y + referencePixels));
             if (first == null || second == null) return;
-            mapScaleRuler.update(MapScaleMath.distanceMeters(
+            double referenceMeters = MapScaleMath.distanceMeters(
                     first.getLatitude(), first.getLongitude(),
-                    second.getLatitude(), second.getLongitude()), referencePixels);
+                    second.getLatitude(), second.getLongitude());
+            double nice = MapScaleMath.niceDistanceMeters(referenceMeters);
+            if (!Double.isFinite(nice)) return;
+            // Vertical screen projection is nonlinear when the map is pitched.
+            // Solve the painted lower tick Y directly from the projection.
+            float exactPixels = MapScaleMath.projectedLengthForDistance(
+                    nice, referencePixels, pixelOffset -> {
+                        org.maplibre.android.geometry.LatLng target =
+                                map.getProjection().fromScreenLocation(
+                                        new PointF(x, y + (float) pixelOffset));
+                        return target == null ? Double.NaN
+                                : MapScaleMath.distanceMeters(
+                                        first.getLatitude(), first.getLongitude(),
+                                        target.getLatitude(), target.getLongitude());
+                    });
+            if (!Float.isFinite(exactPixels)) return;
+            mapScaleRuler.updateExact(nice, exactPixels);
         } catch (IllegalStateException ignored) {
             // The MapLibre projection can be transiently unavailable while
             // rotating or recreating a compositor; a later move retries.

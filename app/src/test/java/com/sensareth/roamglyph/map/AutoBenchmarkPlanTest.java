@@ -38,6 +38,12 @@ public class AutoBenchmarkPlanTest {
         }
     }
 
+    @Test public void visiblePrefetchA_BStartsWithoutDeferralThenEnablesIt() {
+        assertTrue(!AutoBenchmarkPlan.prefetchDeferralEnabledAt(0, true));
+        assertTrue(AutoBenchmarkPlan.prefetchDeferralEnabledAt(1, true));
+        assertTrue(AutoBenchmarkPlan.prefetchDeferralEnabledAt(0, false));
+    }
+
     @Test(expected=IllegalArgumentException.class)
     public void rejectsNegativeBenchmarkStep() {
         AutoBenchmarkPlan.pruningEnabledAt(-1, true);
