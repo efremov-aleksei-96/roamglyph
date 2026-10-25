@@ -98,6 +98,8 @@ public final class FogOverlayView extends View {
     // Experimental scheduling policy: visible tile needs before halo prefetch.
     private boolean deferPrefetchWhileVisibleMissing = true;
     private boolean deferredPrefetchAwaitingVisible;
+    // Coalesce finished-tile redraws at the next VSYNC; transient A/B switch.
+    private boolean coalesceTileFinishRedraw = true;
     private long lastMapFrameCallbackAtNanos = -1L;
     private volatile FogGpsCorridors gpsCorridors = FogGpsCorridors.empty();
     private volatile int coverageEpoch = 1;
@@ -218,6 +220,11 @@ public final class FogOverlayView extends View {
     public void setDeferPrefetchWhileVisibleMissing(boolean enabled) {
         deferPrefetchWhileVisibleMissing = enabled;
         deferredPrefetchAwaitingVisible = false;
+    }
+
+    /** Benchmark-only switch: keep exact fog geometry and tile policy intact. */
+    public void setCoalesceTileFinishRedraw(boolean enabled) {
+        coalesceTileFinishRedraw = enabled;
     }
 
     /** A/B comparison against standard camera-driven fog invalidation. */
@@ -724,7 +731,11 @@ public final class FogOverlayView extends View {
             jobs.add(new TileJob(job.key, job.epoch, desired));
             startWorker();
         }
-        invalidate();
+        // One invalidation per worker completion need not force a separate UI
+        // redraw. Android schedules one frame-aligned redraw for all tile
+        // completions in the same VSYNC interval. Pixel A/B measures impact.
+        if (coalesceTileFinishRedraw) postInvalidateOnAnimation();
+        else invalidate();
         // The last required on-screen tile just finished. Release deferred
         // halo requests once rather than waiting for another camera gesture.
         if (deferPrefetchWhileVisibleMissing && deferredPrefetchAwaitingVisible
