@@ -442,8 +442,13 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
         // entirely offline, independent of GPS/tracking/fog renderer.
         // Reserve the entire tracking button zone in narrow portrait windows.
         mapScaleRuler = new MapScaleRulerView(this);
+        // Shift the vertical ruler ~one third closer to the left edge:
+        // previous painted X = 10 + (82 - 11) = 81dp;
+        // new painted X = 10 + (55 - 11) = 54dp.
+        // Keep the bar and its caption inside the same view, so projection
+        // math (which reads the view's true bar coordinates) stays accurate.
         FrameLayout.LayoutParams scaleLp = new FrameLayout.LayoutParams(
-                dp(82), dp(144));
+                dp(55), dp(144));
         scaleLp.gravity = Gravity.BOTTOM | Gravity.START;
         // Tracking button occupies bottom 32–84dp; a 16dp clearance
         // avoids overlap even when its localized text is wide.
