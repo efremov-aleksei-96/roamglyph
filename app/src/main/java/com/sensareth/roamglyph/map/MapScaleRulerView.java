@@ -18,6 +18,7 @@ public final class MapScaleRulerView extends View {
     private String distanceLabel = "—";
     private float segmentPx;
     private boolean ready;
+    private boolean layoutAllowed = true;
 
     public MapScaleRulerView(Context context) {
         super(context);
@@ -27,6 +28,18 @@ public final class MapScaleRulerView extends View {
         setImportantForAccessibility(IMPORTANT_FOR_ACCESSIBILITY_YES);
         setVisibility(INVISIBLE);
     }
+
+    /**
+     * Hide the ruler entirely when a narrow/split-screen window has no
+     * unobstructed space between the status card and bottom buttons.
+     */
+    public void setLayoutAllowed(boolean allowed) {
+        if (layoutAllowed == allowed) return;
+        layoutAllowed = allowed;
+        setVisibility(!layoutAllowed ? GONE : ready ? VISIBLE : INVISIBLE);
+    }
+
+    public boolean isLayoutAllowed() { return layoutAllowed; }
 
     /**
      * @param referenceMeters ground distance between projection sample points
@@ -46,7 +59,7 @@ public final class MapScaleRulerView extends View {
         lastWidthPx = segmentPx;
         distanceLabel = label;
         ready = true;
-        setVisibility(VISIBLE);
+        if (layoutAllowed) setVisibility(VISIBLE);
         setContentDescription("Map scale " + label);
         invalidate();
     }
