@@ -1,4 +1,4 @@
-name: Signed vertical ruler and visible-first dev.47 preview
+name: Signed ruler positioning and VSYNC dev.48 preview
 
 # One-off, source-pinned preview. Publish verified in-app prerelease.
 # Push fires only when this trusted main-branch workflow itself is added/changed.
@@ -12,7 +12,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: signed-pr67-dev47-vertical-prefetch-release
+  group: signed-pr69-dev48-ruler-redraw-release
   cancel-in-progress: false
 
 jobs:
@@ -20,16 +20,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      CANDIDATE_SHA: e975efe70aa9d565c3b0030801deaece1ca8c886
+      CANDIDATE_SHA: cac134d20db791b4c03fda09e5d17dd305e7b604
       BASE_SHA: 243532d9116e6ee20c7c6f22da3fa8add53d69c3
-      ROAMGLYPH_SOURCE_SHA: e975efe70aa9d565c3b0030801deaece1ca8c886
+      ROAMGLYPH_SOURCE_SHA: cac134d20db791b4c03fda09e5d17dd305e7b604
     steps:
       - name: Check out trusted main workflow repository
         uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
-      - name: Require exact previously CI-tested PR67 source and safe diff
+      - name: Require exact previously CI-tested PR69 source and safe diff
         shell: bash
         run: |
           set -euo pipefail
@@ -80,7 +80,7 @@ jobs:
           fi
           git checkout --detach "$CANDIDATE_SHA"
 
-      - name: Prepare isolated dev.47 preview with no embedded signing key
+      - name: Prepare isolated dev.48 preview with no embedded signing key
         shell: bash
         run: |
           set -euo pipefail
@@ -89,9 +89,9 @@ jobs:
           p = Path("app/build.gradle.kts")
           data = p.read_text()
           changes = (
-              ('versionCode = 32', 'versionCode = 47'),
+              ('versionCode = 32', 'versionCode = 48'),
               ('versionName = "0.5.0-dev.32+g$devRevision"',
-               'versionName = "0.5.0-dev.47+g$devRevision"'),
+               'versionName = "0.5.0-dev.48+g$devRevision"'),
               ('getByName("debug") {\n            if (hasDevSigning)',
                'getByName("debug") {\n            signingConfig = null\n            if (hasDevSigning)'),
           )
@@ -137,13 +137,13 @@ jobs:
             echo "::error::Build artifact was already signed; refuse to pass it to signing job."
             exit 1
           fi
-          cp "$APK" unsigned/roamglyph-pr67-dev47-unsigned.apk
+          cp "$APK" unsigned/roamglyph-pr69-dev48-unsigned.apk
 
       - name: Transfer unsigned preview to isolated signing job
         uses: actions/upload-artifact@v4
         with:
-          name: pr67-dev47-unsigned-intermediate
-          path: unsigned/roamglyph-pr67-dev47-unsigned.apk
+          name: pr69-dev48-unsigned-intermediate
+          path: unsigned/roamglyph-pr69-dev48-unsigned.apk
           if-no-files-found: error
           retention-days: 1
 
@@ -156,7 +156,7 @@ jobs:
       - name: Download verified unsigned APK only
         uses: actions/download-artifact@v4
         with:
-          name: pr67-dev47-unsigned-intermediate
+          name: pr69-dev48-unsigned-intermediate
           path: unsigned
 
       - name: Set up signing and Android build tools
@@ -173,19 +173,19 @@ jobs:
         run: |
           set -euo pipefail
           umask 077
-          KEYSTORE="$RUNNER_TEMP/roamglyph-pr67-dev-signing.p12"
+          KEYSTORE="$RUNNER_TEMP/roamglyph-pr69-dev-signing.p12"
           trap 'rm -f "$KEYSTORE"' EXIT
           test -n "$KEYSTORE_BASE64" && test -n "$ROAMGLYPH_DEV_KEYSTORE_PASSWORD"
           printf '%s' "$KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
           APKSIGNER="$(find "$ANDROID_HOME/build-tools" -type f -name apksigner | sort -V | tail -n 1)"
           AAPT="$(find "$ANDROID_HOME/build-tools" -type f -name aapt | sort -V | tail -n 1)"
           test -x "$APKSIGNER" && test -x "$AAPT"
-          INPUT=unsigned/roamglyph-pr67-dev47-unsigned.apk
+          INPUT=unsigned/roamglyph-pr69-dev48-unsigned.apk
           test -s "$INPUT"
           BADGING="$("$AAPT" dump badging "$INPUT" | head -n 1)"
           [[ "$BADGING" == *"name='com.sensareth.roamglyph'"* ]]
-          [[ "$BADGING" == *"versionCode='47'"* ]]
-          [[ "$BADGING" == *"versionName='0.5.0-dev.47+ge975efe7'"* ]]
+          [[ "$BADGING" == *"versionCode='48'"* ]]
+          [[ "$BADGING" == *"versionName='0.5.0-dev.48+gcac134d2'"* ]]
           if "$APKSIGNER" verify "$INPUT" >/dev/null 2>&1; then
             echo "::error::Refusing an already signed candidate."
             exit 1
@@ -201,7 +201,7 @@ jobs:
             exit 1
           }
           mkdir -p dist
-          OUTPUT=dist/roamglyph-0.5.0-dev.47-ge975efe7.apk
+          OUTPUT=dist/roamglyph-0.5.0-dev.48-gcac134d2.apk
           "$APKSIGNER" sign --ks "$KEYSTORE" --ks-type PKCS12 \
             --ks-key-alias roamglyph-dev \
             --ks-pass env:ROAMGLYPH_DEV_KEYSTORE_PASSWORD \
@@ -216,15 +216,15 @@ jobs:
       - name: Upload signed Pixel APK for in-app development update test
         uses: actions/upload-artifact@v4
         with:
-          name: roamglyph-pr67-dev47-pixel-preview-signed
+          name: roamglyph-pr69-dev48-pixel-preview-signed
           path: |
-            dist/roamglyph-0.5.0-dev.47-ge975efe7.apk
+            dist/roamglyph-0.5.0-dev.48-gcac134d2.apk
             dist/SHA256SUMS.txt
           retention-days: 14
           if-no-files-found: error
 
-  publish-dev47:
-    name: Publish signed dev47 to developer updates
+  publish-dev48:
+    name: Publish signed dev48 to developer updates
     needs: sign-preview
     if: github.repository == 'efremov-aleksei-96/roamglyph' && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
@@ -234,15 +234,15 @@ jobs:
       actions: read
     env:
       GH_TOKEN: ${{ github.token }}
-      SOURCE_SHA: e975efe70aa9d565c3b0030801deaece1ca8c886
-      RELEASE_TAG: dev-vc47-ge975efe7
-      APK_NAME: roamglyph-0.5.0-dev.47-ge975efe7.apk
+      SOURCE_SHA: cac134d20db791b4c03fda09e5d17dd305e7b604
+      RELEASE_TAG: dev-vc48-gcac134d2
+      APK_NAME: roamglyph-0.5.0-dev.48-gcac134d2.apk
       PIN: 89defa011682172a6d892cda46cd6132393dccda22cecf1175f825596db80758
     steps:
       - name: Get certified APK, not candidate code
         uses: actions/download-artifact@v4
         with:
-          name: roamglyph-pr67-dev47-pixel-preview-signed
+          name: roamglyph-pr69-dev48-pixel-preview-signed
           path: dist
 
       - name: Verify release bytes, key and fixed source
@@ -257,7 +257,7 @@ jobs:
           CERT="$("$APKSIGNER" verify --print-certs "dist/$APK_NAME" |
             sed -n 's/^.*certificate SHA-256 digest: //p' | head -n 1)"
           test "$CERT" = "$PIN"
-          PR_HEAD="$(gh api "repos/$GITHUB_REPOSITORY/pulls/67" --jq '.head.sha')"
+          PR_HEAD="$(gh api "repos/$GITHUB_REPOSITORY/pulls/69" --jq '.head.sha')"
           test "$PR_HEAD" = "$SOURCE_SHA"
           # Enforce the acceptance gates in the job that has permission to
           # publish. A healthy workflow PR is not proof that candidate PR #45
@@ -288,7 +288,7 @@ jobs:
             exit 1
           fi
 
-      - name: Stage both assets in a draft and publish immutable dev47
+      - name: Stage both assets in a draft and publish immutable dev48
         shell: bash
         run: |
           set -euo pipefail
@@ -296,8 +296,8 @@ jobs:
             --repo "$GITHUB_REPOSITORY" \
             --target "$SOURCE_SHA" \
             --prerelease --latest=false \
-            --title "RoamGlyph 0.5.0-dev.47 (Map distance ruler)" \
-            --notes "RoamGlyph dev.47 combines a slim transparent vertical map-scale ruler with perspective-correct length and experimental visible-before-prefetch tile scheduling. Includes an automatic two-case V4 GL OFF/ON stress A/B. Source PR #67 pinned to e975efe7. No GPS/H3/Room changes. Stop Exploration and export JSON before updating over the previous release; experimental source remains unmerged pending Pixel acceptance."
+            --title "RoamGlyph 0.5.0-dev.48 (Map distance ruler)" \
+            --notes "RoamGlyph dev.48 moves the vertical map scale one third toward the left edge and experimentally coalesces completed fog tile redraws at VSYNC. Includes a new two-case Tile redraw A/B (immediate vs VSYNC), keeping the prior Visible-first stress option. Experimental source PR #69 pinned to cac134d2; user GPS/H3/Room state unchanged. Stop Exploration and export JSON backup before installing in-place over the previous build; source remains unmerged pending Pixel acceptance."
 
       - name: Verify public prerelease is detectable by in-app updater
         shell: bash
