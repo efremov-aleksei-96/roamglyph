@@ -40,6 +40,28 @@ public final class MapScaleMath {
         return (ratio >= 5.0 ? 5.0 : ratio >= 2.0 ? 2.0 : 1.0) * unit;
     }
 
+    /**
+     * Find the bar length along a potentially pitched (non-linear) screen
+     * projection. Samples actual ground distance from its fixed top anchor.
+     * Uses only 9 projection evaluations; called on a throttled UI refresh.
+     */
+    public static float projectedLengthForDistance(double meters,
+            float maximumPx, java.util.function.DoubleUnaryOperator distanceAtPixel) {
+        if (!Double.isFinite(meters) || meters <= 0
+                || !Float.isFinite(maximumPx) || maximumPx <= 0)
+            return Float.NaN;
+        double lo = 0.0;
+        double hi = maximumPx;
+        for (int i = 0; i < 9; i++) {
+            double mid = (lo + hi) * .5;
+            double observed = distanceAtPixel.applyAsDouble(mid);
+            if (!Double.isFinite(observed) || observed < 0) return Float.NaN;
+            if (observed < meters) lo = mid;
+            else hi = mid;
+        }
+        return (float) ((lo + hi) * .5);
+    }
+
     public static String label(double meters) {
         if (!Double.isFinite(meters) || meters <= 0) return "—";
         if (meters >= 1000.0) {
