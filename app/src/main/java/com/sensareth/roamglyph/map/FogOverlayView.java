@@ -93,6 +93,8 @@ public final class FogOverlayView extends View {
     private volatile boolean rendererV4;
     // UI-thread-only experiment; keeps rendering geometry and tile cache intact.
     private boolean mapFrameSyncEnabled;
+    // Benchmark-only, process-local A/B switch; normal behavior remains ON.
+    private boolean eagerPruningEnabled = true;
     private long lastMapFrameCallbackAtNanos = -1L;
     private volatile FogGpsCorridors gpsCorridors = FogGpsCorridors.empty();
     private volatile int coverageEpoch = 1;
@@ -202,6 +204,11 @@ public final class FogOverlayView extends View {
         markerOutline.setColor(Color.WHITE);
         markerOutline.setStyle(Paint.Style.STROKE);
         markerOutline.setStrokeWidth(2f * density);
+    }
+
+    /** Temporary benchmarking option. Does not touch GPS history, cache format or preferences. */
+    public void setEagerPruningEnabled(boolean enabled) {
+        eagerPruningEnabled = enabled;
     }
 
     /** A/B comparison against standard camera-driven fog invalidation. */
@@ -433,9 +440,11 @@ public final class FogOverlayView extends View {
             // Prune on the UI producer BEFORE enqueueing the new viewport.
             // Release pending only after queue.remove() succeeds, so a job
             // already running on the worker keeps ownership until finishTile.
-            pruned = FogTileQueuePriority.pruneObsolete(
-                    jobs, wanted, candidate -> candidate.key,
-                    candidate -> pending.remove(candidate.key));
+            if (eagerPruningEnabled) {
+                pruned = FogTileQueuePriority.pruneObsolete(
+                        jobs, wanted, candidate -> candidate.key,
+                        candidate -> pending.remove(candidate.key));
+            }
 
             // Protect both the new visible set and the old visible zoom
             // during a transition. Halo tiles may be evicted first.
