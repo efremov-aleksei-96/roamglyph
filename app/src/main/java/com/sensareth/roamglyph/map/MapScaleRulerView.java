@@ -53,6 +53,16 @@ public final class MapScaleRulerView extends View {
 
     private float lastWidthPx;
 
+    /** Exact local y coordinate of the painted horizontal scale bar. */
+    public float distanceBarCenterY() {
+        return Math.min(getHeight() - 11f * density, 37f * density);
+    }
+
+    /** Exact local x coordinate of the painted scale bar's left endpoint. */
+    public float distanceBarLeftX() {
+        return 12f * density;
+    }
+
     @Override
     protected void onDraw(Canvas canvas) {
         super.onDraw(canvas);
@@ -70,8 +80,8 @@ public final class MapScaleRulerView extends View {
 
         paint.setStrokeWidth(2f * d);
         paint.setStrokeCap(Paint.Cap.SQUARE);
-        float x = 12f * d;
-        float y = Math.min(getHeight() - 11f * d, 37f * d);
+        float x = distanceBarLeftX();
+        float y = distanceBarCenterY();
         canvas.drawLine(x, y, x + segmentPx, y, paint);
         canvas.drawLine(x, y - 5f * d, x, y + 1f * d, paint);
         canvas.drawLine(x + segmentPx, y - 5f * d,
