@@ -38,6 +38,12 @@ final class FogTileQueuePriority {
         return count;
     }
 
+    /** Never withhold on-screen work to generate off-screen halo tiles. */
+    static boolean deferPrefetch(boolean enabled, boolean visibleMissing,
+                                 boolean isVisible) {
+        return enabled && visibleMissing && !isVisible;
+    }
+
     static <T> T pollVisibleFirst(Queue<T> queue,
                                   Set<FogWorldTileScheme.Key> visible,
                                   Function<T, FogWorldTileScheme.Key> keyOf) {
