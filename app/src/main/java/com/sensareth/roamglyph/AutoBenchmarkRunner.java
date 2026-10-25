@@ -321,11 +321,12 @@ public final class AutoBenchmarkRunner {
             String workload = run.scenario == AutoBenchmarkPath.Scenario.NEW_TERRITORY
                     && summary.tileSuccess < 100 ? "LOW TILE WORKLOAD" : "measured";
             run.summaryRows.add(String.format(Locale.US,
-                    "%s | %d | %.2f | %.2f | %.1f%% | %d | %d/%d/%d | %.1f | %s",
+                    "%s | %d | %.2f | %.2f | %.1f%% | %d | %d/%d/%d | %d | %d | %.1f | %s",
                     label, summary.windowSamples, summary.windowP95Ms,
                     summary.windowP99Ms, longFrameRate,
                     summary.missingLookups, summary.tileSuccess,
                     summary.tileCancelled, summary.tileNoResult,
+                    summary.prunedQueuedJobs, summary.peakQueueDepth,
                     summary.queueP95Ms, workload));
         }
         stageStarted = false;
@@ -349,7 +350,7 @@ public final class AutoBenchmarkRunner {
                     .append("Stress is not proven unless substantial new tiles build.\n");
             report.append("\n=== COMPARISON SUMMARY ===\n");
             report.append("Mode | window n | p95 ms | p99 ms | >16.7ms | ")
-                    .append("miss lookups | built/cancelled/no-result | queue p95 ms | load\n");
+                    .append("miss lookups | built/cancelled/no-result | pruned | queue peak | queue p95 ms | load\n");
             for (String row : run.summaryRows) report.append(row).append('\n');
             report.append("\n=== RAW DIAGNOSTICS ===\n");
             for (String part : run.reports) report.append(part);
