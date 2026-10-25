@@ -64,10 +64,7 @@ public final class AutoBenchmarkRunner {
         AutoBenchmarkPlan.Mode mode() { return modes.get(step); }
 
         boolean pruningEnabled() {
-            if (!comparePruning) return true;
-            // Counterbalance trial order: OFF/ON, ON/OFF, OFF/ON, ON/OFF.
-            int pair = step / 2;
-            return ((step & 1) == 1) == ((pair & 1) == 0);
+            return AutoBenchmarkPlan.pruningEnabledAt(step, comparePruning);
         }
 
         String label() {
@@ -301,7 +298,7 @@ public final class AutoBenchmarkRunner {
         Toast.makeText(activity,
                 "Benchmark " + (run.step + 1) + "/" + run.modes.size()
                         + " · " + (run.scenario == AutoBenchmarkPath.Scenario.NEW_TERRITORY
-                                ? "Stress" : "Warm") + ": " + mode.label(),
+                                ? "Stress" : "Warm") + ": " + run.label(),
                 Toast.LENGTH_SHORT).show();
         // Warm-up is outside the measurement; each mode gets the same sweep.
         post(() -> {
