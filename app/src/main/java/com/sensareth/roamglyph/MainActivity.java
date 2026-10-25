@@ -440,12 +440,14 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
 
         // Everyday exploration feature: a projection-based metric ruler,
         // entirely offline, independent of GPS/tracking/fog renderer.
-        // Keep it above attribution and away from right-side map controls.
+        // Reserve the entire tracking button zone in narrow portrait windows.
         mapScaleRuler = new MapScaleRulerView(this);
         FrameLayout.LayoutParams scaleLp = new FrameLayout.LayoutParams(
                 dp(144), dp(48));
         scaleLp.gravity = Gravity.BOTTOM | Gravity.START;
-        scaleLp.setMargins(dp(10), 0, 0, dp(35));
+        // Tracking button occupies bottom 32–84dp; a 16dp clearance
+        // avoids overlap even when its localized text is wide.
+        scaleLp.setMargins(dp(10), 0, 0, dp(100));
         root.addView(mapScaleRuler, scaleLp);
         root.addOnLayoutChangeListener((v, left, top, right, bottom,
                 oldLeft, oldTop, oldRight, oldBottom) -> {
@@ -802,13 +804,19 @@ public class MainActivity extends AppCompatActivity implements OnMapReadyCallbac
                 || AutoBenchmarkRunner.isRunning()) return;
         int width = mapView.getWidth();
         int height = mapView.getHeight();
-        if (width < dp(190) || height < dp(110)) return;
+        if (width < dp(190) || height < dp(165)
+                || mapScaleRuler.getWidth() <= 0
+                || mapScaleRuler.getHeight() <= 0) return;
         long now = SystemClock.uptimeMillis();
         if (!forced && now - lastMapScaleRefreshMs < 160L) return;
         lastMapScaleRefreshMs = now;
         try {
-            float x = dp(22);
-            float y = height - dp(70);
+            // Use the exact physical row where the ruler paints its bar.
+            // At non-zero map tilt, meters/pixel change with screen y.
+            float x = mapScaleRuler.getLeft()
+                    + mapScaleRuler.distanceBarLeftX() - mapView.getLeft();
+            float y = mapScaleRuler.getTop()
+                    + mapScaleRuler.distanceBarCenterY() - mapView.getTop();
             float referencePixels = dp(110);
             org.maplibre.android.geometry.LatLng first =
                     map.getProjection().fromScreenLocation(new PointF(x, y));
