@@ -29,7 +29,7 @@ public final class FogPerformanceDiagnostics {
         public final long tileBuilds, tileSuccess, tileCancelled, tileNoResult;
         public final long missingLookups;
         public final int peakPending, peakQueueDepth;
-        public final long prunedQueuedJobs;
+        public final long prunedQueuedJobs, deferredPrefetchRequests;
         public final long mapFrameRedraws, mapFrameFallbacks;
 
         private BenchmarkSummary(Phase p) {
