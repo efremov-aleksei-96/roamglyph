@@ -20,9 +20,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
-      CANDIDATE_SHA: 08ddbba194db9d01571f4b0079328cc2b6032c4a
+      CANDIDATE_SHA: 02dc3def5cc73dc49335254612a9a4bac904698c
       BASE_SHA: 243532d9116e6ee20c7c6f22da3fa8add53d69c3
-      ROAMGLYPH_SOURCE_SHA: 08ddbba194db9d01571f4b0079328cc2b6032c4a
+      ROAMGLYPH_SOURCE_SHA: 02dc3def5cc73dc49335254612a9a4bac904698c
     steps:
       - name: Check out trusted main workflow repository
         uses: actions/checkout@v5
@@ -185,7 +185,7 @@ jobs:
           BADGING="$("$AAPT" dump badging "$INPUT" | head -n 1)"
           [[ "$BADGING" == *"name='com.sensareth.roamglyph'"* ]]
           [[ "$BADGING" == *"versionCode='46'"* ]]
-          [[ "$BADGING" == *"versionName='0.5.0-dev.46+g08ddbba1'"* ]]
+          [[ "$BADGING" == *"versionName='0.5.0-dev.46+g02dc3def'"* ]]
           if "$APKSIGNER" verify "$INPUT" >/dev/null 2>&1; then
             echo "::error::Refusing an already signed candidate."
             exit 1
@@ -201,7 +201,7 @@ jobs:
             exit 1
           }
           mkdir -p dist
-          OUTPUT=dist/roamglyph-0.5.0-dev.46-g08ddbba1.apk
+          OUTPUT=dist/roamglyph-0.5.0-dev.46-g02dc3def.apk
           "$APKSIGNER" sign --ks "$KEYSTORE" --ks-type PKCS12 \
             --ks-key-alias roamglyph-dev \
             --ks-pass env:ROAMGLYPH_DEV_KEYSTORE_PASSWORD \
@@ -218,7 +218,7 @@ jobs:
         with:
           name: roamglyph-pr65-dev46-pixel-preview-signed
           path: |
-            dist/roamglyph-0.5.0-dev.46-g08ddbba1.apk
+            dist/roamglyph-0.5.0-dev.46-g02dc3def.apk
             dist/SHA256SUMS.txt
           retention-days: 14
           if-no-files-found: error
@@ -234,9 +234,9 @@ jobs:
       actions: read
     env:
       GH_TOKEN: ${{ github.token }}
-      SOURCE_SHA: 08ddbba194db9d01571f4b0079328cc2b6032c4a
-      RELEASE_TAG: dev-vc46-g08ddbba1
-      APK_NAME: roamglyph-0.5.0-dev.46-g08ddbba1.apk
+      SOURCE_SHA: 02dc3def5cc73dc49335254612a9a4bac904698c
+      RELEASE_TAG: dev-vc46-g02dc3def
+      APK_NAME: roamglyph-0.5.0-dev.46-g02dc3def.apk
       PIN: 89defa011682172a6d892cda46cd6132393dccda22cecf1175f825596db80758
     steps:
       - name: Get certified APK, not candidate code
@@ -297,7 +297,7 @@ jobs:
             --target "$SOURCE_SHA" \
             --prerelease --latest=false \
             --title "RoamGlyph 0.5.0-dev.46 (Map distance ruler)" \
-            --notes "RoamGlyph dev.46 adds a live projection-based map scale ruler showing meters and kilometers when zooming and panning. Works offline on PMTiles and online without GPS data or tracking changes. Includes earlier paired Pruning OFF/ON stress benchmark and successful-only queue diagnostics. Experimental source PR #65 pinned to 08ddbba1. Stop Exploration and export JSON backup before in-place updating; PR #65 stays unmerged pending Pixel visual validation."
+            --notes "RoamGlyph dev.46 adds a live projection-based map scale ruler showing meters and kilometers when zooming and panning. Works offline on PMTiles and online without GPS data or tracking changes. Includes earlier paired Pruning OFF/ON stress benchmark and successful-only queue diagnostics. Experimental source PR #65 pinned to 02dc3def. Stop Exploration and export JSON backup before in-place updating; PR #65 stays unmerged pending Pixel visual validation."
 
       - name: Verify public prerelease is detectable by in-app updater
         shell: bash
