@@ -44,6 +44,17 @@ public class AutoBenchmarkPlanTest {
         assertTrue(AutoBenchmarkPlan.prefetchDeferralEnabledAt(0, false));
     }
 
+    @Test public void redrawExperimentComparesImmediateThenVsync() {
+        assertTrue(!AutoBenchmarkPlan.tileRedrawCoalescingAt(0, true));
+        assertTrue(AutoBenchmarkPlan.tileRedrawCoalescingAt(1, true));
+        assertTrue(AutoBenchmarkPlan.tileRedrawCoalescingAt(0, false));
+    }
+
+    @Test(expected=IllegalArgumentException.class)
+    public void rejectsInvalidRedrawBenchmarkStep() {
+        AutoBenchmarkPlan.tileRedrawCoalescingAt(-1, true);
+    }
+
     @Test(expected=IllegalArgumentException.class)
     public void rejectsNegativeBenchmarkStep() {
         AutoBenchmarkPlan.pruningEnabledAt(-1, true);

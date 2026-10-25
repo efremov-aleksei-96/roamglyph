@@ -48,6 +48,12 @@ public final class AutoBenchmarkPlan {
         return !paired || (step & 1) == 1;
     }
 
+    /** Paired redraw experiment: legacy immediate, then VSYNC coalescing. */
+    public static boolean tileRedrawCoalescingAt(int step, boolean paired) {
+        if (step < 0) throw new IllegalArgumentException("benchmark step");
+        return !paired || (step & 1) == 1;
+    }
+
     /** Group by compositor to minimize costly MapView recreation. */
     public static List<Mode> modes(boolean allRenderers) {
         ArrayList<Mode> result = new ArrayList<>();
