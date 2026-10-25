@@ -41,19 +41,36 @@ public final class AutoBenchmarkRunner {
         final List<AutoBenchmarkPlan.Mode> modes;
         final CameraPosition original;
         final AutoBenchmarkPath.Scenario scenario;
+        final boolean comparePruning;
         final String runId = UUID.randomUUID().toString().substring(0, 8);
         final ArrayList<String> reports = new ArrayList<>();
         final ArrayList<String> summaryRows = new ArrayList<>();
         int step;
 
         Session(boolean allRenderers, AutoBenchmarkPath.Scenario scenario,
-                CameraPosition original) {
-            this.modes = AutoBenchmarkPlan.modes(allRenderers);
+                boolean comparePruning, CameraPosition original) {
+            List<AutoBenchmarkPlan.Mode> base = AutoBenchmarkPlan.modes(allRenderers);
+            ArrayList<AutoBenchmarkPlan.Mode> expanded = new ArrayList<>();
+            for (AutoBenchmarkPlan.Mode mode : base) {
+                expanded.add(mode);
+                if (comparePruning) expanded.add(mode);
+            }
+            this.modes = java.util.Collections.unmodifiableList(expanded);
             this.scenario = scenario;
+            this.comparePruning = comparePruning;
             this.original = original;
         }
 
         AutoBenchmarkPlan.Mode mode() { return modes.get(step); }
+
+        boolean pruningEnabled() {
+            return AutoBenchmarkPlan.pruningEnabledAt(step, comparePruning);
+        }
+
+        String label() {
+            return mode().label() + (comparePruning
+                    ? pruningEnabled() ? " / Prune ON" : " / Prune OFF" : "");
+        }
     }
 
     private static final class Finished {
@@ -197,6 +214,7 @@ public final class AutoBenchmarkRunner {
                 .setItems(new String[]{
                         "Quick: V4, 4 modes · warmed pan",
                         "Stress: V4, 4 modes · new territory",
+                        "Stress A/B: 4 modes × pruning OFF/ON",
                         "Full: all 16 modes · warmed pan"},
                         (dialog, selected) -> {
                             CameraPosition original = map.getCameraPosition();
@@ -222,11 +240,11 @@ public final class AutoBenchmarkRunner {
                             }
                             // Stress and Full are intentionally separate: the 16-mode
                             // matrix does not pretend to stress new territory.
-                            session = new Session(selected == 2,
-                                    selected == 1
+                            session = new Session(selected == 3,
+                                    selected == 1 || selected == 2
                                             ? AutoBenchmarkPath.Scenario.NEW_TERRITORY
                                             : AutoBenchmarkPath.Scenario.WARM_PAN,
-                                    original);
+                                    selected == 2, original);
                             finished = null;
                             if (session.mode().textureView
                                     != (view.getRenderView() instanceof android.view.TextureView))
@@ -258,6 +276,9 @@ public final class AutoBenchmarkRunner {
         // Ignore accidental touch gestures; camera motion must be reproducible.
         map.getUiSettings().setAllGesturesEnabled(false);
         AutoBenchmarkPlan.Mode mode = run.mode();
+        // Reset renderer and tile cache for every paired trial.
+        // The normal production default remains eagerPruningEnabled=true.
+        fog.setEagerPruningEnabled(run.pruningEnabled());
         fog.setRendererV4(false);
         fog.setRendererV3(false);
         fog.setRendererV2(false);
@@ -277,7 +298,7 @@ public final class AutoBenchmarkRunner {
         Toast.makeText(activity,
                 "Benchmark " + (run.step + 1) + "/" + run.modes.size()
                         + " · " + (run.scenario == AutoBenchmarkPath.Scenario.NEW_TERRITORY
-                                ? "Stress" : "Warm") + ": " + mode.label(),
+                                ? "Stress" : "Warm") + ": " + run.label(),
                 Toast.LENGTH_SHORT).show();
         // Warm-up is outside the measurement; each mode gets the same sweep.
         post(() -> {
@@ -311,7 +332,7 @@ public final class AutoBenchmarkRunner {
                 ? null : metrics.benchmarkSummary();
         String result = metrics == null
                 ? "Diagnostics unavailable" : metrics.report();
-        String label = mode.label();
+        String label = run.label();
         run.reports.add("\n=== " + (run.step + 1) + "/" + run.modes.size()
                 + ": " + label + " ===\n" + result);
         if (summary != null) {
@@ -321,13 +342,14 @@ public final class AutoBenchmarkRunner {
             String workload = run.scenario == AutoBenchmarkPath.Scenario.NEW_TERRITORY
                     && summary.tileSuccess < 100 ? "LOW TILE WORKLOAD" : "measured";
             run.summaryRows.add(String.format(Locale.US,
-                    "%s | %d | %.2f | %.2f | %.1f%% | %d | %d/%d/%d | %d | %d | %.1f | %s",
+                    "%s | %d | %.2f | %.2f | %.1f%% | %d | %d/%d/%d | %d | %d | %.1f | %.1f | %.1f | %s",
                     label, summary.windowSamples, summary.windowP95Ms,
                     summary.windowP99Ms, longFrameRate,
                     summary.missingLookups, summary.tileSuccess,
                     summary.tileCancelled, summary.tileNoResult,
                     summary.prunedQueuedJobs, summary.peakQueueDepth,
-                    summary.queueP95Ms, workload));
+                    summary.queueP95Ms, summary.successfulQueueP95Ms,
+                    summary.successfulBuildP95Ms, workload));
         }
         stageStarted = false;
         clearTasks();
@@ -341,6 +363,7 @@ public final class AutoBenchmarkRunner {
                     .append("; script version: ").append(AutoBenchmarkPath.SCRIPT_VERSION)
                     .append("; app: ").append(readVersionName()).append("\n");
             report.append("Scenario: ").append(run.scenario)
+                    .append("; pruning A/B=").append(run.comparePruning)
                     .append("; ")
                     .append(AutoBenchmarkPath.steps(run.scenario))
                     .append(" scripted camera pans at z17.5, 6s unmeasured warm-up per mode.\n")
@@ -348,12 +371,19 @@ public final class AutoBenchmarkRunner {
                     .append("coordinates or visited history in this report.\n")
                     .append("Window FrameMetrics are NOT the map GPU FPS. ")
                     .append("Stress is not proven unless substantial new tiles build.\n");
+            if (run.comparePruning) report.append(
+                    "A/B trial order alternates OFF/ON and ON/OFF per mode. "
+                    + "Metrics from successful worker jobs are reported separately. "
+                    + "Cross-trial cache, OS load and thermal state can still differ.\n");
             report.append("\n=== COMPARISON SUMMARY ===\n");
             report.append("Mode | window n | p95 ms | p99 ms | >16.7ms | ")
-                    .append("miss lookups | built/cancelled/no-result | pruned | queue peak | queue p95 ms | load\n");
+                    .append("miss lookups | built/cancelled/no-result | pruned | queue peak | "
+                            + "all-job queue p95 ms | successful queue p95 ms | "
+                            + "successful build p95 ms | load\n");
             for (String row : run.summaryRows) report.append(row).append('\n');
             report.append("\n=== RAW DIAGNOSTICS ===\n");
             for (String part : run.reports) report.append(part);
+            fog.setEagerPruningEnabled(true);
             session = null;
             finished = new Finished(run.original, report.toString());
             // MapLibre persists UiSettings gesture flags through saved state.
@@ -381,6 +411,7 @@ public final class AutoBenchmarkRunner {
         if (run == null) return;
         clearTasks();
         stageStarted = false;
+        fog.setEagerPruningEnabled(true);
         session = null;
         finished = new Finished(run.original, null);
         if (map != null) map.getUiSettings().setAllGesturesEnabled(true);

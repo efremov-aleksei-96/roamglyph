@@ -89,12 +89,20 @@ public class FogPerformanceDiagnosticsTest {
         assertTrue(summary.missingLookups == 4);
         assertTrue(summary.tileBuilds == 3);
         assertTrue(summary.tileSuccess == 1);
+        assertTrue(summary.successfulQueueSamples == 1);
+        assertTrue(Math.abs(summary.successfulQueueP95Ms - 30.0) < .001);
+        assertTrue(Math.abs(summary.successfulQueueP99Ms - 30.0) < .001);
+        assertTrue(Math.abs(summary.successfulBuildP95Ms - 70.0) < .001);
         assertTrue(summary.tileCancelled == 1);
         assertTrue(summary.tileNoResult == 1);
         assertTrue(summary.peakPending == 3);
         assertTrue(summary.prunedQueuedJobs == 12);
         assertTrue(summary.peakQueueDepth == 15);
         assertTrue(metrics.report().contains("Build detail: cancelled=1; no-result=1"));
+        assertTrue(metrics.report().contains(
+                "Successful tile queue delay (worker): n=1; avg=30.00ms"));
+        assertTrue(metrics.report().contains(
+                "Successful tile build time (worker): n=1; avg=70.00ms"));
         assertTrue(metrics.report().contains("Worker queue hygiene: pruned-obsolete=12; peak-queued=15"));
     }
 

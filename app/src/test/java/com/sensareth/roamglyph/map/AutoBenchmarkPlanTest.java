@@ -30,6 +30,19 @@ public class AutoBenchmarkPlanTest {
         assertEquals(16, unique.size());
     }
 
+    @Test public void alternatesEightPruningCasesWithBalancedOrder() {
+        boolean[] expected = {false, true, true, false, false, true, true, false};
+        for (int i = 0; i < expected.length; i++) {
+            assertEquals(expected[i], AutoBenchmarkPlan.pruningEnabledAt(i, true));
+            assertTrue(AutoBenchmarkPlan.pruningEnabledAt(i, false));
+        }
+    }
+
+    @Test(expected=IllegalArgumentException.class)
+    public void rejectsNegativeBenchmarkStep() {
+        AutoBenchmarkPlan.pruningEnabledAt(-1, true);
+    }
+
     @Test(expected=IllegalArgumentException.class)
     public void rejectsInvalidRenderer() {
         new AutoBenchmarkPlan.Mode(4, false, false);

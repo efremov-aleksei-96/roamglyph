@@ -31,6 +31,17 @@ public final class AutoBenchmarkPlan {
         }
     }
 
+    /**
+     * Adjacent stress trial order, balanced per compositor/sync mode:
+     * OFF/ON, ON/OFF, OFF/ON, ON/OFF.
+     */
+    public static boolean pruningEnabledAt(int step, boolean paired) {
+        if (step < 0) throw new IllegalArgumentException("benchmark step");
+        if (!paired) return true;
+        int pair = step / 2;
+        return ((step & 1) == 1) == ((pair & 1) == 0);
+    }
+
     /** Group by compositor to minimize costly MapView recreation. */
     public static List<Mode> modes(boolean allRenderers) {
         ArrayList<Mode> result = new ArrayList<>();
