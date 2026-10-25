@@ -42,18 +42,15 @@ public final class MapScaleRulerView extends View {
     public boolean isLayoutAllowed() { return layoutAllowed; }
 
     /**
-     * @param referenceMeters ground distance between projection sample points
-     * @param referencePixels physical screen-space pixel gap of those points
+     * A pixel span solved against actual map-projection distances. In pitched
+     * views it MUST NOT be linearly scaled from a different Y interval.
      */
-    public void update(double referenceMeters, float referencePixels) {
-        double distance = MapScaleMath.niceDistanceMeters(referenceMeters);
-        if (!Double.isFinite(distance) || referencePixels <= 0f
-                || !Float.isFinite(referencePixels)) return;
-        float candidate = (float) (referencePixels * distance / referenceMeters);
-        if (!Float.isFinite(candidate) || candidate < 1f) return;
+    public void updateExact(double distanceMeters, float exactPixels) {
+        if (!Double.isFinite(distanceMeters) || distanceMeters <= 0
+                || !Float.isFinite(exactPixels) || exactPixels < 1f) return;
         float maxHeight = Math.max(1f, getHeight() - 24f * density);
-        segmentPx = Math.min(maxHeight, candidate);
-        String label = MapScaleMath.label(distance);
+        segmentPx = Math.min(maxHeight, exactPixels);
+        String label = MapScaleMath.label(distanceMeters);
         if (ready && distanceLabel.equals(label)
                 && Math.abs(segmentPx - lastWidthPx) < 0.75f) return;
         lastWidthPx = segmentPx;
